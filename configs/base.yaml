@@ -7,9 +7,9 @@ arms_dir: configs/arms
 orders: [0, 1, 2]
 max_steps: 8
 
-# SQL agent: local Ollama alias with a 16k context (see ollama/qwen3.5-9b-16k.Modelfile).
+# SQL agent: local Ollama alias with a 32k context (see ollama/qwen3.5-9b-32k.Modelfile).
 agent:
-  model: qwen3.5-9b-16k
+  model: qwen3.5-9b-32k
   base_url: http://localhost:11434/v1
   api_key_env: null
   options: {reasoning_effort: none}  # thinking off: ~10x faster

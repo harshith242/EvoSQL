@@ -72,7 +72,7 @@ class GateConfig:
     leakage_check: bool = True
     token_check: bool = True
     max_note_tokens: int = 80
-    cap_tokens: int = 3000
+    cap_tokens: int = 8000
     prune_every: int = 20
 
 

@@ -39,7 +39,7 @@ Headline result: a learning curve (accuracy vs. questions seen) per arm, plus no
 | Feedback signal       | Correct/incorrect + gold SQL after each answer                                             | Stands in for an analyst correcting the query; stated openly in README              |
 | Knowledge delivery    | All notes rendered into the system prompt                                                  | Simplest; stable prefix; token cost is directly measurable                          |
 | Gate                  | Targeted replay gate (Section 5)                                                           | Per-note decisions, explainable log; ratchet is the same code with regularizers off |
-| Models                | Agent: local Ollama `qwen3.5:9b` (16k context, thinking off). Proposer: Groq `openai/gpt-oss-120b`. Both via OpenAI-compatible API | Free only; Groq's 200K tokens/day cap is too small for the agent's ~5k runs         |
+| Models                | Agent: local Ollama `qwen3.5:9b` (32k context, thinking off). Proposer: Groq `openai/gpt-oss-120b`. Both via OpenAI-compatible API | Free only; Groq's 200K tokens/day cap is too small for the agent's ~5k runs         |
 | Language / tooling    | Python, `uv`                                                                               |                                                                                     |
 
 
@@ -109,7 +109,7 @@ accept(edit):
 
 - **Leakage check (rule-based):** reject a note that contains any value from the gold result rows, or that shares a 5-word run with the question text. The note must state general knowledge, not the answer.
 - **Pruning (every 20 questions):** for each note, re-run the questions it was credited with (its source question plus replay gains) without the note. If accuracy does not drop, delete it.
-- **Knowledge cap:** 3,000 tokens total. If a new note would exceed the cap, run pruning first; if still over, reject.
+- **Knowledge cap:** 8,000 tokens total (fits the 32k agent context next to schema, docs and an 8-step conversation). If a new note would exceed the cap, run pruning first; if still over, reject.
 
 **Ratchet = same class with switches off:** `replay_k = 0`, no leakage check, no token check, no pruning, no cap, `need = 1` (just "fixes q"). We run the leakage checker on the ratchet's notes afterwards only to report its leakage rate.
 

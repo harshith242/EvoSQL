@@ -38,7 +38,7 @@ Requires [uv](https://docs.astral.sh/uv/), [Ollama](https://ollama.com) and a fr
 ```bash
 uv sync
 python scripts/get_bird.py thrombosis_prediction      # downloads BIRD dev once, keeps one database
-ollama pull qwen3.5:9b && ollama create qwen3.5-9b-16k -f ollama/qwen3.5-9b-16k.Modelfile
+ollama pull qwen3.5:9b && ollama create qwen3.5-9b-32k -f ollama/qwen3.5-9b-32k.Modelfile
 echo "GROQ_API_KEY=..." > .env
 ```
 
