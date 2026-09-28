@@ -97,7 +97,8 @@ def _parse_json_call(content):
     return {"id": None, "name": obj["tool"], "arguments": json.dumps(args if isinstance(args, dict) else {})}
 
 
-def answer(llm, db, question, knowledge, temperature=0.0, sample=0, max_steps=8):
+def answer(llm, db, question, knowledge, temperature=0.0, sample=0, max_steps=8, on_step=None):
+    """on_step(step, tool_names) is called for live progress: once while the model thinks, once with its tools."""
     messages = [
         {"role": "system", "content": SYSTEM.format(ddl=db.ddl, notes=knowledge.render())},
         {"role": "user", "content": question},
@@ -105,6 +106,8 @@ def answer(llm, db, question, knowledge, temperature=0.0, sample=0, max_steps=8)
     for step in range(1, max_steps + 1):
         if step == max_steps:
             messages.append({"role": "user", "content": "Last step: call submit now with your best SQL."})
+        if on_step:
+            on_step(step, [])
         reply = llm.chat(messages, tools=TOOLS, temperature=temperature, sample=sample)
         calls = reply["tool_calls"]
         if calls:
@@ -124,6 +127,8 @@ def answer(llm, db, question, knowledge, temperature=0.0, sample=0, max_steps=8)
                 continue
             calls = [fallback]
 
+        if on_step:
+            on_step(step, [c["name"] for c in calls])
         for call in calls:
             try:
                 args = json.loads(call["arguments"] or "{}")

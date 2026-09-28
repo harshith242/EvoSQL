@@ -7,6 +7,7 @@ from dataclasses import asdict
 from pathlib import Path
 
 import yaml
+from tqdm import tqdm
 
 from evosql.agent import answer, answer_self_consistent
 from evosql.bird import exec_match, gold_rows, load_questions, open_db
@@ -80,8 +81,18 @@ def run_arm(cfg, arm_name, order_seed, limit=None, agent_llm=None, proposer_llm=
         proposer_llm = proposer_llm or make_llm(cfg["proposer"], cfg["cache_dir"])
     hints, max_steps, sc_n = arm.get("hints", False), cfg["max_steps"], arm.get("self_consistency_n")
 
+    prior = [json.loads(line)["correct"] for line in log_path.read_text().splitlines()] if log_path.exists() else []
+    right = sum(prior)
+    bar = tqdm(total=end, initial=done, desc=f"{arm_name} order {order_seed}", unit="q", dynamic_ncols=True)
+
+    def status(text):
+        bar.set_postfix_str(f"acc {right}/{bar.n} | notes {len(knowledge.notes)}" + (f" | {text}" if text else ""))
+
+    def agent_steps(qid, phase):
+        return lambda step, tools: status(f"{phase} q{qid} step {step}: {', '.join(tools) or 'thinking'}")
+
     def solve(q, k):
-        r = answer(agent_llm, db, question_text(q, hints), k, max_steps=max_steps)
+        r = answer(agent_llm, db, question_text(q, hints), k, max_steps=max_steps, on_step=agent_steps(q.qid, "re-check"))
         return exec_match(db.path, r.sql, gold_rows(db.path, q))
 
     gate = None
@@ -100,15 +111,18 @@ def run_arm(cfg, arm_name, order_seed, limit=None, agent_llm=None, proposer_llm=
         u0 = snapshot()
         try:
             if sc_n:
+                status(f"q{q.qid} voting over {sc_n} samples")
                 r = answer_self_consistent(agent_llm, db, question_text(q, hints), knowledge, sc_n, max_steps)
             else:
-                r = answer(agent_llm, db, question_text(q, hints), knowledge, max_steps=max_steps)
+                r = answer(agent_llm, db, question_text(q, hints), knowledge, max_steps=max_steps,
+                           on_step=agent_steps(q.qid, "answer"))
             gold = gold_rows(db.path, q)
             correct = exec_match(db.path, r.sql, gold)
             rec = {"step": step, "qid": q.qid, "difficulty": q.difficulty, "sql": r.sql, "correct": correct,
                    "agent_error": r.error, "agent_steps": r.steps}
             u1 = snapshot()
             if learning and not correct:
+                status(f"q{q.qid} wrong, proposing a note")
                 edit = propose(proposer_llm, db, q.question, r.sql, q.gold_sql, knowledge)
                 rec["edit"] = asdict(edit) if edit else None
                 if edit is None:
@@ -119,9 +133,11 @@ def run_arm(cfg, arm_name, order_seed, limit=None, agent_llm=None, proposer_llm=
                     rec["decision"] = "accepted" if d.accepted else "rejected"
                     rec.update(reason=d.reason, gain=d.gain, replay_n=d.replay_n, pruned=d.pruned or [])
             if learning and gate.cfg.prune_every and (step + 1) % gate.cfg.prune_every == 0:
+                status("pruning notes")
                 knowledge, removed = gate.prune(knowledge)
                 rec["pruned"] = rec.get("pruned", []) + removed
         except ProviderExhausted as e:
+            bar.close()
             print(f"provider exhausted at step {step}: {e}. Progress saved; rerun the same command later.")
             return False
         u2 = snapshot()
@@ -132,8 +148,16 @@ def run_arm(cfg, arm_name, order_seed, limit=None, agent_llm=None, proposer_llm=
         with open(log_path, "a") as f:
             f.write(json.dumps(rec) + "\n")
         knowledge.save(notes_path, done=step + 1)
-        print(f"[{arm_name} o{order_seed}] {step + 1}/{end} q{q.qid} correct={correct} "
-              f"notes={len(knowledge.notes)} {rec.get('decision', '')} {rec.get('reason', '')}", flush=True)
+        right += correct
+        bar.update(1)
+        learned = ""
+        if rec.get("decision") == "accepted":
+            learned = f" | note accepted (net gain {rec['gain']}), {len(knowledge.notes)} notes"
+        elif rec.get("decision"):
+            learned = f" | note rejected: {rec['reason']}"
+        tqdm.write(f"  {step + 1}/{end} q{q.qid} {'right' if correct else 'wrong'}{learned}")
+        status("")
+    bar.close()
     return True
 
 
@@ -148,11 +172,21 @@ def calibrate(cfg, n=20, agent_llm=None):
     agent_llm = agent_llm or make_llm(cfg["agent"], cfg["cache_dir"])
     neutral, _ = Knowledge().apply(NEUTRAL_NOTE, step=-1, qid=-1)
     flips = 0
-    for q in order[:n]:
+    bar = tqdm(order[:n], desc="calibrate", unit="q", dynamic_ncols=True)
+    for q in bar:
         gold = gold_rows(db.path, q)
-        runs = [exec_match(db.path, answer(agent_llm, db, q.question, k, max_steps=cfg["max_steps"]).sql, gold)
-                for k in (Knowledge(), neutral)]
+        runs = []
+        for label, k in (("no note", Knowledge()), ("harmless note", neutral)):
+            show = lambda step, tools: bar.set_postfix_str(
+                f"flips {flips} | q{q.qid} {label}, step {step}: {', '.join(tools) or 'thinking'}")
+            runs.append(exec_match(db.path, answer(agent_llm, db, q.question, k, max_steps=cfg["max_steps"],
+                                                   on_step=show).sql, gold))
         flips += runs[0] != runs[1]
+        mark = lambda ok: "right" if ok else "wrong"
+        tqdm.write(f"  q{q.qid}: no note {mark(runs[0])}, harmless note {mark(runs[1])}"
+                   f"{'  <- flip' if runs[0] != runs[1] else ''}")
+        bar.set_postfix_str(f"flips {flips}")
+    bar.close()
     result = {"p": flips / n, "flips": flips, "n": n}
     noise_path(cfg).parent.mkdir(parents=True, exist_ok=True)
     noise_path(cfg).write_text(json.dumps(result))
