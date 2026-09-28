@@ -26,6 +26,15 @@ agents:
     options: {reasoning_effort: none}
     runs_dir: runs_groq
     results_dir: results_groq
+  # NVIDIA NIM free tier (~40 requests/min). Many listed models are overloaded; Super answers reliably.
+  # Its short default thinking stays on: enable_thinking=false returns HTTP 500 for this model.
+  nvidia:
+    model: nvidia/nemotron-3-super-120b-a12b
+    base_url: https://integrate.api.nvidia.com/v1
+    api_key_env: NVIDIA_API_KEY
+    options: {}
+    runs_dir: runs_nvidia
+    results_dir: results_nvidia
 
 # Proposer: only called after wrong answers, so it fits Groq's free daily limits.
 proposer:

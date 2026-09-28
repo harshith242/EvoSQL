@@ -9,3 +9,5 @@ __pycache__/
 *.egg-info/
 runs_groq/
 results_groq/
+runs_nvidia/
+results_nvidia/
