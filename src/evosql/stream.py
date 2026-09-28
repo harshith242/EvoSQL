@@ -16,8 +16,13 @@ from evosql.learner import Gate, GateConfig, propose
 from evosql.llm import LLM, ProviderExhausted
 
 
-def load_config(path="configs/base.yaml"):
-    return yaml.safe_load(Path(path).read_text())
+def load_config(path="configs/base.yaml", agent=None):
+    """Load settings and resolve the chosen agent profile into cfg["agent"], runs_dir and results_dir."""
+    cfg = yaml.safe_load(Path(path).read_text())
+    if "agents" in cfg:
+        profile = cfg["agents"][agent or cfg["agent_profile"]]
+        cfg.update(agent=profile, runs_dir=profile["runs_dir"], results_dir=profile["results_dir"])
+    return cfg
 
 
 def load_arm(name, arms_dir="configs/arms"):

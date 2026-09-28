@@ -7,3 +7,5 @@ __pycache__/
 .venv/
 .pytest_cache/
 *.egg-info/
+runs_groq/
+results_groq/

@@ -83,6 +83,21 @@ uv run python -m evosql run --arm selfcons
 uv run python -m evosql analyze
 ```
 
+**Choose the agent model** with `--agent`, placed *before* the command. Profiles live in `configs/base.yaml`:
+
+| Profile | Model | Limits | Output folders |
+|---|---|---|---|
+| `local` (default) | Ollama `qwen3.5:9b` | none | `runs/`, `results/` |
+| `groq` | Groq `qwen/qwen3.8-27b` | 8K tokens/min, 200K tokens/day (~10-15 questions/day) | `runs_groq/`, `results_groq/` |
+
+Each profile has its own runs, noise rate and results, so answers from different agent models never mix, and every profile needs its own `calibrate`. On Groq, per-minute limits are waited out automatically. A daily limit stops the run cleanly; rerun the same command the next day. Example: a small Groq comparison on the first 10 questions:
+
+```bash
+uv run python -m evosql --agent groq calibrate --n 10
+uv run python -m evosql --agent groq run --arm docs evosql --order 0 --limit 10
+uv run python -m evosql --agent groq analyze
+```
+
 Runs are resumable. Every LLM reply is cached under `cache/`, and each arm appends one line per question to `runs/<arm>/<db>/order<k>.jsonl`. If a run stops (Ctrl-C, crash, provider limit), rerun the same command and it continues where it stopped. A later run without `--limit` extends a limited one.
 
 To rerun an arm from scratch, delete its folder under `runs/<arm>/`. Clear `cache/llm/` only if you change the Ollama Modelfile, because cached replies are keyed by the model name, not its weights.

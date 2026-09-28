@@ -8,8 +8,10 @@ import time
 from pathlib import Path
 
 import openai
+from tqdm import tqdm
 
-RETRYABLE = (openai.RateLimitError, openai.APIConnectionError, openai.APITimeoutError, openai.InternalServerError)
+RETRYABLE = (openai.APIConnectionError, openai.APITimeoutError, openai.InternalServerError)
+MAX_WAIT = 120  # a longer retry-after means a daily limit: stop and resume later instead of sleeping
 
 
 class ProviderExhausted(Exception):
@@ -17,7 +19,7 @@ class ProviderExhausted(Exception):
 
 
 class LLM:
-    def __init__(self, model, base_url=None, api_key=None, cache_dir="cache/llm", client=None, max_tries=6, options=None):
+    def __init__(self, model, base_url=None, api_key=None, cache_dir="cache/llm", client=None, max_tries=10, options=None):
         self.model = model
         self.client = client or openai.OpenAI(base_url=base_url, api_key=api_key, max_retries=0, timeout=600)
         self.cache_dir = Path(cache_dir)
@@ -54,6 +56,14 @@ class LLM:
                 resp = self.client.chat.completions.create(
                     model=self.model, messages=messages, temperature=temperature, **extra
                 )
+            except openai.RateLimitError as e:
+                last = e
+                wait = float(e.response.headers.get("retry-after") or 2 ** (attempt + 1))
+                if wait > MAX_WAIT:
+                    raise ProviderExhausted(f"{self.model}: rate limited for {wait:.0f}s (daily limit?)")
+                tqdm.write(f"  {self.model}: rate limited, waiting {wait:.0f}s")
+                time.sleep(wait)
+                continue
             except RETRYABLE as e:
                 last = e
                 time.sleep(min(2 ** (attempt + 1), 60))

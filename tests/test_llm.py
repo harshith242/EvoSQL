@@ -1,6 +1,9 @@
 from types import SimpleNamespace
 
-from evosql.llm import LLM
+import openai
+import pytest
+
+from evosql.llm import LLM, ProviderExhausted
 
 
 class FakeTransport:
@@ -37,3 +40,25 @@ def test_different_sample_index_bypasses_cache(tmp_path):
     llm.chat(messages, sample=0)
     llm.chat(messages, sample=1)
     assert transport.calls == 2
+
+
+def rate_limited(retry_after):
+    error = openai.RateLimitError.__new__(openai.RateLimitError)
+    error.response = SimpleNamespace(headers={"retry-after": str(retry_after)})
+    return error
+
+
+def test_per_minute_limit_is_waited_out_but_daily_limit_stops_the_run(tmp_path, monkeypatch):
+    slept = []
+    monkeypatch.setattr("evosql.llm.time.sleep", slept.append)
+    transport = FakeTransport()
+    errors = [rate_limited(3)]
+    real_create = transport.create
+    transport.chat.completions.create = lambda **kw: (_ for _ in ()).throw(errors.pop()) if errors else real_create(**kw)
+    assert LLM("m", cache_dir=tmp_path, client=transport).chat([{"role": "user", "content": "a"}])["content"] == "SELECT 1"
+    assert slept == [3.0]
+
+    transport.chat.completions.create = lambda **kw: (_ for _ in ()).throw(rate_limited(3600))
+    with pytest.raises(ProviderExhausted):
+        LLM("m", cache_dir=tmp_path, client=transport).chat([{"role": "user", "content": "b"}])
+    assert slept == [3.0]

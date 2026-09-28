@@ -1,18 +1,31 @@
 # Shared settings for every arm. Arms live in configs/arms/<name>.yaml.
 data_dir: data/bird_dev
 db: thrombosis_prediction
-runs_dir: runs
 cache_dir: cache/llm
 arms_dir: configs/arms
 orders: [0, 1, 2]
 max_steps: 8
 
-# SQL agent: local Ollama alias with a 32k context (see ollama/qwen3.5-9b-32k.Modelfile).
-agent:
-  model: qwen3.5-9b-32k
-  base_url: http://localhost:11434/v1
-  api_key_env: null
-  options: {reasoning_effort: none}  # thinking off: ~10x faster
+# SQL agent profiles. Pick one per run with --agent (default below). Each profile keeps its own runs,
+# noise rate and results, so answers from different agent models never mix.
+agent_profile: local
+agents:
+  # Local Ollama alias with a 32k context (see ollama/qwen3.5-9b-32k.Modelfile). No rate limits.
+  local:
+    model: qwen3.5-9b-32k
+    base_url: http://localhost:11434/v1
+    api_key_env: null
+    options: {reasoning_effort: none}  # thinking off: ~10x faster
+    runs_dir: runs
+    results_dir: results
+  # Groq free tier (8K tokens/min, 200K tokens/day): only for small runs of a few questions.
+  groq:
+    model: qwen/qwen3.8-27b
+    base_url: https://api.groq.com/openai/v1
+    api_key_env: GROQ_API_KEY
+    options: {reasoning_effort: none}
+    runs_dir: runs_groq
+    results_dir: results_groq
 
 # Proposer: only called after wrong answers, so it fits Groq's free daily limits.
 proposer:

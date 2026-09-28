@@ -91,8 +91,8 @@ def leakage_rate(runs_dir, arm, cfg, by_id):
     return leaky / total if total else None
 
 
-def analyze(cfg, out_dir="results"):
-    out = Path(out_dir)
+def analyze(cfg):
+    out = Path(cfg.get("results_dir", "results"))
     out.mkdir(exist_ok=True)
     runs_dir, db = cfg["runs_dir"], cfg["db"]
     questions = load_questions(cfg["data_dir"], db)
@@ -139,8 +139,9 @@ def analyze(cfg, out_dir="results"):
         mat = np.array([s[:length] for s in seqs[arm].values()], float)
         steps = np.arange(1, length + 1)
         ax1.plot(steps, (mat.cumsum(axis=1) / steps).mean(axis=0), label=arm)
-        rolling = np.array([np.convolve(r, np.ones(20) / 20, mode="valid") for r in mat]).mean(axis=0)
-        ax2.plot(np.arange(20, length + 1), rolling, label=arm)
+        w = min(20, length)  # smoke runs can be shorter than the window
+        rolling = np.array([np.convolve(r, np.ones(w) / w, mode="valid") for r in mat]).mean(axis=0)
+        ax2.plot(np.arange(w, length + 1), rolling, label=arm)
     ax1.set(title="Cumulative accuracy", xlabel="questions seen", ylabel="accuracy")
     ax2.set(title="Rolling accuracy (last 20 questions)", xlabel="questions seen")
     ax1.legend()
