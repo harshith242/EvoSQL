@@ -1,0 +1,28 @@
+[project]
+name = "evosql"
+version = "0.1.0"
+description = "Add your description here"
+authors = [
+    { name = "harshith242", email = "v.harshith2000@gmail.com" }
+]
+requires-python = ">=3.13"
+dependencies = [
+    "matplotlib>=3.11.2",
+    "numpy>=2.5.3",
+    "openai>=3.19.2",
+    "python-dotenv>=1.2.3",
+    "pyyaml>=6.0.3",
+    "scipy>=1.18.1",
+]
+
+[project.scripts]
+evosql = "evosql:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+]
