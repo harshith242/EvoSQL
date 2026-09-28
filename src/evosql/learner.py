@@ -128,9 +128,14 @@ class Gate:
         if (edit.kind != "delete" or not cfg.replay_k) and not after[0]:
             return Decision(knowledge, False, "does not fix question", replay_n=len(replay), pruned=pruned)
         gain = sum(after) - sum(before)
-        need = 0 if edit.kind == "delete" else 1 + math.floor(cfg.noise_p * len(replay) + 0.5)
-        if gain < need:
-            return Decision(knowledge, False, f"gain {gain} below needed {need}", gain, len(replay), pruned)
+        if edit.kind == "delete" and gain < 0:
+            return Decision(knowledge, False, f"delete loses {-gain} question(s)", gain, len(replay), pruned)
+        # Other replayed questions may flip by noise alone, so only breaks beyond the noise band count.
+        others_change = sum(after[1:]) - sum(before[1:])
+        tolerance = math.floor(cfg.noise_p * (len(replay) - 1) + 0.5)
+        if edit.kind != "delete" and others_change < -tolerance:
+            reason = f"breaks {-others_change} other question(s), noise tolerance {tolerance}"
+            return Decision(knowledge, False, reason, gain, len(replay), pruned)
         if edit.kind != "delete":
             note = candidate.get(note_id)
             fixed = [x.qid for x, b, a in zip(replay, before, after) if a and not b]

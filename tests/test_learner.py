@@ -16,6 +16,8 @@ CURRENT, SEEN = Q[1], [Q[2], Q[3], Q[4]]
 OUTCOMES = {
     (): {2, 4},
     ("good",): {1, 2, 3, 4},
+    ("specific",): {1, 2, 4},
+    ("meh",): {1, 4},
     ("bad",): {1},
     ("useless",): {2, 4},
     ("good", "useless"): {1, 2, 3, 4},
@@ -47,9 +49,16 @@ def test_note_that_fixes_question_but_breaks_others_is_rejected_by_gate_but_kept
     assert ratchet.accept(add("bad"), CURRENT, Knowledge(), SEEN, 5, [(7,)]).accepted
 
 
-def test_noise_band_raises_the_bar_on_small_gains():
-    d = gate(replay_k=3, noise_p=0.5).accept(add("good"), CURRENT, Knowledge(), SEEN, 5, [(7,)])
-    assert not d.accepted and "below needed 3" in d.reason
+def test_specific_note_that_fixes_only_its_own_question_is_accepted():
+    d = gate(replay_k=3, noise_p=0.15).accept(add("specific"), CURRENT, Knowledge(), SEEN, 5, [(7,)])
+    assert d.accepted and d.gain == 1
+
+
+def test_one_break_is_rejected_without_noise_but_tolerated_within_the_noise_band():
+    strict = gate(replay_k=3, noise_p=0.0).accept(add("meh"), CURRENT, Knowledge(), SEEN, 5, [(7,)])
+    noisy = gate(replay_k=3, noise_p=0.34).accept(add("meh"), CURRENT, Knowledge(), SEEN, 5, [(7,)])
+    assert not strict.accepted and "breaks 1 other" in strict.reason
+    assert noisy.accepted
 
 
 def test_delete_is_accepted_at_zero_gain():

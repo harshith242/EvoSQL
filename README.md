@@ -16,7 +16,7 @@ For each question, in a shuffled stream:
 4. **Gate**: the note is kept only if all of these hold:
    - it leaks no answer and stays short;
    - it fixes this question;
-   - replaying up to 5 earlier related questions shows a net gain above the calibrated noise band.
+   - replaying up to 5 earlier related questions shows it does not break more of them than the calibrated noise band explains.
 5. **Prune** every 20 questions: notes whose removal costs nothing are dropped.
 
 The gold SQL stands in for an analyst correcting the agent. BIRD's hand-written hints are hidden, so scores are **not** comparable to the BIRD leaderboard.

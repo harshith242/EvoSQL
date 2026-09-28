@@ -102,16 +102,19 @@ accept(edit):
     after  = run(replay, notes + edit)
     if not after[q].correct and edit.kind != delete:  reject "does not fix q"
 
-    net_gain = correct(after) - correct(before)
-    need     = 0 if edit.kind == delete else 1 + round(p * len(replay))
-    accept if net_gain >= need, else reject "below noise band"
+    if edit.kind == delete: accept if correct(after) >= correct(before), else reject
+    others_change = correct(after[others]) - correct(before[others])
+    tolerance     = round(p * (len(replay) - 1))
+    accept if others_change >= -tolerance, else reject "breaks others beyond noise"
 ```
+
+The rule is "fixes q and does not clearly hurt the other replayed questions". Noise flips go both ways, so demanding extra gain on other questions would reject correct notes that are specific to one question. Instead the noise band only excuses breaks it can explain. Lucky notes that slip through are caught by pruning.
 
 - **Leakage check (rule-based):** reject a note that contains any value from the gold result rows, or that shares a 5-word run with the question text. The note must state general knowledge, not the answer.
 - **Pruning (every 20 questions):** for each note, re-run the questions it was credited with (its source question plus replay gains) without the note. If accuracy does not drop, delete it.
 - **Knowledge cap:** 8,000 tokens total (fits the 32k agent context next to schema, docs and an 8-step conversation). If a new note would exceed the cap, run pruning first; if still over, reject.
 
-**Ratchet = same class with switches off:** `replay_k = 0`, no leakage check, no token check, no pruning, no cap, `need = 1` (just "fixes q"). We run the leakage checker on the ratchet's notes afterwards only to report its leakage rate.
+**Ratchet = same class with switches off:** `replay_k = 0`, no leakage check, no token check, no pruning, no cap, so it accepts any note that fixes q (every edit kind, deletes included). We run the leakage checker on the ratchet's notes afterwards only to report its leakage rate.
 
 ## 6. Arms
 
