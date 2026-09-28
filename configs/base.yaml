@@ -1,0 +1,22 @@
+# Shared settings for every arm. Arms live in configs/arms/<name>.yaml.
+data_dir: data/bird_dev
+db: thrombosis_prediction
+runs_dir: runs
+cache_dir: cache/llm
+arms_dir: configs/arms
+orders: [0, 1, 2]
+max_steps: 8
+
+# SQL agent: local Ollama alias with a 16k context (see ollama/qwen3.5-9b-16k.Modelfile).
+agent:
+  model: qwen3.5-9b-16k
+  base_url: http://localhost:11434/v1
+  api_key_env: null
+  options: {reasoning_effort: none}  # thinking off: ~10x faster
+
+# Proposer: only called after wrong answers, so it fits Groq's free daily limits.
+proposer:
+  model: openai/gpt-oss-120b
+  base_url: https://api.groq.com/openai/v1
+  api_key_env: GROQ_API_KEY
+  options: {reasoning_effort: medium}

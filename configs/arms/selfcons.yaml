@@ -1,0 +1,4 @@
+# Budget-matched baseline: majority vote over N samples. Set N from `python -m evosql analyze` after the evosql arm runs.
+docs: true
+learning: false
+self_consistency_n: 3

@@ -1,0 +1,4 @@
+# Naive ratchet: keep any note that fixes the current question. Same gate, regularizers off.
+docs: true
+learning: true
+gate: {replay_k: 0, noise_p: 0.0, leakage_check: false, token_check: false, cap_tokens: 0, prune_every: 0}
