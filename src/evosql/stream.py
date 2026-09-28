@@ -88,6 +88,8 @@ def run_arm(cfg, arm_name, order_seed, limit=None, agent_llm=None, proposer_llm=
     if learning:
         gate_cfg = dict(arm["gate"])
         if gate_cfg.get("noise_p") == "calibrated":
+            if not noise_path(cfg).exists():
+                raise SystemExit(f"{arm_name} needs the noise rate first: run `python -m evosql calibrate`")
             gate_cfg["noise_p"] = json.loads(noise_path(cfg).read_text())["p"]
         gate = Gate(GateConfig(**gate_cfg), solve, db.tables, by_id)
 

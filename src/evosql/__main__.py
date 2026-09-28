@@ -3,7 +3,7 @@ import argparse
 
 from dotenv import load_dotenv
 
-from evosql.stream import calibrate, load_config, run_arm
+from evosql.stream import calibrate, load_arm, load_config, run_arm
 
 
 def main():
@@ -11,9 +11,9 @@ def main():
     parser = argparse.ArgumentParser(prog="evosql")
     parser.add_argument("--config", default="configs/base.yaml")
     sub = parser.add_subparsers(dest="cmd", required=True)
-    run = sub.add_parser("run", help="run one arm over one or more question orders")
-    run.add_argument("--arm", required=True)
-    run.add_argument("--order", type=int, nargs="*", help="order seeds (default: all in config)")
+    run = sub.add_parser("run", help="run one or more arms over one or more question orders")
+    run.add_argument("--arm", nargs="+", required=True, help="arm names, run in the given order")
+    run.add_argument("--order", type=int, nargs="*", help="order seeds (default: all for learning arms, first for the rest)")
     run.add_argument("--limit", type=int, help="stop after this many questions")
     cal = sub.add_parser("calibrate", help="measure the noise flip rate p")
     cal.add_argument("--n", type=int, default=20)
@@ -22,9 +22,13 @@ def main():
 
     cfg = load_config(args.config)
     if args.cmd == "run":
-        for seed in args.order if args.order is not None else cfg["orders"]:
-            if not run_arm(cfg, args.arm, seed, args.limit):
-                break
+        for arm in args.arm:
+            # Non-learning arms give the same answer per question in any order, so one order is enough.
+            learning = load_arm(arm, cfg["arms_dir"]).get("learning", False)
+            seeds = args.order if args.order is not None else (cfg["orders"] if learning else cfg["orders"][:1])
+            for seed in seeds:
+                if not run_arm(cfg, arm, seed, args.limit):
+                    return
     elif args.cmd == "calibrate":
         print(calibrate(cfg, args.n))
     elif args.cmd == "analyze":

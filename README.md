@@ -44,14 +44,48 @@ echo "GROQ_API_KEY=..." > .env
 
 ## Run
 
+Arms: `vanilla`, `docs`, `ratchet`, `evosql`, `selfcons`, plus `docs_hints` as a reference only. Each one is a YAML file in `configs/arms/`.
+
+Useful flags for `run`:
+- `--arm` takes one or more arm names and runs them in the order given.
+- `--order` picks question orders (seeds). The default is every order in `configs/base.yaml` for learning arms, and only the first order for non-learning arms, whose answers don't depend on order.
+- `--limit N` stops after N questions per order, which is handy for quick checks.
+
+**Step 0: calibrate the noise rate once.** The `evosql` arm needs it and refuses to start without it.
+
 ```bash
-uv run python -m evosql calibrate                      # noise flip rate p
-uv run python -m evosql run --arm docs --order 0
-uv run python -m evosql run --arm evosql               # all orders in configs/base.yaml
-uv run python -m evosql analyze                        # results/summary.md + charts
+uv run python -m evosql calibrate --n 20
 ```
 
-Runs are resumable: every LLM reply is cached under `cache/`, and each arm appends one line per question to `runs/<arm>/<db>/order<k>.jsonl`. Rerunning a command continues where it stopped.
+**Test one arm**, e.g. only EvoSQL, as a 5-question check on order 0:
+
+```bash
+uv run python -m evosql run --arm evosql --order 0 --limit 5
+```
+
+**Run one arm fully** (all orders):
+
+```bash
+uv run python -m evosql run --arm evosql
+```
+
+**Run all arms.** `selfcons` goes last, because its N comes from EvoSQL's token use. Run `analyze` after `evosql`, copy the printed N into `configs/arms/selfcons.yaml`, then run `selfcons`:
+
+```bash
+uv run python -m evosql run --arm vanilla docs ratchet evosql
+uv run python -m evosql analyze
+uv run python -m evosql run --arm selfcons
+```
+
+**Analyze** whatever has run so far. This writes `results/summary.md`, `learning_curve.png` and `notes_growth.png`:
+
+```bash
+uv run python -m evosql analyze
+```
+
+Runs are resumable. Every LLM reply is cached under `cache/`, and each arm appends one line per question to `runs/<arm>/<db>/order<k>.jsonl`. If a run stops (Ctrl-C, crash, provider limit), rerun the same command and it continues where it stopped. A later run without `--limit` extends a limited one.
+
+To rerun an arm from scratch, delete its folder under `runs/<arm>/`. Clear `cache/llm/` only if you change the Ollama Modelfile, because cached replies are keyed by the model name, not its weights.
 
 ## Results
 
