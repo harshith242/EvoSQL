@@ -41,6 +41,24 @@ def _diff(after, before):
     return {k: after[k] - before[k] for k in after}
 
 
+def resume_point(log_path, notes_path):
+    """Number of finished steps. Repairs the two ways a kill can leave the log and notes out of sync."""
+    lines = log_path.read_text().splitlines() if log_path.exists() else []
+    saved = json.loads(notes_path.read_text()).get("done", 0) if notes_path.exists() else 0
+    try:
+        if lines:
+            json.loads(lines[-1])
+    except json.JSONDecodeError:
+        lines = lines[:-1]  # partial last line from a kill mid-write
+    if len(lines) == saved + 1:
+        lines = lines[:-1]  # killed after logging a step but before saving its notes: redo that step
+    if len(lines) != saved:
+        raise RuntimeError(f"{log_path} has {len(lines)} steps but notes say {saved}; fix or delete both files")
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    log_path.write_text("".join(line + "\n" for line in lines))
+    return saved
+
+
 def run_arm(cfg, arm_name, order_seed, limit=None, agent_llm=None, proposer_llm=None):
     arm = load_arm(arm_name, cfg.get("arms_dir", "configs/arms"))
     db = open_db(cfg["data_dir"], cfg["db"], with_docs=arm.get("docs", False))
@@ -53,7 +71,7 @@ def run_arm(cfg, arm_name, order_seed, limit=None, agent_llm=None, proposer_llm=
     out = Path(cfg["runs_dir"]) / arm_name / cfg["db"]
     log_path, notes_path = out / f"order{order_seed}.jsonl", out / f"order{order_seed}.notes.json"
     out.mkdir(parents=True, exist_ok=True)
-    done = len(log_path.read_text().splitlines()) if log_path.exists() else 0
+    done = resume_point(log_path, notes_path)
     knowledge = Knowledge.load(notes_path) if notes_path.exists() else Knowledge()
 
     agent_llm = agent_llm or make_llm(cfg["agent"], cfg["cache_dir"])
@@ -97,9 +115,10 @@ def run_arm(cfg, arm_name, order_seed, limit=None, agent_llm=None, proposer_llm=
                     d = gate.accept(edit, q, knowledge, order[:step], step, gold)
                     knowledge = d.knowledge
                     rec["decision"] = "accepted" if d.accepted else "rejected"
-                    rec.update(reason=d.reason, gain=d.gain, replay_n=d.replay_n)
+                    rec.update(reason=d.reason, gain=d.gain, replay_n=d.replay_n, pruned=d.pruned or [])
             if learning and gate.cfg.prune_every and (step + 1) % gate.cfg.prune_every == 0:
-                knowledge, rec["pruned"] = gate.prune(knowledge)
+                knowledge, removed = gate.prune(knowledge)
+                rec["pruned"] = rec.get("pruned", []) + removed
         except ProviderExhausted as e:
             print(f"provider exhausted at step {step}: {e}. Progress saved; rerun the same command later.")
             return False
@@ -110,7 +129,7 @@ def run_arm(cfg, arm_name, order_seed, limit=None, agent_llm=None, proposer_llm=
                    models=sorted(set().union(*(m.models_seen for m in llms))))
         with open(log_path, "a") as f:
             f.write(json.dumps(rec) + "\n")
-        knowledge.save(notes_path)
+        knowledge.save(notes_path, done=step + 1)
         print(f"[{arm_name} o{order_seed}] {step + 1}/{end} q{q.qid} correct={correct} "
               f"notes={len(knowledge.notes)} {rec.get('decision', '')} {rec.get('reason', '')}", flush=True)
     return True
@@ -120,8 +139,7 @@ NEUTRAL_NOTE = Edit("add", when="any question", text="Double-check that every co
 
 
 def calibrate(cfg, n=20, agent_llm=None):
-    """Flip rate p: how often correctness changes when a harmless note is added to the prompt.
-    This is the noise the gate faces, since it compares notes vs. notes + one new note."""
+    """Flip rate p: how often correctness changes when a harmless note is added (the gate's noise)."""
     db = open_db(cfg["data_dir"], cfg["db"], with_docs=True)
     order = load_questions(cfg["data_dir"], cfg["db"])
     random.Random(0).shuffle(order)

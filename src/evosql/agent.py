@@ -62,6 +62,8 @@ def run_tool(db, name, args):
     """Execute one tool call and return its text result."""
     if name == "run_sql":
         return _format_rows(*execute(db.path, args.get("sql"), max_rows=20))
+    if name not in ("describe_table", "profile_column"):
+        return f"ERROR: unknown tool {name!r}. Tools: describe_table, profile_column, run_sql, submit"
     table = args.get("table", "")
     if table not in db.tables:
         return f"ERROR: unknown table {table!r}. Tables: {', '.join(db.tables)}"
@@ -69,12 +71,15 @@ def run_tool(db, name, args):
         sample = _format_rows(*execute(db.path, f"SELECT * FROM {_quote(table)} LIMIT 3"))
         docs = db.docs.get(table, "")
         return f"Sample rows:\n{sample}" + (f"\n\nColumn descriptions:\n{docs}" if docs else "")
-    if name == "profile_column":
-        t, c = _quote(table), _quote(args.get("column", ""))
-        stats = execute(db.path, f"SELECT COUNT(*) - COUNT({c}), COUNT(DISTINCT {c}), MIN({c}), MAX({c}) FROM {t}")
-        top = execute(db.path, f"SELECT {c}, COUNT(*) FROM {t} GROUP BY {c} ORDER BY COUNT(*) DESC LIMIT 10")
-        return f"nulls | distinct | min | max\n{_format_rows(*stats)}\n\nTop values (value | count):\n{_format_rows(*top)}"
-    return f"ERROR: unknown tool {name!r}"
+    column = args.get("column", "")
+    columns = [r[1] for r in execute(db.path, f"PRAGMA table_info({_quote(table)})")[0]]
+    # SQLite reads an unknown double-quoted name as a string literal, so check it first.
+    if column not in columns:
+        return f"ERROR: unknown column {column!r} in {table}. Columns: {', '.join(columns)}"
+    t, c = _quote(table), _quote(column)
+    stats = execute(db.path, f"SELECT COUNT(*) - COUNT({c}), COUNT(DISTINCT {c}), MIN({c}), MAX({c}) FROM {t}")
+    top = execute(db.path, f"SELECT {c}, COUNT(*) FROM {t} GROUP BY {c} ORDER BY COUNT(*) DESC LIMIT 10")
+    return f"nulls | distinct | min | max\n{_format_rows(*stats)}\n\nTop values (value | count):\n{_format_rows(*top)}"
 
 
 def _parse_json_call(content):
@@ -88,7 +93,8 @@ def _parse_json_call(content):
         return None
     if not isinstance(obj, dict) or "tool" not in obj:
         return None
-    return {"id": None, "name": obj["tool"], "arguments": json.dumps(obj.get("args", {}))}
+    args = obj.get("args")
+    return {"id": None, "name": obj["tool"], "arguments": json.dumps(args if isinstance(args, dict) else {})}
 
 
 def answer(llm, db, question, knowledge, temperature=0.0, sample=0, max_steps=8):
@@ -122,6 +128,8 @@ def answer(llm, db, question, knowledge, temperature=0.0, sample=0, max_steps=8)
             try:
                 args = json.loads(call["arguments"] or "{}")
             except json.JSONDecodeError:
+                args = {}
+            if not isinstance(args, dict):
                 args = {}
             if call["name"] == "submit":
                 return AgentResult(args.get("sql"), step)

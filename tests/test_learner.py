@@ -79,3 +79,11 @@ def test_leakage_flags_answer_values_but_allows_filter_constants_from_gold_sql()
     assert leaks(add("the answer is 42"), q, gold_sql, gold)
     assert leaks(add("use SEX = 'F' for female patients"), q, gold_sql, gold) is None
     assert leaks(add("patients were admitted to the hospital means Admission = '+'"), q, gold_sql, gold)
+
+
+def test_modify_of_a_note_pruned_to_make_room_is_rejected_not_crashed():
+    k, useless = Knowledge().apply(add("useless"), 1, 2)
+    k.get(useless).credited_qids = [2]
+    edit = Edit("modify", note_id=useless, when="patient counts", text="good")
+    d = gate(cap_tokens=1).accept(edit, CURRENT, k, SEEN, 5, [(7,)])
+    assert not d.accepted and d.reason.startswith("invalid edit after prune") and d.pruned == [useless]

@@ -2,7 +2,8 @@ import json
 import sqlite3
 
 from evosql.llm import ProviderExhausted
-from evosql.stream import run_arm
+from evosql.knowledge import Knowledge
+from evosql.stream import resume_point, run_arm
 
 GOLD = "SELECT COUNT(*) FROM patient WHERE sex = 'F'"
 
@@ -69,3 +70,12 @@ def test_crash_then_rerun_resumes_without_duplicates_and_keeps_learned_notes(tmp
     assert [r["step"] for r in lines] == [0, 1, 2, 3]
     assert [r["correct"] for r in lines] == [False, True, True, True]
     assert lines[0]["decision"] == "accepted" and lines[-1]["notes_count"] == 1
+
+
+def test_resume_drops_partial_line_and_redoes_a_step_whose_notes_were_not_saved(tmp_path):
+    log, notes = tmp_path / "order0.jsonl", tmp_path / "order0.notes.json"
+    Knowledge().save(notes, done=2)
+    # Steps 0-2 logged, notes saved only through step 1, then a torn write.
+    log.write_text('{"step": 0}\n{"step": 1}\n{"step": 2}\n{"ste')
+    assert resume_point(log, notes) == 2
+    assert log.read_text() == '{"step": 0}\n{"step": 1}\n'

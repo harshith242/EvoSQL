@@ -1,6 +1,7 @@
 """BIRD data access: questions, schema, column docs, read-only SQL execution and scoring."""
 import csv
 import json
+import os
 import re
 import sqlite3
 import time
@@ -59,7 +60,7 @@ def execute(path, sql, timeout=30.0, max_rows=None):
         cur = con.execute(sql)
         rows = cur.fetchall() if max_rows is None else cur.fetchmany(max_rows)
         return rows, None
-    except (sqlite3.Error, sqlite3.Warning) as e:
+    except Exception as e:  # bad SQL of any kind (syntax, NUL bytes, non-string) is just a failed query
         return None, str(e)
     finally:
         con.close()
@@ -81,7 +82,9 @@ def gold_rows(path, q, cache_dir="cache/gold", timeout=120.0):
     if error:
         raise RuntimeError(f"gold SQL failed for question {q.qid}: {error}")
     cache.parent.mkdir(parents=True, exist_ok=True)
-    cache.write_text(json.dumps(rows))
+    tmp = cache.with_suffix(".tmp")
+    tmp.write_text(json.dumps(rows))
+    os.replace(tmp, cache)  # atomic, so a kill never leaves a truncated cache file
     return [tuple(r) for r in rows]
 
 

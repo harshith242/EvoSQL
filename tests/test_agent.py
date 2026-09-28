@@ -68,3 +68,10 @@ def test_self_consistency_picks_most_common_result_not_most_common_sql(db):
     })
     result = answer_self_consistent(llm, db, "female ids?", Knowledge(), n=3)
     assert result.sql == "SELECT id FROM patient WHERE sex = 'F'"
+
+
+def test_non_dict_tool_arguments_do_not_crash_the_run(db):
+    bad = call("submit")
+    bad["tool_calls"][0]["arguments"] = "null"
+    result = answer(FakeLLM({0: [bad]}), db, "ids?", Knowledge())
+    assert result.sql is None

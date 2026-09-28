@@ -1,6 +1,7 @@
 """Learned notes for one database: a small list of 'when X, do Y' rules rendered into the prompt."""
 import copy
 import json
+import os
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
@@ -74,9 +75,14 @@ class Knowledge:
         lines = [f"- [{n.id}] When {n.when}: {n.text}" for n in self.notes]
         return "Learned notes for this database (apply a note when its condition matches):\n" + "\n".join(lines)
 
-    def save(self, path):
-        Path(path).parent.mkdir(parents=True, exist_ok=True)
-        Path(path).write_text(json.dumps({"next_id": self.next_id, "notes": [asdict(n) for n in self.notes]}, indent=1))
+    def save(self, path, done=0):
+        """Atomic save; `done` = number of stream steps these notes include, checked on resume."""
+        path = Path(path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        data = {"done": done, "next_id": self.next_id, "notes": [asdict(n) for n in self.notes]}
+        tmp = path.with_suffix(".tmp")
+        tmp.write_text(json.dumps(data, indent=1))
+        os.replace(tmp, path)
 
     @classmethod
     def load(cls, path):

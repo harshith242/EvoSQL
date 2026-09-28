@@ -1,7 +1,9 @@
-"""OpenAI-compatible chat client (Groq by default) with a disk cache, retry/backoff and usage counters.
-Cached replies still count toward usage, so reported cost is the logical cost of the run."""
+"""OpenAI-compatible chat client (Ollama or Groq) with a disk cache, retry/backoff and usage counters.
+Cached replies still count toward usage, so reported cost is the logical cost of the run.
+The cache key has no model digest: clear cache/llm after changing an Ollama Modelfile."""
 import hashlib
 import json
+import os
 import time
 from pathlib import Path
 
@@ -35,7 +37,9 @@ class LLM:
         else:
             reply = self._call(messages, tools, temperature)
             path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(json.dumps(reply))
+            tmp = path.with_suffix(".tmp")
+            tmp.write_text(json.dumps(reply))
+            os.replace(tmp, path)  # atomic, so a kill never leaves a truncated cache file
         self.usage["calls"] += 1
         self.usage["prompt_tokens"] += reply["prompt_tokens"]
         self.usage["completion_tokens"] += reply["completion_tokens"]
@@ -54,12 +58,6 @@ class LLM:
                 last = e
                 time.sleep(min(2 ** (attempt + 1), 60))
                 continue
-            except openai.BadRequestError as e:
-                # Groq rejects malformed tool calls; hand the raw text back so the agent's JSON fallback can try.
-                failed = (getattr(e, "body", None) or {}).get("failed_generation")
-                if failed is None:
-                    raise
-                return {"content": failed, "tool_calls": [], "model": self.model, "prompt_tokens": 0, "completion_tokens": 0}
             msg = resp.choices[0].message
             calls = [{"id": c.id, "name": c.function.name, "arguments": c.function.arguments} for c in msg.tool_calls or []]
             details = getattr(resp.usage, "prompt_tokens_details", None)
