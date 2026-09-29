@@ -157,7 +157,7 @@ def mode_row(mode, res, docs, cfg, learn_usd):
         fixes_c, regressions_c = paired(res, docs, "correct_corrected")
         p = mcnemar(ok, [docs[q]["correct"] for q in qids])
         p_c = mcnemar(ok_c, [docs[q]["correct_corrected"] for q in qids])
-        vs_docs = f"+{fixes}/-{regressions}, p={p:.3f} | corrected +{fixes_c}/-{regressions_c}, p={p_c:.3f}"
+        vs_docs = f"+{fixes}/-{regressions}, p={p:.3f}; corrected +{fixes_c}/-{regressions_c}, p={p_c:.3f}"
     test_usd = sum(usd(r["usage"], cfg["agent"].get("usd_per_million")) for r in res.values())
     spent = test_usd + (learn_usd if mode != "docs" else 0.0)
     latency = [r["usage"].get("latency_s", 0.0) for r in res.values()]
@@ -210,7 +210,7 @@ def analyze(cfg):
                      f"exact McNemar p = {mcnemar(a, b):.3f}.")
 
     lines += ["", "## Final set, every mode", "",
-              "| Mode | Accuracy | 95% CI | vs docs (official \\| corrected) | Corrected acc | Test $ | $/correct "
+              "| Mode | Accuracy | 95% CI | vs docs (official; corrected) | Corrected acc | Test $ | $/correct "
               "| Latency p50 / p95 s | Turns | Knowledge use |", "|---|---|---|---|---|---|---|---|---|---|"]
     lines += [mode_row(mode, res, docs, cfg, learn_usd) for mode, res in results.items()]
     if missing:
