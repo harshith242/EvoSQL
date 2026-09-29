@@ -4,7 +4,7 @@ import sqlite3
 import numpy as np
 import pytest
 
-from evosql.evaluate import analyze, bootstrap_ci, gate_decision, mcnemar, run_mode
+from evosql.evaluate import analyze, bootstrap_ci, gate_candidates, gate_decision, mcnemar, run_mode
 from evosql.facts import Fact, FactBook
 from evosql.labels import FILE
 from evosql.llm import ProviderExhausted
@@ -133,3 +133,11 @@ def test_mcnemar_uses_only_discordant_pairs():
 def test_bootstrap_ci_brackets_true_accuracy():
     lo, hi = bootstrap_ci(np.random.default_rng(1).random(200) < 0.6)
     assert lo < 0.6 < hi and hi - lo < 0.2
+
+
+def test_gate_candidates_follow_config_order_and_skip_arms_without_facts(cfg):
+    FactBook([]).save(f"{cfg['runs_dir']}/knowledge_verified.json")  # verification kept nothing
+    assert gate_candidates(cfg) == ["all@single"]
+    FactBook([Fact("f1", "encoding", "Patient.SEX", "Women are 'F'.", ["women"])]).save(
+        f"{cfg['runs_dir']}/knowledge_verified.json")
+    assert gate_candidates(cfg) == ["all@single", "retrieve@verified"]

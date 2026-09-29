@@ -100,8 +100,7 @@ def _value_in(db, table, col, value):
 
 
 def check_fact(fact, db):
-    """Return why the fact must be dropped (bad kind, no trigger phrase, SQL, unknown column or value, restates the docs,
-    bad probe), or None."""
+    """Return why the fact must be dropped (bad kind, phrase, SQL, column, value, restates docs, probe), or None."""
     if fact.kind not in KINDS:
         return "unknown kind"
     if not any(isinstance(p, str) and p.strip() for p in fact.applies_to):
@@ -134,13 +133,22 @@ def check_fact(fact, db):
 BOUNDARY = re.compile(r"includ|boundary|inclusive|exclusive|strictly|at least|at most|or more|or less|or above|or below", re.I)
 
 
+def _direction(text):
+    # "<" or ">" when the text states one comparison direction, else None.
+    less = re.search(r"\b(below|under|less|lower|smaller)\b|<", text, re.I)
+    more = re.search(r"\b(above|over|greater|higher|larger|exceed\w*)\b|>", text, re.I)
+    return "<" if less and not more else ">" if more and not less else None
+
+
 def in_docs(fact, db):
-    """True when a range or code fact only restates the docs of a column it names (every number and quoted value)."""
+    """True when a range or code fact only restates the docs of a column it names (every number, value and direction)."""
     if fact.kind not in ("constraint", "encoding") or BOUNDARY.search(fact.fact):
         return False
     tokens = re.findall(r"(?<![\w.])\d+(?:\.\d+)?(?!\w|\.\d)", fact.fact) + re.findall(r"(?<!\w)'([^']+)'(?!\w)", fact.fact)
     notes = [{c.lower(): d for c, d in db.column_notes.get(t, {}).items()}.get(c.lower(), "") for t, c in fact_columns(db, fact)]
-    return bool(tokens) and any(n and all(re.search(rf"(?<![\w.]){re.escape(x)}(?!\w|\.\d)", n) for x in tokens) for n in notes)
+    same_way = lambda n: _direction(fact.fact) in (None, _direction(n))  # a fact that flips the docs' direction corrects them
+    return bool(tokens) and any(n and same_way(n) and all(re.search(rf"(?<![\w.]){re.escape(x)}(?!\w|\.\d)", n)
+                                                          for x in tokens) for n in notes)
 
 
 def _norm(text):

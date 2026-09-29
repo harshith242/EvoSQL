@@ -28,7 +28,7 @@ def test_discovery_skips_wrong_labels_drops_bad_facts_and_merges(db):
     qs = [q(1, "Right one?"), q(2, "Which women?"), q(3, "Mislabelled?"), q(4, "Female patient ids?")]
     gold = {x.qid: [(11,), (13,)] for x in qs}
     women = lambda qid: Fact("", "encoding", "Patient.SEX", "Women are stored as 'F'.", ["women"], None, [qid])
-    seen, logs = [], []
+    seen, logs, verified_with = [], [], {}
 
     def propose(batch, known):
         seen.append(([x.qid for x, _ in batch], len(known)))
@@ -38,15 +38,17 @@ def test_discovery_skips_wrong_labels_drops_bad_facts_and_merges(db):
 
     single, verified, conflicts = discover_facts(
         qs, db, gold, solve=lambda x: (x.qid == 1, "SELECT 1"), propose=propose, wrong_label=lambda x: x.qid == 3,
-        verify=lambda x, bundle: x.qid == 2, batch_size=1, log=logs.append)
+        verify=lambda x, bundle: verified_with.setdefault(x.qid, [f.source_qids for f in bundle]) and x.qid == 2,
+        batch_size=1, log=logs.append)
     assert seen == [([2], 0), ([4], 1)]  # q3 never reaches the proposer; later batches see earlier facts
     assert logs[0]["known_wrong_labels"] == [3] and logs[0]["right"] == 1
     reasons = [d["reason"] for d in logs[1]["dropped"]]
     assert reasons == ["unknown column", "leakage: contains answer value '11'"]
     assert len(single) == 1 and single[0].source_qids == [2, 4] and conflicts == []
-    # Only q2's bundle fixed q2 when re-answered, so verified keeps its copy of the fact and drops q4's.
+    # Each question is re-answered with only its own kept facts; q2's bundle fixed q2, so the merged fact is verified.
+    assert verified_with == {2: [[2]], 4: [[4]]}
     assert [(e["qid"], e["passed"]) for e in logs if e["event"] == "verify"] == [(2, True), (4, False)]
-    assert len(verified) == 1 and verified[0].source_qids == [2]
+    assert verified == single
 
 
 class ReplyLLM:

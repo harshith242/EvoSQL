@@ -102,15 +102,15 @@ def discover_facts(qs, db, gold, solve, propose, wrong_label, verify, batch_size
                 kept.append(f)
         facts += kept
         log({"event": "batch", "batch": [q.qid for q in batch], "kept": [asdict(f) for f in kept], "dropped": dropped})
-    passed = []
+    passed = set()
     for q in failures:
         bundle = [f for f in facts if f.source_qids == [q.qid]]
         if bundle:
             ok = verify(q, bundle)
-            passed += bundle if ok else []
+            passed |= {q.qid} if ok else set()
             log({"event": "verify", "qid": q.qid, "facts": [f.id for f in bundle], "passed": ok})
     single, conflicts = merge(facts, db)
-    verified, _ = merge(passed, db)
+    verified = [f for f in single if set(f.source_qids) & passed]  # a subset of single, as the report assumes
     log({"event": "merge", "before": len(facts), "after": len(single), "conflicts": conflicts,
          "verified": len(verified)})
     return single, verified, conflicts

@@ -1,5 +1,5 @@
-"""Runs and report: any delivery mode answers any question set (official and corrected scoring, latency, knowledge use).
-The one-shot gate picks the headline mode on the gate set; analyze compares every mode with docs on the final set."""
+"""Runs and report: any arm answers any question set (official and corrected scoring, latency, knowledge use).
+The one-shot gate picks the headline arm on the gate set; analyze compares every arm with docs on the final set."""
 import hashlib
 import json
 from collections import Counter
@@ -106,8 +106,7 @@ def paired(res, docs, key="correct"):
 
 
 def gate_decision(results, max_regressions, candidates):
-    """Pass: fixes >= regressions and regressions <= max. Headline: passing candidate with the best net (earlier
-    candidates win ties), else docs."""
+    """Pass: fixes >= regressions <= max. Headline: best-net passing candidate (earlier wins ties), else docs."""
     rows = {}
     for arm in candidates:
         fixes, regressions = paired(results[arm], results["docs"])
@@ -117,9 +116,18 @@ def gate_decision(results, max_regressions, candidates):
     return rows, max(passing, key=lambda a: rows[a]["fixes"] - rows[a]["regressions"], default="docs")
 
 
+def gate_candidates(cfg):
+    """Knowledge arms in protocol.arms order, minus arms with no facts (they would just repeat docs)."""
+    out = Path(cfg["runs_dir"])
+    return [a for a in cfg["protocol"]["arms"] if "@" in a and arm_book(out, a).facts]
+
+
 def gate(cfg):
     """Run docs and every knowledge arm once on the gate set and write gate.json with the headline arm."""
-    candidates = [a for a in cfg["protocol"]["arms"] if "@" in a]
+    candidates = gate_candidates(cfg)
+    skipped = [a for a in cfg["protocol"]["arms"] if "@" in a and a not in candidates]
+    if skipped:
+        print(f"not gate candidates (no facts): {skipped}")
     for arm in ("docs", *candidates):
         if not run_mode(cfg, arm, "gate"):
             return False
@@ -154,8 +162,7 @@ def gap_closed(res, docs, hints):
 
 
 def mode_row(arm, res, docs, hints, cfg, learn_usd):
-    """One report table row: accuracy, paired tests against docs (official and corrected), gap closed, cost, latency,
-    turns, knowledge use."""
+    """One report table row: accuracy, tests vs docs, gap closed, cost, latency, turns, knowledge use."""
     mode = split_arm(arm)[0]
     qids = list(res)
     ok, ok_c = [res[q]["correct"] for q in qids], [res[q]["correct_corrected"] for q in qids]
@@ -232,7 +239,7 @@ def analyze(cfg):
     lines += [mode_row(arm, res, docs, results.get("hints"), cfg, learn_usd) for arm, res in results.items()]
     if missing:
         lines.append(f"\nNot reported (incomplete final runs): {'; '.join(missing)}.")
-    lines += ["", f"Discovery cost ${learn_usd:.4f} is added to the knowledge arms' $/correct; the gate runs cost "
+    lines += ["", f"Discovery cost ${learn_usd:.4f} (including the verification runs) is added in full to every knowledge arm's $/correct; the gate runs cost "
               f"${gate_usd:.4f}. Real API spend so far: ${real:.3f} of ${cfg['protocol']['budget_usd']:.2f} (peak prices, "
               "cached replies free). Latency is the summed agent API time of the calls that answered a question; local "
               "embedding time (retrieve, tool) is excluded. Gap closed = (arm - docs) / (hints - docs), official gold. Corrected scores use the annotation-error study's gold, "
@@ -266,10 +273,10 @@ def analyze(cfg):
         if book.facts:
             lines.append(f"- {variant}: {len(book.facts)} facts {dict(Counter(f.kind for f in book.facts))}, "
                          f"~{book.total_tokens()} tokens.")
-    kept = {(f.kind, f.subject, f.fact) for f in books["verified"].facts}
+    kept = {f.id for f in books["verified"].facts}
     if books["single"].facts:
         lines += ["", "Facts (single set; [v] = also in the verified set):", "", "```"]
-        lines += [f"{f.id} {'[v]' if (f.kind, f.subject, f.fact) in kept else '   '} [{f.kind}] {f.subject}: {f.fact}  "
+        lines += [f"{f.id} {'[v]' if f.id in kept else '   '} [{f.kind}] {f.subject}: {f.fact}  "
                   f"(applies to: {', '.join(f.applies_to)})" for f in books["single"].facts] + ["```"]
     write_atomic(Path(cfg["results_dir"]) / "summary.md", "\n".join(lines) + "\n")
     print("\n".join(lines))

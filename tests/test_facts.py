@@ -87,5 +87,8 @@ def test_facts_that_only_restate_the_column_docs_are_dropped(db):
     boundary = fact("An abnormal Laboratory.UN includes the boundary: 30 or more.", "Laboratory.UN", "constraint")
     new_range = fact("A dangerous Laboratory.UN is above 40.", "Laboratory.UN", "constraint")
     assert check_fact(boundary, db) is None and check_fact(new_range, db) is None
+    # Docs with the direction inverted (as BIRD's uric acid docs are): a fact that corrects them is kept.
+    db.column_notes = {"Laboratory": {"UN": "urea nitrogen | values: Normal range: N > 30"}}
+    assert check_fact(restated, db) is None
     db.column_notes = {}
     assert check_fact(restated, db) is None  # without column docs (v4) nothing counts as restated
