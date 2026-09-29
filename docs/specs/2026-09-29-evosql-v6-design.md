@@ -1,7 +1,7 @@
 # EvoSQL v6: A Text-to-SQL Agent That Builds a Memory of Each Database (Design for Review)
 
 Date: 2026-09-29
-Status: draft for external review, before implementation. Revision 2 incorporates the first review.
+Status: draft for external review, before implementation. Revision 3 incorporates two reviews.
 Repo: `evosql/` (v3, v4 and v5 are tagged; this document is self-contained)
 
 ## 1. Goal
@@ -17,8 +17,8 @@ The claim is tested honestly:
 - memory built only from earlier questions;
 - expert-corrected labels;
 - two question orders;
-- paired statistics;
-- a $2 budget for the whole run.
+- paired statistics reported per stream, with conservative claims;
+- a $2.5 budget for the whole run.
 
 ## 2. Background
 
@@ -56,7 +56,7 @@ Attributing our shortfall against theirs:
 | No significant gain | **Sample size**: our v4 effect (+6.8) matched theirs (+6.3), but on 59 questions of one database, versus their multi-database test folds |
 | Database choice | thrombosis_prediction is among BIRD's noisiest; noise is concentrated in one database, not averaged over 11 |
 | v5 flat result | Our docs-in-prompt baseline absorbs knowledge that their schema and evidence layers supply |
-| Missing features | We do no tool-layer or schema evolution and no validated multi-round acceptance. v6 adds an online equivalent of their gate (Step 6) |
+| Missing features | We do no tool-layer or schema evolution and no validated multi-round acceptance. v6 adds a smaller, gate-like check on past questions before a fact goes live (Step 6), plus online pruning (Step 7). Neither is equivalent to their paired acceptance on a held-out validation split. |
 
 Sources: [paper](https://arxiv.org/abs/2609.15779), [code (BIRD benchmark)](https://github.com/ruc-datalab/EvoOntology).
 
@@ -64,8 +64,9 @@ v6 changes course accordingly:
 - clean labels;
 - docs in every arm;
 - a streaming memory;
-- very selective retrieval;
-- facts judged by their observed effect on later questions;
+- a pre-activation check on past questions;
+- very selective, schema-scoped retrieval;
+- online pruning of facts that do not help;
 - a simple memory baseline to beat;
 - two orders.
 
@@ -103,12 +104,14 @@ for seed in (0, 1):
         for q in shuffled(questions[db], seed):            # position 1..N
             none_ok  = cached_none_answer(q)                # the none arm does not depend on order
             ex_sql   = agent(q, examples(memory, q))
-            fx_sql, used = agent(q, facts(memory, q))       # `used` = IDs of the injected facts
+            fx_sql, used = agent(q, facts(memory, q))       # `used` = IDs of the injected facts (Step 8)
             score all three
             reveal gold(q):
                 memory.examples.add(q, gold_sql)                          # every question
-                memory.credit(used, fx_ok, none_ok)                       # Step 6
-                if not fx_ok: memory.facts.learn(q, fx_sql, gold_sql)     # Steps 2-5
+                memory.credit(used, fx_ok, none_ok)                       # Step 7: online pruning
+                if not fx_ok:
+                    candidates = learn(q, fx_sql, gold_sql)               # Steps 2-5
+                    memory.facts.activate(precheck(candidates, earlier questions))   # Step 6
 ```
 
 - **Test, then train:** every question is scored before the memory learns from it.
@@ -126,7 +129,7 @@ rules | schema | value profile + column descriptions | [memory section] | questi
 |---|---|
 | **none** (baseline) | empty |
 | **examples** (simple memory) | the 3 most similar earlier questions of this database, each with its correct SQL (every earlier question is stored) |
-| **facts** (EvoSQL) | at most **2** learned facts, and only those that pass a strict relevance test (Step 7); often none |
+| **facts** (EvoSQL) | at most **1 unproven** fact, or up to **2** if the second has a positive record; only facts passing the strict, schema-scoped eligibility test (Step 8); often none |
 
 The **examples** arm is the practical bar to clear. It learns from every earlier question, while facts learn only from failures. So a facts-vs-examples difference mixes two things: how knowledge is represented, and how much supervision it gets. This is stated as a limitation, not resolved (Section 10).
 
@@ -164,7 +167,7 @@ Its rules:
 ### Step 4: Free deterministic checks (no LLM)
 A fact is dropped if any of these holds:
 - it contains SQL;
-- it names a column that does not exist;
+- it names a column that does not exist, or names no table or column of the schema at all (a fact must be scoped to part of the schema);
 - a quoted value is not in the data (question wording in quotes is exempt);
 - its evidence query fails or returns nothing;
 - it only restates a column's documented range (unless it flips the documented direction);
@@ -172,7 +175,7 @@ A fact is dropped if any of these holds:
 
 **Why it helps:** in v3–v5 the invented values, invented columns and memorized answers were caught cheaply by these checks.
 
-**What they cannot do:** they do not prove a fact is true. An evidence query only shows that the named rows exist. Truth and usefulness are judged by Step 6.
+**What they cannot do:** they do not prove a fact is true. An evidence query only shows that the named rows exist. Usefulness is checked by Steps 6 and 7.
 
 ### Step 5: Deterministic merge
 - Duplicates (same kind, subject and normalised text) are combined, and their source questions are unioned.
@@ -181,38 +184,57 @@ A fact is dropped if any of these holds:
 
 **Why it helps:** the memory stays consistent as it grows.
 
-### Step 6: Judge each fact by its effect on later questions, and prune harmful ones
-This replaces the earlier "verify on the source question" step, which could pass by chance and dropped facts that were useful but not sufficient alone.
+### Step 6: Pre-activation check on earlier questions (gate-like)
+A new fact does not go live straight away.
 
-- **Credit rule:** whenever a fact is injected for a later question, compare the facts arm with the none arm on that same question:
-  - +1 if facts is right and none is wrong (a fix);
-  - −1 if facts is wrong and none is right (a regression);
-  - 0 otherwise.
+- **Find matches:** take up to **2 earlier questions of the same stream** that the fact is eligible for (Step 8 rules). Their gold SQL and the none arm's answers are already known. The source question is not used: passing on it is weak evidence.
+- **Re-answer** each of them with **only this fact** injected.
+- **Rule:** the fact is **rejected** if it causes any regression (none right, with-fact wrong). Otherwise it activates. Fixes found here count toward its record.
+- **No match:** a fact with no eligible earlier question activates as **unproven**, and is treated with extra caution in Steps 7 and 8.
 
-  The credit is recorded for every injected fact (at most 2).
-- **Pruning rule (pre-registered):** a fact whose running score reaches **−2** is retired. It is no longer retrieved, but it stays in the log.
-- **Timing:** the none answer and the gold are both known only after the question is scored, so pruning affects only later questions. It is test-then-train, with no look-ahead.
+**Why it helps:** this is a paired check against the no-memory answer before any future question is exposed to the fact. It is the closest affordable thing to EvoOntology's acceptance gate. It is weaker, though: it uses at most 2 questions, and they come from the stream's past, not a held-out validation split.
 
-**Why it helps:**
-- This is an online version of EvoOntology's validation gate, the component their ablation found most important.
-- A fact is judged on the questions it actually meets later, not on the question it came from. That is a direct measure of transfer.
-- Harmful facts, whether wrong, over-general or distracting, stop being used after a few bad outings.
+**Cost:** at most 2 agent runs per new fact.
 
-### Step 7: Retrieve very selectively
-Hybrid search ranks facts against the new question: BM25 over trigger phrases and text, plus embedding similarity (local `qwen3-embedding:0.6b`), fused with Reciprocal Rank Fusion.
+### Step 7: Online pruning by observed effect
+After each question, every fact that was injected gets credit, compared with the none arm on that same question:
+- **+1** if the facts arm is right and none is wrong (a fix);
+- **−1** if the facts arm is wrong and none is right (a regression);
+- **0** otherwise.
 
-A fact is **eligible** only if either holds:
-- one of its trigger phrases matches the question (keyword match on `applies_to`);
-- its embedding similarity is at least 0.6, a stricter threshold than v5's 0.5.
+Retirement rules (pre-registered). A retired fact is never retrieved again but stays in the log.
+- **Unproven fact** (score below +1): retired on its **first regression**.
+- **Proven fact** (score at least +1): retired when its score falls to **−2**.
+- **No effect:** retired after **5 uses with score 0**, so neutral facts stop occupying the slot.
 
-The **top 2** eligible, non-retired facts are injected. No fact type is always included. If nothing is eligible, the memory section is empty.
+Timing: none's answer and the gold are known only after the question is scored, so pruning affects later questions only (test, then train).
+
+**Why it helps:** it limits damage from facts that slip through Step 6. An unproven fact can harm at most one real question. Because an unproven fact is always alone in the prompt (Step 8), its credit is attributable.
+
+This is **online pruning after use**, not a gate. A proven fact that shares the prompt with another still shares that outcome's credit.
+
+### Step 8: Retrieve very selectively, scoped to the schema
+A fact is **eligible** for a question only if all three hold:
+1. **Phrase match:** one of its trigger phrases appears in the question as a whole phrase, with word boundaries (e.g. "age" does not match "average").
+2. **Not generic:** once at least 8 earlier questions exist in the stream, a trigger phrase that matches more than **25%** of them is ignored as too generic (e.g. "normal"). So a fact cannot qualify through that phrase.
+3. **Schema scope:** the question mentions the fact's table or column, either by name or by a content word from that column's description.
+
+Among eligible, non-retired facts:
+- proven facts rank before unproven ones;
+- ties are broken by hybrid search (BM25 plus embedding similarity, fused with Reciprocal Rank Fusion);
+- embedding similarity alone never makes a fact eligible.
+
+Injection:
+- **1 unproven fact** at most;
+- **a second slot** only for a fact with score at least +1;
+- nothing if no fact is eligible.
 
 **Why it helps:**
 - v5 injected about 8.8 facts per question, and its regressions were mostly style flips on questions the facts had nothing to do with.
-- Grain and relation facts matter only for aggregation and join questions, so they now compete like every other fact.
-- A small, precise memory section changes the agent's behaviour only where it should.
+- Matching a whole phrase, filtering generic phrases and scoping to the schema remove facts that merely sound related.
+- A single unproven fact makes each outcome attributable to it.
 
-### Step 8: Keep learning
+### Step 9: Keep learning
 Each database's memory grows throughout its stream, and later questions draw on everything learned before them.
 
 **Why it helps:** questions about one database reuse the same tables, codes, conventions and join paths. A lesson learned at position 10 can fix positions 30, 45 and 60. The learning curve (Section 7) tests this: if memory works, the gap over the baseline widens later in the stream.
@@ -221,7 +243,7 @@ Each database's memory grows throughout its stream, and later questions draw on 
 - **Facts can win because:**
   - a fact transfers across questions that look different but share a concept;
   - it carries the reason, not just the SQL;
-  - it is short and pruned by its observed effect.
+  - it is short, checked before use, and pruned by its observed effect.
 - **Examples can win because:**
   - they need no distillation, so there are no proposer errors;
   - they see every question, not only failures;
@@ -229,37 +251,55 @@ Each database's memory grows throughout its stream, and later questions draw on 
 
 ## 7. Evaluation
 
-- **Primary endpoint (pre-registered):** accuracy on the **second half of each database's stream** (position > N/2), **facts vs none**. It is pooled over the four databases and both orders, giving about 220 (order, question) pairs, each paired with the none arm's answer to the same question.
-  - **Effect:** the difference in accuracy, with a 95% CI from a bootstrap that resamples questions (clustering the two orders of the same question).
-  - **Test:** a paired sign-flip permutation test at the question level.
-- **Stratified reporting:** the same numbers per database and per order.
+The unit of independent evidence is the **stream**: one (database, order) pair, 8 in total.
+- **Questions within a stream are not independent:** they share an evolving memory.
+- **The two orders of one database are not independent either:** they share the none arm's answers.
+
+The claims are sized accordingly.
+
+- **Primary result (pre-registered):** second-half accuracy (position > N/2), **facts vs none**, reported for **each of the 8 streams**:
+  - the difference;
+  - its fixes and regressions;
+  - its learning curve.
+
+  The headline is the **direction count**: how many of the 8 streams show a positive second-half difference. It comes with the pooled mean difference.
+- **Sensitivity analyses:**
+  - a stream-level block bootstrap of the pooled difference, resampling whole streams;
+  - a leave-one-database-out analysis.
+- **Heuristic statistics, labelled as such:**
+  - a question-level paired sign-flip test;
+  - a question-clustered bootstrap CI;
+  - the power estimate (about 6–8 points).
+
+  These ignore sequential dependence within a stream and are **not exact tests**.
+- **What the result can and cannot show:** with 8 streams, it can show a consistent late-stream gain. It cannot give a strong frequentist guarantee, or prove that particular facts caused the gain. Per-fact records (Steps 6–7) are descriptive evidence only.
 - **Secondary endpoints:**
   - examples vs none;
-  - facts vs examples;
+  - facts vs examples (same per-stream reporting);
   - whole-stream accuracy (this mostly measures the cold start);
-  - a learning curve: accuracy per quarter of the stream, per arm and order.
+  - a learning curve per quarter of the stream.
 - **Also reported:**
   - cost ($ per correct answer, learning included);
   - latency (p50/p95 API time) and agent turns;
-  - injected items per question;
+  - injected items per question, with their IDs;
   - memory size over time;
   - facts dropped by each check;
-  - retired facts with their credit history;
-  - per-fact fixes and regressions;
+  - pre-check results (rejected, activated, unproven);
+  - retired facts with the reason and their credit history;
   - the final facts verbatim;
   - pinned data hashes.
-- **Power:** about 220 clustered pairs can detect a gain of roughly 6–8 points. Smaller real effects may not reach significance. The report says so and shows the CIs and the learning curve alongside the p-value.
-- **If the budget guard stops the run inside order 1:** only the completed databases are reported, with no primary claim.
+- **If the budget guard stops the run inside order 1:** only completed streams are reported, with no primary claim.
 
-## 8. Budget ($2 cap, peak prices, persisted spend guard)
+## 8. Budget ($2.5 cap, peak prices, persisted spend guard)
 
 | Item | Estimate |
 |---|---|
 | none arm, 221 questions, run once | ~$0.27 |
 | examples arm, 2 orders × 221 | ~$0.57 |
-| facts arm, 2 orders × 221 | ~$0.53 |
+| facts arm, 2 orders × 221 | ~$0.50 |
 | Proposer, ~2 × 90 failures (thinking effort medium) | ~$0.55 |
-| **Total** | **~$1.9** |
+| Pre-activation checks, ≤ 2 runs per new fact (~2 × 200 runs) | ~$0.50 |
+| **Total** | **~$2.4** |
 
 - **Run order:** order 1 (all arms, all databases) runs before order 2, so a budget stop never leaves order 1 incomplete.
 - **Caching:** all LLM replies are cached, so a stopped run resumes and replays cost nothing.
@@ -269,11 +309,11 @@ Each database's memory grows throughout its stream, and later questions draw on 
 | Risk | Mitigation |
 |---|---|
 | Few failures per database (about 20–30), so few facts | Streaming uses every question; the learning curve shows whether the facts help late in the stream |
-| Wrong or over-general facts | Checks (Step 4), merge (Step 5), and credit-based pruning on later questions (Step 6); all facts and their credit listed in the report |
-| Distraction from injected facts | At most 2 facts, a strict eligibility rule, no always-included types; per-question regressions reported with the injected IDs |
-| Order effects | Two pre-registered orders; results stratified by order |
-| Credit is noisy with 2 facts sharing one outcome | Small cap; a pruning threshold of −2 rather than −1; credit histories reported |
-| The effect is too small to detect | Stated power; CIs and a learning curve alongside the p-value |
+| Wrong or over-general facts | Checks (Step 4), merge (Step 5), a pre-activation check on earlier questions (Step 6), pruning after the first regression for unproven facts (Step 7); all facts and their credit listed in the report |
+| Distraction from injected facts | At most 1 unproven fact; whole-phrase, non-generic, schema-scoped eligibility; per-question regressions reported with the injected IDs |
+| Order effects and few independent streams | Two pre-registered orders; results per stream; conservative claims (Section 7) |
+| Credit is shared when 2 facts are injected | Only a proven fact may share the prompt; unproven facts are always alone |
+| The effect is too small to detect | Direction count over 8 streams; block bootstrap; heuristic power stated as heuristic |
 | Label residue in Arcwise-Plat | Pinned data; known open issues listed; per-question outputs published for audit |
 
 ## 10. Limitations and out of scope
@@ -284,11 +324,12 @@ Each database's memory grows throughout its stream, and later questions draw on 
   - right/wrong-only feedback, or no feedback;
   - other benchmarks;
   - a stronger proposer;
+  - more than two orders (budget);
   - tool-layer or schema evolution;
   - tool-based fact search.
 
 ## 11. Questions for the reviewer
 
-1. Is the credit rule (a fact scored against the none arm on later questions where it was injected, with retirement at −2) a sound online substitute for a validation gate?
-2. Is a top-2 cap, with keyword-or-cosine ≥ 0.6 eligibility, strict enough, or should eligibility also need a score margin over the next candidate?
-3. Is pooling two orders with question-clustered inference appropriate for the primary endpoint?
+1. Is a pre-activation check on at most 2 earlier matched questions (reject on any regression) a reasonable budget-limited gate, or should an unmatched fact stay inactive rather than going live as unproven?
+2. Are the eligibility thresholds sound as pre-registered values: a genericity cut-off of 25% of earlier questions, applied from 8 questions on, and retirement after 5 uses with no effect?
+3. Is the 8-stream direction count, with a stream-level block bootstrap, the right primary framing given the dependence structure?
