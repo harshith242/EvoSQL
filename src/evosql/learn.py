@@ -179,14 +179,18 @@ def run_learn(cfg):
     budget = Budget(out / "spend.json", v3["budget_usd"])
     bar = tqdm(desc="learn", unit="run", dynamic_ncols=True)
 
+    sql_memo = {}  # (qid, rendered knowledge) -> SQL, so re-reading an answer does not count its cost twice
+
     def run(q, book):
-        try:
-            r = answer(agent, db, q.question, book, max_steps=cfg["max_steps"])
-        finally:
-            budget.charge(billed)
-        bar.update(1)
-        bar.set_postfix_str(f"spent ${budget.total:.3f}")
-        return r.sql
+        key = (q.qid, book.render())
+        if key not in sql_memo:
+            try:
+                sql_memo[key] = answer(agent, db, q.question, book, max_steps=cfg["max_steps"]).sql
+            finally:
+                budget.charge(billed)
+            bar.update(1)
+            bar.set_postfix_str(f"spent ${budget.total:.3f}")
+        return sql_memo[key]
 
     def solve(q, book):
         return exec_match(db.path, run(q, book), gold_rows(db.path, q))

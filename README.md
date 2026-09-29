@@ -50,6 +50,7 @@ Streaming pilots (v1/v2) showed notes turning into SQL patches and copying BIRD 
 
 - **Facts, not fixes:** each fact is a `mapping` ("admitted to the hospital" means `Patient.Admission` is `'+'`), `constraint`, `encoding` or `meaning`. Facts containing SQL, naming columns or values that do not exist in the data, or leaking an answer are dropped for free before any LLM test. The proposer may `skip` questions whose gold SQL looks like an annotation error.
 - **Gated versions:** a batch of up to 5 failures yields a candidate knowledge version. It is kept only if it beats the current version on the whole learning set by at least `max(2, calibration flips)` and fixes a question in its batch. After 2 epochs the knowledge is consolidated (kept only if not worse) and frozen.
+- **Scoring:** BIRD's hand-written hints are hidden, and answers are scored against BIRD's gold SQL as-is, including questions whose gold SQL looks questionable (those are skipped for learning, not for scoring).
 - **Budget:** the agent runs with thinking off (deterministic); all calls are cached; a spend guard stops at `v3.budget_usd` ($1) of real API spend and resumes on rerun.
 
 ```bash

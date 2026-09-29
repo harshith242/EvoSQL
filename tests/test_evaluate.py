@@ -7,7 +7,7 @@ from evosql.bird import Question
 from evosql.evaluate import run_test, selfcons_n, twins, where_columns
 from evosql.llm import ProviderExhausted
 
-NAMES = ["ID", "SEX", "UN", "Admission", "Birthday", "CRE"]
+NAMES = ["ID", "SEX", "UN", "Admission", "Birthday", "CRE", "Date", "First Date", "Diagnosis", "RA"]
 GOLD = "SELECT COUNT(*) FROM Patient WHERE SEX = 'F'"
 
 
@@ -15,6 +15,9 @@ def test_where_columns_finds_filters_not_selected_columns():
     sql = ("SELECT T1.SEX, T2.UN FROM Patient T1 JOIN Laboratory T2 ON T1.ID = T2.ID "
            "WHERE T2.UN = 29 AND T1.Admission = '+' ORDER BY T1.Birthday")
     assert where_columns(sql, NAMES) == {"UN", "Admission"}
+    # A value is not a column, and "First Date" does not also count as "Date".
+    sql = "SELECT SEX FROM Patient WHERE Diagnosis = 'RA' AND `First Date` > '1990-01-01'"
+    assert where_columns(sql, NAMES) == {"Diagnosis", "First Date"}
 
 
 def test_twins_are_test_questions_sharing_a_filter_column_with_learning():
@@ -62,8 +65,10 @@ def cfg(tmp_path, monkeypatch):
             "v3": {"n_test": 3, "budget_usd": 1.0, "selfcons_max_n": 5}}
 
 
-def test_run_test_resumes_without_duplicates(cfg):
+def test_run_test_resumes_without_duplicates_or_torn_lines(cfg):
     assert run_test(cfg, "docs", agent_llm=FakeAgent(crash_at=2)) is False
+    with open(f"{cfg['runs_dir']}/test_docs.jsonl", "a") as f:
+        f.write('{"qid": 9, "corr')  # killed mid-write
     assert run_test(cfg, "docs", agent_llm=FakeAgent())
     lines = [json.loads(line) for line in open(f"{cfg['runs_dir']}/test_docs.jsonl")]
     assert [r["qid"] for r in lines] == [3, 4, 5] and all(r["correct"] for r in lines)
@@ -81,3 +86,6 @@ def test_selfcons_n_matches_evosql_spend_per_test_question_and_is_capped(cfg):
     learn["usage"]["agent"]["prompt_tokens"] = 60_000_000
     open(f"{runs}/learn.jsonl", "w").write(json.dumps(learn) + "\n")
     assert selfcons_n(cfg) == 5  # capped
+    open(f"{runs}/test_evosql.jsonl", "w").write(record(3) + "\n")
+    with pytest.raises(SystemExit):
+        selfcons_n(cfg)  # a partial evosql run would understate its cost

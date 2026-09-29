@@ -59,8 +59,8 @@ def main():
         from evosql.learn import run_learn
         run_learn(cfg)
     elif args.cmd == "test":
-        from evosql.evaluate import run_test
-        for arm in args.arm:
+        from evosql.evaluate import ARMS, run_test
+        for arm in sorted(args.arm, key=ARMS.index):  # selfcons needs docs and evosql first
             if not run_test(cfg, arm):
                 return
     elif args.cmd == "analyze-v3":
