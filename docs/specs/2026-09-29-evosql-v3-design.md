@@ -113,7 +113,7 @@ All arms answer the same 50 test questions with the same agent and frozen settin
   - `learn.py`: calibration, the learning loop, consolidation.
   - `evaluate.py`: the test arms and v3 analysis.
 - **CLI:** `split`, `learn`, `test --arm`, `analyze-v3`.
-- **Reused:** `agent.answer` (it takes rendered knowledge text), `bird` (including the value profile), `llm` (cache, retries, cost), and `analysis.usd`, `mcnemar` and `bootstrap_ci`.
+- **Reused:** `agent.answer` (it accepts any knowledge object with `render()`), `bird` (including the value profile), `llm` (cache, retries, cost), and `analysis.usd`, `mcnemar` and `bootstrap_ci`.
 - **Config:** a `v3` section in `configs/base.yaml` (sizes, epochs, batch size, thinking settings, output folders).
 - **Tests** (targeted):
   - the checks (SQL detection, grounding, leakage);
