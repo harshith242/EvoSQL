@@ -15,7 +15,7 @@ from evosql.stream import load_config, make_llm
 
 # Edit these two lines: PROFILE is an agent profile from configs/base.yaml (deepseek or local).
 PROFILE = "deepseek"
-N_QUESTIONS = 5
+N_QUESTIONS = 2
 
 
 class LoggedLLM(LLM):

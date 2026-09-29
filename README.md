@@ -39,7 +39,7 @@ Requires [uv](https://docs.astral.sh/uv/) and a [DeepSeek](https://platform.deep
 uv sync
 python scripts/get_bird.py thrombosis_prediction      # downloads BIRD dev once, keeps one database
 echo "DEEPSEEK_API_KEY=..." > .env
-uv run python smoke_test.py                           # 5 questions, prints every agent step, cost and cache hits
+uv run python smoke_test.py                           # 2 questions, prints every agent step, cost and cache hits
 # optional local fallback:
 ollama pull qwen3.5:9b && ollama create qwen3.5-9b-32k -f ollama/qwen3.5-9b-32k.Modelfile
 ```
