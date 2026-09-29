@@ -2,11 +2,13 @@ import json
 import sqlite3
 
 from evosql.bird import Question, open_db
+import evosql.labels
 from evosql.labels import FILE, corrected, known_wrong
 
 
 def test_corrected_labels_pick_our_database_and_flag_changed_results(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)  # gold rows are cached under ./cache
+    monkeypatch.setattr(evosql.labels, "OUR_FIXES", tmp_path / "none.json")
     (tmp_path / "toy").mkdir()
     con = sqlite3.connect(tmp_path / "toy" / "toy.sqlite")
     con.execute("CREATE TABLE Patient (ID INTEGER, SEX TEXT)")
@@ -27,3 +29,14 @@ def test_corrected_labels_pick_our_database_and_flag_changed_results(tmp_path, m
     no_fix = Question(9, "toy", "Female?", "SELECT ID FROM Patient WHERE SEX = 'F'", "simple")
     assert known_wrong(db, counts_rows, fixes)
     assert not known_wrong(db, same_result, fixes) and not known_wrong(db, no_fix, fixes)
+
+
+def test_our_reviewed_fixes_override_the_study(tmp_path, monkeypatch):
+    (tmp_path / FILE).parent.mkdir(parents=True)
+    (tmp_path / FILE).write_text(json.dumps([{"question_id": "7", "db_id": "toy", "SQL": "SELECT 1"},
+                                             {"question_id": "8", "db_id": "toy", "SQL": "SELECT 2"}]))
+    ours = tmp_path / "ours.json"
+    ours.write_text(json.dumps([{"question_id": 8, "db_id": "toy", "SQL": "SELECT 3", "reason": "r"},
+                                {"question_id": 9, "db_id": "toy", "SQL": "SELECT 4", "reason": "r"}]))
+    monkeypatch.setattr(evosql.labels, "OUR_FIXES", ours)
+    assert corrected(tmp_path, "toy") == {7: "SELECT 1", 8: "SELECT 3", 9: "SELECT 4"}

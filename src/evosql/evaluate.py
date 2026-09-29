@@ -171,8 +171,12 @@ def mode_row(mode, res, docs, cfg, learn_usd):
 
 
 def analyze(cfg):
-    out, parts, _, _ = load_run(cfg)
+    out, parts, db, by_id = load_run(cfg)
     results = load_results(out, "final", parts)
+    fixes = corrected(cfg["data_dir"], cfg["db"])
+    for res in results.values():  # rescore on the current corrected labels, so label fixes need no rerun
+        for q, r in res.items():
+            r["correct_corrected"] = exec_match(db.path, r["sql"], corrected_gold(db, by_id[q], fixes))
     if "docs" not in results:
         raise SystemExit("analyze needs a complete docs run on the final set")
     gate_file = out / "gate.json"
@@ -218,8 +222,8 @@ def analyze(cfg):
     lines += ["", f"Discovery cost ${learn_usd:.4f} is added to the knowledge modes' $/correct; the gate runs cost "
               f"${gate_usd:.4f}. Real API spend so far: ${real:.3f} of ${cfg['protocol']['budget_usd']:.2f} (peak prices, "
               "cached replies free). Latency is the summed agent API time of the calls that answered a question; local "
-              "embedding time (retrieve, tool) is excluded. Corrected scores use the annotation-error study's gold where "
-              "it exists, otherwise official."]
+              "embedding time (retrieve, tool) is excluded. Corrected scores use the annotation-error study's gold, "
+              "overlaid with this repo's reviewed fixes (labels/evosql_fixes.json), otherwise official."]
 
     if gated:
         lines += ["", f"## Gate ({len(parts['gate'])} questions, docs right {gated['docs_right']})", "",
