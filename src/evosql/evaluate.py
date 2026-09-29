@@ -1,7 +1,6 @@
-"""Test phase and report: every arm answers the same frozen test questions; analyze compares them
-(accuracy, paired tests, cost incl. amortized learning, knowledge-relevant vs other questions, learned knowledge)."""
+"""Runs and report: any delivery mode answers any question set (official and corrected scoring, latency, knowledge use).
+The one-shot gate picks the headline mode on the gate set; analyze compares every mode with docs on the final set."""
 import json
-import re
 from collections import Counter
 from pathlib import Path
 
@@ -9,16 +8,18 @@ import numpy as np
 from scipy.stats import binomtest
 from tqdm import tqdm
 
-from evosql.agent import answer, answer_self_consistent
+from evosql.agent import answer
 from evosql.bird import exec_match, gold_rows
 from evosql.budget import Budget, BudgetExceeded
-from evosql.config import ARMS
-from evosql.facts import FactBook, fact_columns
+from evosql.config import MODES
+from evosql.delivery import make_delivery
+from evosql.facts import FactBook
 from evosql.files import append_jsonl, read_jsonl, write_atomic
+from evosql.labels import corrected, corrected_gold
 from evosql.llm import ProviderExhausted, make_llm, usd
 from evosql.split import load_run
 
-KNOWLEDGE_FILE = {"evosql": "knowledge_final.json", "ungated": "ungated.json"}
+HEADLINE_ORDER = ("retrieve", "tool", "all")  # gate tie order for the headline mode
 
 
 def mcnemar(a, b):
@@ -28,74 +29,49 @@ def mcnemar(a, b):
     return binomtest(only_a, only_a + only_b, 0.5).pvalue if only_a + only_b else 1.0
 
 
-def bootstrap_ci(outcomes, iters=2000, seed=0):
-    """95% bootstrap CI of the mean of boolean outcomes."""
-    rng, x = np.random.default_rng(seed), np.asarray(outcomes, float)
+def bootstrap_ci(values, iters=2000, seed=0):
+    """95% bootstrap CI of the mean (accuracy for booleans, accuracy difference for paired -1/0/1)."""
+    rng, x = np.random.default_rng(seed), np.asarray(values, float)
     means = [x[rng.integers(0, len(x), len(x))].mean() for _ in range(iters)]
     return float(np.percentile(means, 2.5)), float(np.percentile(means, 97.5))
 
 
-def arm_knowledge(out, arm):
-    if arm not in KNOWLEDGE_FILE:
+def mode_book(out, mode):
+    if mode == "docs":
         return FactBook()
-    path = Path(out) / KNOWLEDGE_FILE[arm]
+    path = Path(out) / "knowledge.json"
     if not path.exists():
-        raise SystemExit(f"{arm} needs {path.name}: run `python -m evosql learn` first")
+        raise SystemExit(f"{mode} needs {path}: run `python -m evosql discover` first")
     return FactBook.load(path)
 
 
-def learn_usd(cfg):
-    """Logical cost of the learning phase (the last learn.jsonl entry carries cumulative usage)."""
-    log = read_jsonl(Path(cfg["runs_dir"]) / "learn.jsonl")
-    if not log:
-        return 0.0
-    usage = log[-1]["usage"]
-    return usd(usage["agent"], cfg["agent"].get("usd_per_million")) + usd(usage["proposer"], cfg["proposer"].get("usd_per_million"))
-
-
-def test_usd(cfg, arm):
-    return sum(usd(r["usage"], cfg["agent"].get("usd_per_million")) for r in read_jsonl(Path(cfg["runs_dir"]) / f"test_{arm}.jsonl"))
-
-
-def selfcons_n(cfg):
-    """Samples for self-consistency so it spends about what evosql spends per test question (learning amortized)."""
-    out, n_test = Path(cfg["runs_dir"]), cfg["protocol"]["n_test"]
-    docs = read_jsonl(out / "test_docs.jsonl")
-    if len(docs) < n_test or len(read_jsonl(out / "test_evosql.jsonl")) < n_test:
-        raise SystemExit("selfcons needs complete docs and evosql test runs first")
-    docs_per_q = test_usd(cfg, "docs") / len(docs)
-    evosql_per_q = (learn_usd(cfg) + test_usd(cfg, "evosql")) / n_test
-    return min(cfg["protocol"]["selfcons_max_n"], max(1, round(evosql_per_q / docs_per_q))) if docs_per_q else 1
-
-
-def run_test(cfg, arm, agent_llm=None):
-    """Answer every test question with the arm's frozen setup; resumes by skipping logged questions."""
-    out, split, db, by_id = load_run(cfg)
-    book = arm_knowledge(out, arm)
-    log_path = out / f"test_{arm}.jsonl"
+def run_mode(cfg, mode, set_name, agent_llm=None, knowledge=None):
+    """Answer every question of a set with one delivery mode; resumes by skipping logged questions."""
+    out, parts, db, by_id = load_run(cfg)
+    book = mode_book(out, mode)
+    knowledge = knowledge or make_delivery(mode, book, cfg["search"])
+    fixes = corrected(cfg["data_dir"], cfg["db"])
+    log_path = out / f"{set_name}_{mode}.jsonl"
     done = read_jsonl(log_path)
-    # A resumed run must keep its knowledge and sample count, or one log would mix two setups.
-    if done and done[0].get("knowledge") != book.digest():
-        raise SystemExit(f"{log_path.name} was made with different knowledge; delete it to rerun {arm}")
-    n = (done[0]["samples"] if done else selfcons_n(cfg)) if arm == "selfcons" else 1
+    if done and done[0]["knowledge"] != book.digest():
+        raise SystemExit(f"{log_path.name} was made with different knowledge; delete it to rerun {mode}")
     write_atomic(log_path, "".join(json.dumps(r) + "\n" for r in done))  # drops a torn last line
     seen, right = {r["qid"] for r in done}, sum(r["correct"] for r in done)
     budget = Budget(out / "spend.json", cfg["protocol"]["budget_usd"])
     agent = agent_llm or make_llm(cfg["agent"], cfg["cache_dir"], budget.spend)
-    with tqdm(total=len(split["test"]), initial=len(seen), desc=f"test {arm}", unit="q", dynamic_ncols=True) as bar:
+    with tqdm(total=len(parts[set_name]), initial=len(seen), desc=f"{set_name} {mode}", unit="q",
+              dynamic_ncols=True) as bar:
         try:
-            for qid in split["test"]:
+            for qid in parts[set_name]:
                 if qid in seen:
                     continue
                 q, before = by_id[qid], dict(agent.usage)
-                if n > 1:
-                    sql = answer_self_consistent(agent, db, q.question, book, n, cfg["max_steps"])
-                else:
-                    sql = answer(agent, db, q.question, book, max_steps=cfg["max_steps"])
+                sql, turns = answer(agent, db, q.question, knowledge, max_steps=cfg["max_steps"])
                 correct = exec_match(db.path, sql, gold_rows(db.path, q))
                 right += correct
                 append_jsonl(log_path, {"qid": qid, "difficulty": q.difficulty, "sql": sql, "correct": correct,
-                                        "samples": n, "knowledge": book.digest(),
+                                        "correct_corrected": exec_match(db.path, sql, corrected_gold(db, q, fixes)),
+                                        "turns": turns, **knowledge.used, "knowledge": book.digest(),
                                         "usage": {k: agent.usage[k] - before.get(k, 0) for k in agent.usage}})
                 bar.update(1)
                 bar.set_postfix_str(f"acc {right}/{bar.n} | spent ${budget.total:.3f}")
@@ -106,80 +82,140 @@ def run_test(cfg, arm, agent_llm=None):
     return True
 
 
-def sql_columns(sql, names):
-    """Column names a SQL query uses (string literals ignored; longer names first, so "First Date" is not "Date")."""
-    body = re.sub(r"'[^']*'", "''", sql)
-    found = set()
-    for c in sorted(names, key=len, reverse=True):
-        pattern = rf"(?<![\w-]){re.escape(c)}(?![\w-])"
-        if c != "ID" and re.search(pattern, body):
-            found.add(c)
-        body = re.sub(pattern, " ", body)
-    return found
+def load_results(out, set_name, parts):
+    """{mode: {qid: record}} for the complete runs of one set."""
+    results = {}
+    for mode in MODES:
+        records = {r["qid"]: r for r in read_jsonl(Path(out) / f"{set_name}_{mode}.jsonl")}
+        if set(records) >= set(parts[set_name]):
+            results[mode] = {q: records[q] for q in parts[set_name]}
+    return results
 
 
-def relevant(test_qs, book, db):
-    """Test questions whose gold SQL uses a column that some learned fact is about."""
-    names = {c for cols in db.columns.values() for c in cols}
-    about = {c for f in book.facts for _, c in fact_columns(db, f)}
-    return {q.qid for q in test_qs if sql_columns(q.gold_sql, names) & about}
+def paired(res, docs, key="correct"):
+    """(fixes, regressions) of a mode against docs on the same questions."""
+    return (sum(res[q][key] and not docs[q][key] for q in docs), sum(docs[q][key] and not res[q][key] for q in docs))
+
+
+def gate_decision(results, max_regressions):
+    """Pass: fixes >= regressions and regressions <= max. Headline: passing mode with the best net, else docs."""
+    rows = {}
+    for mode in HEADLINE_ORDER:
+        fixes, regressions = paired(results[mode], results["docs"])
+        rows[mode] = {"right": sum(r["correct"] for r in results[mode].values()), "fixes": fixes,
+                      "regressions": regressions, "pass": fixes >= regressions and regressions <= max_regressions}
+    passing = [m for m in HEADLINE_ORDER if rows[m]["pass"]]
+    return rows, max(passing, key=lambda m: rows[m]["fixes"] - rows[m]["regressions"], default="docs")
+
+
+def gate(cfg):
+    """Run docs and the three knowledge modes once on the gate set and write gate.json with the headline mode."""
+    for mode in ("docs", *HEADLINE_ORDER):
+        if not run_mode(cfg, mode, "gate"):
+            return False
+    out, parts, _, _ = load_run(cfg)
+    results = load_results(out, "gate", parts)
+    rows, headline = gate_decision(results, cfg["protocol"]["max_regressions"])
+    docs_right = sum(r["correct"] for r in results["docs"].values())
+    write_atomic(out / "gate.json", json.dumps({"docs_right": docs_right, "modes": rows, "headline": headline}, indent=1))
+    print(f"gate ({len(parts['gate'])} questions, docs right {docs_right}):")
+    for mode, row in rows.items():
+        print(f"  {mode}: right {row['right']}, +{row['fixes']} / -{row['regressions']}, "
+              f"{'pass' if row['pass'] else 'fail'}")
+    print(f"headline mode: {headline}")
+    return True
+
+
+def discovery_usd(cfg):
+    """Logical cost of discovery (the last discover.jsonl entry carries cumulative usage)."""
+    log = read_jsonl(Path(cfg["runs_dir"]) / "discover.jsonl")
+    if not log:
+        return 0.0
+    usage = log[-1]["usage"]
+    return usd(usage["agent"], cfg["agent"].get("usd_per_million")) + usd(usage["proposer"], cfg["proposer"].get("usd_per_million"))
+
+
+def mode_row(mode, res, docs, cfg, learn_usd):
+    """One report table row: accuracy, paired tests against docs (official and corrected), cost, latency, turns, use."""
+    qids = list(res)
+    ok, ok_c = [res[q]["correct"] for q in qids], [res[q]["correct_corrected"] for q in qids]
+    lo, hi = bootstrap_ci(ok)
+    vs_docs = "-"
+    if mode != "docs":
+        fixes, regressions = paired(res, docs)
+        fixes_c, regressions_c = paired(res, docs, "correct_corrected")
+        p = mcnemar(ok, [docs[q]["correct"] for q in qids])
+        p_c = mcnemar(ok_c, [docs[q]["correct_corrected"] for q in qids])
+        vs_docs = f"+{fixes}/-{regressions}, p={p:.3f} | corrected +{fixes_c}/-{regressions_c}, p={p_c:.3f}"
+    test_usd = sum(usd(r["usage"], cfg["agent"].get("usd_per_million")) for r in res.values())
+    spent = test_usd + (learn_usd if mode != "docs" else 0.0)
+    latency = [r["usage"].get("latency_s", 0.0) for r in res.values()]
+    use = f"{np.mean([r['facts_in_prompt'] for r in res.values()]):.1f} in prompt"
+    if mode == "tool":
+        use += (f", {np.mean([r['search_calls'] for r in res.values()]):.1f} searches, "
+                f"{np.mean([r['facts_returned'] for r in res.values()]):.1f} facts returned")
+    return (f"| {mode} | {sum(ok)}/{len(ok)} = {np.mean(ok):.3f} | {lo:.2f}-{hi:.2f} | {vs_docs} | {np.mean(ok_c):.3f} | "
+            f"{test_usd:.4f} | {spent / max(1, sum(ok)):.4f} | {np.percentile(latency, 50):.1f} / "
+            f"{np.percentile(latency, 95):.1f} | {np.mean([r['turns'] for r in res.values()]):.1f} | {use} |")
 
 
 def analyze(cfg):
-    out, split, db, by_id = load_run(cfg)
-    books = {a: FactBook.load(out / f, missing_ok=True) for a, f in KNOWLEDGE_FILE.items()}
-    hit = relevant([by_id[i] for i in split["test"]], books["evosql"], db)
-    test_ids = set(split["test"])
-    records = {a: [r for r in read_jsonl(out / f"test_{a}.jsonl") if r["qid"] in test_ids] for a in ARMS}
-    results = {a: {r["qid"]: r["correct"] for r in recs} for a, recs in records.items() if recs}
-    learning = learn_usd(cfg)
+    out, parts, _, _ = load_run(cfg)
+    results = load_results(out, "final", parts)
+    if "docs" not in results:
+        raise SystemExit("analyze needs a complete docs run on the final set")
+    gate_file = out / "gate.json"
+    gated = json.loads(gate_file.read_text()) if gate_file.exists() else None
+    headline = gated["headline"] if gated else None
+    learn_usd, docs = discovery_usd(cfg), results["docs"]
+    n = len(parts["final"])
 
-    lines = ["# EvoSQL results", "", f"Learn {len(split['learn'])} / test {len(split['test'])} questions. "
-             f"Test questions whose gold SQL uses a column the frozen evosql facts are about: {len(hit)}.", "",
-             "| Arm | Answered | Accuracy | 95% CI | p vs docs | Acc: knowledge-relevant | Acc: other | Test $ | Learn $ | $/correct |",
-             "|---|---|---|---|---|---|---|---|---|---|"]
-    for arm, res_arm in results.items():
-        qids = list(res_arm)
-        seq = [res_arm[q] for q in qids]
-        lo, hi = bootstrap_ci(seq)
-        common = [q for q in qids if q in results.get("docs", {})]
-        p = "-"
-        if arm != "docs" and common:
-            p = f"{mcnemar([res_arm[q] for q in common], [results['docs'][q] for q in common]):.3f}"
-        acc_on = lambda ids: (f"{sum(res_arm[q] for q in ids) / len(ids):.2f} ({len(ids)})" if ids else "-")
-        spent_learn = learning if arm in KNOWLEDGE_FILE else 0.0
-        spent_test = test_usd(cfg, arm)
-        per_correct = (spent_learn + spent_test) / max(1, sum(seq))
-        answered = f"{len(qids)}" + (" (partial)" if len(qids) < len(test_ids) else "")
-        lines.append(f"| {arm} | {answered} | {sum(seq) / len(seq):.3f} | {lo:.2f}-{hi:.2f} | {p} | "
-                     f"{acc_on([q for q in qids if q in hit])} | {acc_on([q for q in qids if q not in hit])} | "
-                     f"{spent_test:.4f} | {spent_learn:.4f} | {per_correct:.4f} |")
+    lines = ["# EvoSQL v4 results", "",
+             f"Question sets: discovery {len(parts['discovery'])}, gate {len(parts['gate'])}, final {n} (never used before).", ""]
+    lines += ["## Primary endpoint (preregistered)", ""]
+    if not gated:
+        lines.append("No gate.json yet: run `python -m evosql gate` first.")
+    elif headline == "docs":
+        lines.append("No knowledge mode passed the gate, so the EvoSQL headline arm is docs (no learned knowledge).")
+    elif headline not in results:
+        lines.append(f"Headline mode {headline!r} has no complete final run yet.")
+    else:
+        a = [results[headline][q]["correct"] for q in parts["final"]]
+        b = [docs[q]["correct"] for q in parts["final"]]
+        lo, hi = bootstrap_ci(np.asarray(a, int) - np.asarray(b, int))
+        lines.append(f"EvoSQL headline mode **{headline}** vs docs on the final set (official gold): {sum(a)} vs {sum(b)} "
+                     f"correct of {n}, difference {(sum(a) - sum(b)) / n:+.3f} (95% CI {lo:+.2f} to {hi:+.2f}), "
+                     f"exact McNemar p = {mcnemar(a, b):.3f}.")
 
-    if records.get("selfcons"):
-        lines.append(f"\nselfcons used N = {records['selfcons'][0]['samples']} samples per question "
-                     f"(budget-matched to evosql, capped at {cfg['protocol']['selfcons_max_n']}).")
-    lines.append("Learn $ is the whole gated learning phase; ungated would need less (no candidate scoring), "
-                 "so its $/correct is an upper bound.")
+    lines += ["", "## Final set, every mode", "",
+              "| Mode | Accuracy | 95% CI | vs docs (official \\| corrected) | Corrected acc | Test $ | $/correct "
+              "| Latency p50 / p95 s | Turns | Knowledge use |", "|---|---|---|---|---|---|---|---|---|---|"]
+    lines += [mode_row(mode, res, docs, cfg, learn_usd) for mode, res in results.items()]
+    lines += ["", f"Discovery cost ${learn_usd:.4f} is added to the knowledge modes' $/correct. Latency is the summed API "
+              "time of the calls that answered a question. Corrected scores use the annotation-error study's gold where "
+              "it exists, otherwise official."]
 
-    log = read_jsonl(out / "learn.jsonl")
-    batches = [e for e in log if e["event"] == "batch"]
-    calib = next((e for e in log if e["event"] == "calibration"), {})
-    consol = next((e for e in log if e["event"] == "consolidation"), None)
-    dropped = Counter(d["reason"].split(":")[0] for e in batches for d in e["dropped"])
-    skips = [s for e in batches for s in e["skips"]]
-    lines += ["", "## Learning", f"- Calibration: {calib.get('flips')} flips from a neutral fact; threshold {calib.get('threshold')}.",
-              f"- Batches: {len(batches)}; accepted {sum(e['decision'] == 'accepted' for e in batches)}; "
-              f"rejected {sum(e['decision'].startswith('rejected') for e in batches)}; "
-              f"no valid facts {sum(e['decision'] == 'no valid facts' for e in batches)}.",
-              f"- Facts dropped by checks: {dict(dropped) or 'none'}.",
-              f"- Skipped as likely gold-SQL errors: {len(skips)}" + (f" (e.g. {skips[0][1]!r})" if skips else "") + "."]
-    if consol:
-        lines.append(f"- Consolidation: {consol['facts_before']} -> {consol['facts_after']} facts, learning right "
-                     f"{consol['before']} -> {consol['after']}, kept: {consol['kept']}.")
-    for arm, book in books.items():
-        if book.facts:
-            kinds = dict(Counter(f.kind for f in book.facts))
-            lines += ["", f"## {arm} knowledge: {len(book.facts)} facts, ~{book.total_tokens()} tokens, {kinds}", "",
-                      "```", book.render() or "(empty)", "```"]
+    if gated:
+        lines += ["", f"## Gate ({len(parts['gate'])} questions, docs right {gated['docs_right']})", "",
+                  "| Mode | Right | Fixes | Regressions | Pass |", "|---|---|---|---|---|"]
+        lines += [f"| {m} | {r['right']} | {r['fixes']} | {r['regressions']} | {r['pass']} |" for m, r in gated["modes"].items()]
+        lines.append(f"\nHeadline mode: {headline} (pass: fixes >= regressions and regressions <= "
+                     f"{cfg['protocol']['max_regressions']}; ties: retrieve, tool, all).")
+
+    log = read_jsonl(out / "discover.jsonl")
+    book = FactBook.load(out / "knowledge.json", missing_ok=True)
+    if log:
+        answers = log[0]
+        dropped = Counter(d["reason"].split(":")[0] for e in log if e["event"] == "batch" for d in e["dropped"])
+        conflicts = [c for e in log if e["event"] == "merge" for c in e["conflicts"]]
+        lines += ["", "## Knowledge", "",
+                  f"- Discovery: docs right {answers['right']} of {len(parts['discovery'])}; learned from "
+                  f"{len(answers['failures'])} failures; skipped {len(answers['known_wrong_labels'])} known-wrong labels.",
+                  f"- Facts by kind: {dict(Counter(f.kind for f in book.facts))}, ~{book.total_tokens()} tokens in total.",
+                  f"- Dropped by checks: {dict(dropped) or 'none'}.",
+                  f"- Merge conflicts: {len(conflicts)}" + "".join(f"; {c['phrase']!r} kept {c['kept']}" for c in conflicts) + "."]
+    if book.facts:
+        lines += ["", "```"] + [f"{f.id} [{f.kind}] {f.subject}: {f.fact}  (applies to: {', '.join(f.applies_to)})"
+                                for f in book.facts] + ["```"]
     write_atomic(Path(cfg["results_dir"]) / "summary.md", "\n".join(lines) + "\n")
     print("\n".join(lines))

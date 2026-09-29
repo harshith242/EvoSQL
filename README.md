@@ -1,46 +1,48 @@
 # EvoSQL
 
-A Text2SQL agent that learns **facts about one database** from its own mistakes: what question phrases mean in the data, how values are encoded, which ranges and rules apply. It keeps only the knowledge that measurably helps, freezes it, and is judged on questions it never learned from, against honest baselines at a matched budget.
+A Text2SQL agent that learns **facts about one database** from its own mistakes: what question phrases mean in the data, how values are encoded, which ranges apply, what one row is and how tables join. The facts are checked against the data, delivered to the agent in different ways, and judged on questions never used before, against a no-knowledge baseline.
 
 ## Why
 
-Self-improving agents (harness self-improvement, evolving ontologies and tribal knowledge) are a hot topic, but most published gains are single-run and not budget-matched. EvoSQL asks a narrow question with an objective verifier, SQL execution: *does gated, learned database knowledge beat no knowledge, ungated knowledge, and simply spending the same money on more samples?*
+Self-improving agents (harness self-improvement, evolving ontologies and tribal knowledge) are a hot topic, but most published gains are single-run and not budget-matched. EvoSQL asks a narrow question with an objective verifier, SQL execution: *does verified, learned database knowledge help an agent on unseen questions, and does it matter how the knowledge is delivered (all in the prompt, retrieved per question, or searched by the agent as a tool)?* The evaluation separates discovery, the gate and the final test, and reports noise honestly (paired tests, confidence intervals, corrected labels).
 
-## How it works
+## How it works (v4)
 
-1. **Split:** 100 BIRD questions for one database, stratified by difficulty, halved into 50 learning and 50 test questions.
-2. **Learn** (learning set only):
-   - The agent answers every learning question.
-   - A proposer looks at a batch of up to 5 failures (question, agent SQL, gold SQL) and states what the agent did not *know* as typed facts:
-     - `mapping`: "admitted to the hospital" means `Patient.Admission` is `'+'`;
-     - `constraint`: a normal range or rule;
-     - `encoding`: how values are stored;
-     - `meaning`: what a column represents.
-   - Free checks drop facts that contain SQL, name columns or values that do not exist in the data, or leak an answer.
-   - The proposer may skip a question whose gold SQL looks like an annotation error.
-3. **Gate:** each batch yields a candidate knowledge version. It is kept only if it beats the current version on the whole learning set by at least `max(2, calibration flips)` and fixes a question in its batch. The calibration measures how many answers flip when a true but useless fact is added.
-4. **Consolidate and freeze:** after 2 epochs, duplicates and contradictions are merged (kept only if the learning score does not drop), and the knowledge is frozen.
-5. **Test:** every arm answers the same 50 test questions.
+Spec: `docs/specs/2026-09-29-evosql-v4-design.md`. One BIRD database (`thrombosis_prediction`, 163 questions), BIRD's hints hidden.
 
-| Arm | Knowledge in the prompt | Answers per question |
-|---|---|---|
-| docs | none (schema + BIRD column docs + value profile only) | 1 |
-| evosql | frozen, gated, consolidated facts | 1 |
-| ungated | every fact that passed the free checks, no gate | 1 |
-| selfcons | none | N (majority of result sets), N matched to evosql's spend including learning |
+1. **Question sets:** discovery 43, gate 46, final 59. The 15 questions seen by the early pilots are excluded; the final set was never used by any run.
+2. **Discover** (one pass, discovery set only):
+   - The docs agent answers every discovery question.
+   - A proposer looks at batches of up to 5 failures (question, agent SQL, gold SQL) and writes typed facts, one misconception per fact: `mapping`, `encoding`, `constraint`, `meaning`, `grain` (what one row is) and `relation` (join path and cardinality). Each fact has 1-5 trigger phrases (`applies_to`) and an optional evidence query (`probe`).
+   - Free checks drop facts that contain SQL, name columns or values that do not exist, have a probe that fails or returns nothing, or leak an answer.
+   - A deterministic merge unites duplicates and resolves a phrase mapped to different columns.
+   - Questions whose official gold is known to be wrong (from the annotation-error study) are not learned from.
+3. **Deliver:** the same agent, with only the knowledge delivery changed:
+
+| Mode | Knowledge the agent gets |
+|---|---|
+| docs | none (schema + BIRD column docs + value profile only) |
+| all | every fact in the system prompt |
+| retrieve | per question: the top 8 facts from hybrid search on the question, plus every grain and relation fact |
+| tool | a one-line list of subjects with knowledge, plus a `search_knowledge(query)` tool returning the top 5 facts |
+
+   **Hybrid search** (retrieve and tool): BM25 over each fact's phrases, subject and text, plus cosine similarity of local embeddings (`qwen3-embedding:0.6b`), fused with Reciprocal Rank Fusion. A fact that matches neither signal is never returned.
+4. **Gate** (one shot, gate set): each knowledge mode passes if fixes >= regressions and regressions <= 3 against docs. The headline mode is the passing mode with the best net; if none passes, the headline is docs.
+5. **Final test:** every mode answers the 59 final questions once.
 
 The agent is a tool loop (describe tables, profile columns, test SQL, submit). Its prompt is ordered static-first (rules, schema, a per-column **value profile** computed from the data, then knowledge, then the question), so the provider's prefix cache serves most input tokens.
 
-**Scoring:** BIRD's hand-written hints are hidden, and answers are scored against BIRD's gold SQL as-is, including questionable annotations. Scores are therefore not comparable to the BIRD leaderboard.
+**Scoring:** the primary score uses BIRD's official gold SQL. A sensitivity score uses the corrected gold SQL from the annotation-error study ([uiuc-kang-lab/text_to_sql_benchmarks](https://github.com/uiuc-kang-lab/text_to_sql_benchmarks)) where it exists. Scores are not comparable to the BIRD leaderboard (hints hidden).
 
 ## Setup
 
-Requires [uv](https://docs.astral.sh/uv/) and a [DeepSeek](https://platform.deepseek.com) API key. [Ollama](https://ollama.com) is optional, as a free local agent (`--agent local`).
+Requires [uv](https://docs.astral.sh/uv/), a [DeepSeek](https://platform.deepseek.com) API key and [Ollama](https://ollama.com) (local embeddings for the retrieve and tool modes; optionally a free local agent with `--agent local`).
 
 ```bash
 uv sync
 python scripts/get_bird.py thrombosis_prediction      # downloads BIRD dev once, keeps one database
 echo "DEEPSEEK_API_KEY=..." > .env
+ollama pull qwen3-embedding:0.6b
 # optional local agent:
 ollama pull qwen3.5:9b && ollama create qwen3.5-9b-32k -f ollama/qwen3.5-9b-32k.Modelfile
 ```
@@ -48,23 +50,19 @@ ollama pull qwen3.5:9b && ollama create qwen3.5-9b-32k -f ollama/qwen3.5-9b-32k.
 ## Run
 
 ```bash
-uv run python -m evosql split                               # runs_v3/split.json
-uv run python -m evosql learn                               # runs_v3/knowledge_final.json, learn.jsonl
-uv run python -m evosql test --arm docs evosql ungated      # frozen test answers
-uv run python -m evosql test --arm selfcons                 # after docs and evosql (budget-matched N)
-uv run python -m evosql analyze                             # results_v3/summary.md
+uv run python -m evosql partition                                  # runs_v4/partitions.json
+uv run python -m evosql labels                                     # corrected gold (asks before downloading)
+uv run python -m evosql discover                                   # runs_v4/knowledge.json, discover.jsonl
+uv run python -m evosql gate                                       # runs_v4/gate.json with the headline mode
+uv run python -m evosql run --set final --mode docs all retrieve tool
+uv run python -m evosql analyze                                    # results_v4/summary.md
 ```
 
-- **Resumable and cheap to rerun:** every LLM reply is cached under `cache/llm/`, so rerunning a command continues where it stopped and replays finished calls for free.
-- **Budget:** a spend guard stops cleanly at `protocol.budget_usd` ($1) of real API spend.
-- **Settings:** in `configs/base.yaml` (agent profiles, proposer, split sizes, epochs, batch size, budget).
+- **Resumable and cheap to rerun:** every LLM reply is cached under `cache/llm/` (embeddings under `cache/embed/`), so rerunning a command continues where it stopped and replays finished calls for free.
+- **Budget:** a spend guard stops cleanly at `protocol.budget_usd` ($2) of real API spend, priced at peak rates.
+- **Settings:** `configs/base.yaml` (agent profiles, proposer, search, question sets, gate rule, budget).
 
-The report gives, for each arm:
-- test accuracy with a 95% CI, and a McNemar p-value against docs;
-- test and learning cost;
-- accuracy on test questions that use a column the learned facts are about vs. the rest.
-
-It also covers what was learned, skipped and dropped, and lists the final facts verbatim.
+The report gives the primary endpoint (headline mode vs docs on the final set: difference with a 95% CI and an exact McNemar p-value) and, for every mode, accuracy, fixes and regressions against docs on official and corrected gold, cost, $ per correct answer, latency p50/p95, agent turns and knowledge use. It also lists the gate decision, what discovery kept and dropped, and the facts verbatim.
 
 ## Pilot history
 
@@ -73,8 +71,8 @@ Earlier streaming pilots (v1/v2, spec `docs/specs/2026-09-28-evosql-design.md`, 
 - they copied BIRD annotation errors (counting joined rows as patients);
 - the gains were lost in noise.
 
-v3 (`docs/specs/2026-09-29-evosql-v3-design.md`) fixes these with typed, data-checked facts and a learning/test split.
+v3 (`docs/specs/2026-09-29-evosql-v3-design.md`, git tag `v3`) used typed, data-checked facts, a 50/50 learning/test split and a gate that kept a batch of facts only if it raised the learning-set score. On the 50 test questions: docs 12, gated facts 10 (+1/-3), ungated facts 15 (+6/-3), none significant. The gate was scored on the same questions the facts came from, rejected true facts in bundles, and injecting every fact caused style flips on unrelated questions. v4 separates discovery from the gate, adds grain and relation facts, and delivers knowledge on demand.
 
 ## Results
 
-Results are pending: see `results_v3/summary.md` after a run.
+Results are pending: see `results_v4/summary.md` after a run.

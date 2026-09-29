@@ -1,52 +1,32 @@
 import json
 import sqlite3
 
+import numpy as np
 import pytest
 
-from evosql.bird import Question
-from evosql.bird import open_db
-import numpy as np
-
-from evosql.evaluate import bootstrap_ci, mcnemar, relevant, run_test, selfcons_n, sql_columns
+from evosql.evaluate import analyze, bootstrap_ci, gate_decision, mcnemar, run_mode
 from evosql.facts import Fact, FactBook
+from evosql.labels import FILE
 from evosql.llm import ProviderExhausted
 
-NAMES = ["ID", "SEX", "UN", "Admission", "Birthday", "CRE", "Date", "First Date", "Diagnosis", "RA"]
 GOLD = "SELECT COUNT(*) FROM Patient WHERE SEX = 'F'"
 
 
-def test_sql_columns_ignores_values_and_prefers_longer_names():
-    sql = "SELECT SEX FROM Patient WHERE Diagnosis = 'RA' AND `First Date` > '1990-01-01' AND T2.UN = 29"
-    assert sql_columns(sql, NAMES) == {"SEX", "Diagnosis", "First Date", "UN"}
-
-
-def test_relevant_marks_test_questions_that_use_a_column_a_fact_is_about(tmp_path):
-    d = tmp_path / "toy"
-    d.mkdir()
-    con = sqlite3.connect(d / "toy.sqlite")
-    con.execute("CREATE TABLE Laboratory (ID INTEGER, UN INTEGER, CRE REAL)")
-    con.close()
-    db = open_db(tmp_path, "toy")
-    book = FactBook([Fact("f1", "constraint", "Laboratory.UN", "Normal is below 30.")])
-    test = [Question(2, "t", "q", "SELECT ID FROM Laboratory WHERE UN > 30", "simple"),
-            Question(3, "t", "q", "SELECT ID FROM Laboratory WHERE CRE >= 1.5", "simple")]
-    assert relevant(test, book, db) == {2}
-
-
 class FakeAgent:
-    """Submits the gold SQL; raises like a provider limit on the given call."""
+    """Submits the given SQL; raises like a provider limit on the given call."""
 
-    def __init__(self, crash_at=None):
-        self.calls, self.crash_at = 0, crash_at
-        self.usage = {"calls": 0, "prompt_tokens": 0, "completion_tokens": 0}
+    def __init__(self, sql=GOLD, crash_at=None):
+        self.sql, self.calls, self.crash_at = sql, 0, crash_at
+        self.usage = {"calls": 0, "prompt_tokens": 0, "completion_tokens": 0, "latency_s": 0.0}
 
     def chat(self, messages, tools=None, temperature=0.0, sample=0):
         self.calls += 1
         if self.calls == self.crash_at:
             raise ProviderExhausted("limit")
         self.usage["calls"] += 1
+        self.usage["latency_s"] += 2.0
         return {"content": None, "reasoning": None, "model": "fake", "prompt_tokens": 1, "completion_tokens": 1,
-                "tool_calls": [{"id": "c", "name": "submit", "arguments": json.dumps({"sql": GOLD})}]}
+                "tool_calls": [{"id": "c", "name": "submit", "arguments": json.dumps({"sql": self.sql})}]}
 
 
 @pytest.fixture
@@ -61,39 +41,61 @@ def cfg(tmp_path, monkeypatch):
     dev = [{"question_id": i, "db_id": "toy", "question": f"women? {i}", "SQL": GOLD, "difficulty": "simple",
             "evidence": ""} for i in range(6)]
     (tmp_path / "data" / "dev.json").write_text(json.dumps(dev))
+    # The study relabels question 5: under corrected gold, "SELECT 0" is right there.
+    (tmp_path / "data" / FILE).parent.mkdir(parents=True)
+    (tmp_path / "data" / FILE).write_text(json.dumps([{"question_id": "5", "db_id": "toy", "SQL": "SELECT 0"}]))
     (tmp_path / "runs").mkdir()
-    (tmp_path / "runs" / "split.json").write_text(json.dumps({"learn": [0, 1, 2], "test": [3, 4, 5]}))
+    (tmp_path / "runs" / "partitions.json").write_text(json.dumps({"discovery": [0], "gate": [1, 2], "final": [3, 4, 5]}))
+    FactBook([Fact("f1", "encoding", "Patient.SEX", "Women are 'F'.", ["women"])]).save(tmp_path / "runs" / "knowledge.json")
     prices = {"cache_hit": 0.0, "cache_miss": 1.0, "output": 0.0}
     return {"data_dir": str(tmp_path / "data"), "db": "toy", "runs_dir": str(tmp_path / "runs"),
-            "cache_dir": str(tmp_path / "cache"), "max_steps": 2,
+            "results_dir": str(tmp_path / "results"), "cache_dir": str(tmp_path / "cache"), "max_steps": 2,
             "agent": {"usd_per_million": prices}, "proposer": {"usd_per_million": prices},
-            "protocol": {"n_test": 3, "budget_usd": 1.0, "selfcons_max_n": 5}}
+            "protocol": {"budget_usd": 1.0, "max_regressions": 3}, "search": {}}
 
 
-def test_run_test_resumes_without_duplicates_or_torn_lines(cfg):
-    assert run_test(cfg, "docs", agent_llm=FakeAgent(crash_at=2)) is False
-    with open(f"{cfg['runs_dir']}/test_docs.jsonl", "a") as f:
+def test_run_mode_resumes_without_duplicates_or_torn_lines(cfg):
+    assert run_mode(cfg, "docs", "final", agent_llm=FakeAgent(crash_at=2)) is False
+    with open(f"{cfg['runs_dir']}/final_docs.jsonl", "a") as f:
         f.write('{"qid": 9, "corr')  # killed mid-write
-    assert run_test(cfg, "docs", agent_llm=FakeAgent())
-    lines = [json.loads(line) for line in open(f"{cfg['runs_dir']}/test_docs.jsonl")]
+    assert run_mode(cfg, "docs", "final", agent_llm=FakeAgent())
+    lines = [json.loads(line) for line in open(f"{cfg['runs_dir']}/final_docs.jsonl")]
     assert [r["qid"] for r in lines] == [3, 4, 5] and all(r["correct"] for r in lines)
-
-
-def test_selfcons_n_matches_evosql_spend_per_test_question_and_is_capped(cfg):
-    runs = cfg["runs_dir"]
-    # docs: 1M prompt tokens per question at $1/M; evosql test the same; learning $6 in total.
-    record = lambda qid: json.dumps({"qid": qid, "correct": True, "usage": {"prompt_tokens": 1_000_000}})
-    for arm in ("docs", "evosql"):
-        open(f"{runs}/test_{arm}.jsonl", "w").write("\n".join(record(q) for q in (3, 4, 5)) + "\n")
-    learn = {"usage": {"agent": {"prompt_tokens": 6_000_000}, "proposer": {"prompt_tokens": 0}}}
-    open(f"{runs}/learn.jsonl", "w").write(json.dumps(learn) + "\n")
-    assert selfcons_n(cfg) == 3  # (6 + 3) / 3 test questions = $3 per question vs docs $1
-    learn["usage"]["agent"]["prompt_tokens"] = 60_000_000
-    open(f"{runs}/learn.jsonl", "w").write(json.dumps(learn) + "\n")
-    assert selfcons_n(cfg) == 5  # capped
-    open(f"{runs}/test_evosql.jsonl", "w").write(record(3) + "\n")
+    assert [r["correct_corrected"] for r in lines] == [True, True, False]  # q5 is scored on its corrected gold
+    open(f"{cfg['runs_dir']}/final_all.jsonl", "w").write(json.dumps({**lines[0], "knowledge": "old"}) + "\n")
     with pytest.raises(SystemExit):
-        selfcons_n(cfg)  # a partial evosql run would understate its cost
+        run_mode(cfg, "all", "final", agent_llm=FakeAgent())  # a log made with other knowledge is never extended
+
+
+def records(pattern):
+    return {q: {"correct": ok} for q, ok in enumerate(pattern)}
+
+
+def test_gate_passes_modes_within_the_regression_limit_and_breaks_ties_by_order():
+    docs = records([1, 1, 1, 1, 0, 0, 0, 0])
+    results = {"docs": docs,
+               "all": records([0, 0, 0, 0, 1, 1, 1, 1]),  # +4 / -4: fails, too many regressions
+               "retrieve": records([1, 1, 1, 0, 1, 0, 0, 0]),  # +1 / -1: passes, net 0
+               "tool": records([1, 1, 1, 1, 0, 0, 0, 0])}  # +0 / -0: passes, net 0
+    rows, headline = gate_decision(results, max_regressions=3)
+    assert (rows["all"]["pass"], rows["retrieve"]["pass"], rows["tool"]["pass"]) == (False, True, True)
+    assert headline == "retrieve"  # tie on net: retrieve before tool
+    results["tool"] = records([1, 1, 1, 1, 1, 0, 0, 0])
+    assert gate_decision(results, max_regressions=3)[1] == "tool"
+    results["tool"] = results["retrieve"] = records([0, 0, 1, 1, 0, 0, 0, 0])
+    assert gate_decision(results, max_regressions=3)[1] == "docs"  # nothing passes
+
+
+def test_analyze_reports_the_gate_headline_against_docs_on_the_final_set(cfg):
+    run_mode(cfg, "docs", "final", agent_llm=FakeAgent(sql="SELECT 0"))
+    run_mode(cfg, "all", "final", agent_llm=FakeAgent())
+    gate = {"docs_right": 0, "headline": "all", "modes": {"all": {"right": 2, "fixes": 2, "regressions": 0, "pass": True}}}
+    open(f"{cfg['runs_dir']}/gate.json", "w").write(json.dumps(gate))
+    analyze(cfg)
+    summary = open(f"{cfg['results_dir']}/summary.md").read()
+    assert "**all** vs docs on the final set (official gold): 3 vs 0 correct of 3" in summary
+    assert "| all | 3/3 = 1.000 |" in summary and "+3/-0, p=0.250 | corrected +2/-1" in summary
+    assert "| 2.0 / 2.0 |" in summary  # latency p50 / p95 per question
 
 
 def test_mcnemar_uses_only_discordant_pairs():
