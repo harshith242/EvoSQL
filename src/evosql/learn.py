@@ -11,14 +11,19 @@ from tqdm import tqdm
 from evosql.agent import answer
 from evosql.bird import exec_match, gold_rows, load_questions, open_db
 from evosql.budget import Budget, BudgetExceeded
-from evosql.facts import Fact, FactBook, check_fact
+from evosql.facts import Fact, FactBook, check_fact, columns
 from evosql.llm import ProviderExhausted
 from evosql.split import load_split
 from evosql.stream import make_llm
 
-# A true but useless fact: its effect on answers measures prompt-perturbation noise.
-NEUTRAL = {"op": "add", "kind": "meaning", "subject": "Patient.ID", "qid": None,
-           "fact": "Identifies one patient; the same ID links Patient, Laboratory and Examination rows."}
+
+
+def neutral_fact(db):
+    """A true but useless fact about this database: its effect on answers measures prompt-perturbation noise."""
+    table = db.tables[0]
+    column = columns(db, table)[0]
+    return {"op": "add", "kind": "meaning", "subject": f"{table}.{column}", "qid": None,
+            "fact": f"{table}.{column} is one of the columns of the {table} table."}
 
 PROPOSER_V3 = """You build a knowledge base about ONE SQLite database so that a Text2SQL agent answers future, different questions correctly.
 Below are questions the agent got wrong, with its SQL and the correct SQL. For each one, find what the agent did not KNOW about this database and state it as facts. Fact kinds (examples use a made-up shop database):
@@ -31,7 +36,7 @@ Rules:
 - A fact must help other questions too; never state this question's answer or copy its wording.
 - Name columns as Table.Column and quote stored values in single quotes exactly as they appear in the data.
 - One fact per edit, under 40 words.
-- If the correct SQL looks like an annotation error (for example AND/OR precedence without parentheses, or counting joined lab rows when the question asks how many patients), return a skip with the reason instead of facts.
+- If the correct SQL looks like an annotation error rather than knowledge (for example AND/OR precedence without parentheses, or counting duplicated joined rows when the question asks how many distinct entities), return a skip with the reason instead of facts.
 - You may modify or delete an existing fact by its id if it is wrong.
 Reply with only JSON: {{"items": [{{"qid": 1, "skip": "reason"}}, {{"qid": 2, "edits": [{{"op": "add" | "modify" | "delete", "id": "fact id, for modify/delete", "kind": "mapping | constraint | encoding | meaning", "subject": "Table.Column or term", "fact": "..."}}]}}]}}
 
@@ -99,13 +104,13 @@ def consolidate(llm, db, book):
     return new
 
 
-def learn_loop(learn_qs, solve, propose, check, consolidate, epochs, batch_size, min_gain, log):
+def learn_loop(learn_qs, solve, propose, check, consolidate, epochs, batch_size, min_gain, log, neutral):
     """Gated, versioned learning; check(edit, batch) -> reason | None. Returns (knowledge, ungated, calibration flips)."""
     score = lambda book: {q.qid: solve(q, book) for q in learn_qs}
     right = lambda scores: sum(scores.values())
     k, version = FactBook(), 0
     scores = score(k)
-    neutral = score(k.apply([NEUTRAL]))
+    neutral = score(k.apply([neutral]))
     flips = sum(scores[q] != neutral[q] for q in scores)
     threshold = max(min_gain, flips)
     log({"event": "calibration", "flips": flips, "threshold": threshold, "right": right(scores)})
@@ -222,7 +227,7 @@ def run_learn(cfg):
 
     try:
         k, ungated, flips = learn_loop(learn_qs, solve, propose, check, lambda b: consolidate(proposer, db, b),
-                                       v3["epochs"], v3["batch_size"], v3["min_gain"], log)
+                                       v3["epochs"], v3["batch_size"], v3["min_gain"], log, neutral_fact(db))
     except (BudgetExceeded, ProviderExhausted) as e:
         bar.close()
         print(f"stopped: {e}. Rerun `learn` later; finished calls replay from cache.")

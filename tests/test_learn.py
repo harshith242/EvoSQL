@@ -38,7 +38,9 @@ def proposer(*texts):
 
 def run(propose, consolidate=lambda book: book, check=lambda e, q: None, epochs=1):
     log = []
-    k, ungated, flips = learn_loop(QS, solve, propose, check, consolidate, epochs, batch_size=2, min_gain=2, log=log.append)
+    neutral = {"op": "add", "kind": "meaning", "subject": "T.id", "fact": "T.id is a column.", "qid": None}
+    k, ungated, flips = learn_loop(QS, solve, propose, check, consolidate, epochs, batch_size=2, min_gain=2,
+                                   log=log.append, neutral=neutral)
     return k, ungated, log
 
 
