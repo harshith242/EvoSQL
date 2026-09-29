@@ -1,7 +1,7 @@
 # EvoSQL v6: A Text-to-SQL Agent That Builds a Memory of Each Database (Design for Review)
 
 Date: 2026-09-29
-Status: draft for external review, before implementation. Revision 4 incorporates three reviews.
+Status: draft for external review, before implementation. Revision 5 incorporates four reviews.
 Repo: `evosql/` (v3, v4 and v5 are tagged; this document is self-contained)
 
 ## 1. Goal
@@ -153,7 +153,7 @@ The proposer (`deepseek-flash`, thinking on, effort medium) sees:
 - the schema, value profile and column descriptions;
 - the current facts.
 
-It writes typed facts, one misconception per fact:
+It writes **exactly one fact per failure**, for the most important misconception. A second misconception in the same failure can be learned at its next failure. This caps cost, since checks and pre-checks are charged per fact.
 - **Types:** `mapping`, `encoding`, `constraint`, `meaning`, `grain`, `relation`.
 - **Each fact carries its applicability conditions:** 1–5 trigger phrases (`applies_to`), which are also used by retrieval. They may reuse the question's own wording.
 - **Each fact lists the stored values it relies on** in a structured field, `values: [{table, column, value}]`. Quoted words in the text are not treated as values.
@@ -174,7 +174,7 @@ A fact is dropped if any of these holds:
 - its evidence query fails to run or returns no result set (`COUNT(*) = 0` is a valid result);
 - it only restates a column's documented range (unless it flips the documented direction);
 - it leaks the answer:
-  - a gold result value, anywhere in the text, trigger phrases or values;
+  - a gold result value, anywhere in the text, trigger phrases or values. **Exception:** a value that is one of the fact's structured `values`, grounded in its declared column, and occurs in at least 2 rows there. That is a reusable code or category (e.g. a status stored as `'DSQ'`), not an entity. Entity IDs, unique values and answer-specific wording are still rejected;
   - or 5+ words copied from the question, checked in the **fact text only**, because trigger phrases are meant to reuse the user's wording.
 
 **Why it helps:** in v3–v5 the invented values, invented columns and memorized answers were caught cheaply by these checks.
@@ -198,7 +198,7 @@ A new fact does not go live straight away.
 
 **Why it helps:** this is a paired check against the no-memory answer before any future question is exposed to the fact. It is the closest affordable thing to EvoOntology's acceptance gate. It is weaker, though: it uses at most 2 questions, and they come from the stream's past, not a held-out validation split.
 
-**Cost:** at most 2 agent runs per new fact.
+**Cost:** at most 2 agent runs per new fact, with one fact per failure. When an order's budget allocation is nearly used (Section 8), pre-checks are skipped rather than stopping the stream: new facts go live as unproven, and every skip is logged and reported.
 
 ### Step 7: Online pruning by observed effect
 After each question, every fact that was injected gets credit, compared with the none arm on that same question:
@@ -313,11 +313,12 @@ The claims are sized accordingly.
 | none arm, 221 questions, run once | ~$0.27 |
 | examples arm, 2 orders × 221 | ~$0.57 |
 | facts arm, 2 orders × 221 | ~$0.50 |
-| Proposer, ~2 × 90 failures (thinking effort medium) | ~$0.55 |
-| Pre-activation checks, ≤ 2 runs per new fact (~2 × 200 runs) | ~$0.50 |
-| **Total** | **~$2.4** |
+| Proposer, ~2 × 90 failures, one fact each (thinking effort medium) | ~$0.50 |
+| Pre-activation checks, ≤ 2 runs per new fact (≤ 2 × 180 runs; many facts have fewer matches) | ≤ ~$0.45 |
+| **Total** | **~$2.3** (the cap of $2.5 leaves a $0.2 margin) |
 
-- **Run order:** order 1 (all arms, all databases) runs before order 2, so a budget stop never leaves order 1 incomplete.
+- **Allocation per order:** order 1 may spend up to **$1.25** (including the none arm), order 2 the rest of the $2.5 cap. Within each order, pre-activation checks are the only optional cost. They are skipped once the order is within $0.10 of its allocation (Step 6), so both orders always complete.
+- **Run order:** order 1 (all arms, all databases) runs before order 2.
 - **Caching:** all LLM replies are cached, so a stopped run resumes and replays cost nothing.
 
 ## 9. Risks and mitigations
@@ -345,12 +346,7 @@ The claims are sized accordingly.
   - tool-layer or schema evolution;
   - tool-based fact search.
 
-## 11. Questions for the reviewer
+## 11. Resolved review decisions
 
-1. Is a pre-activation check on at most 2 earlier matched questions (reject on any regression) a reasonable budget-limited gate, or should an unmatched fact stay inactive rather than going live as unproven?
-2. Are the pre-registered values sound?
-   - genericity: 25% of earlier questions, applied from 8 questions on, with a second cue required;
-   - semantic path: similarity 0.75 with a 0.05 margin, proven facts only;
-   - retirement after 5 uses with no effect;
-   - the 10% injection-rate threshold for calling the arm inert.
-3. Is the 8-stream direction count, with a stream-level block bootstrap, the right primary framing given the dependence structure?
+- **Unmatched new facts go live as one unproven fact.** Their first later recurrence is exactly what an online memory should capture.
+- **The safety parameters stay as pre-registered.** The injection-rate check shows whether recall became too low.
