@@ -47,12 +47,13 @@ def cfg(tmp_path, monkeypatch):
     (tmp_path / "data" / FILE).write_text(json.dumps([{"question_id": "5", "db_id": "toy", "SQL": "SELECT 0"}]))
     (tmp_path / "runs").mkdir()
     (tmp_path / "runs" / "partitions.json").write_text(json.dumps({"discovery": [0], "gate": [1, 2], "final": [3, 4, 5]}))
-    FactBook([Fact("f1", "encoding", "Patient.SEX", "Women are 'F'.", ["women"])]).save(tmp_path / "runs" / "knowledge.json")
+    FactBook([Fact("f1", "encoding", "Patient.SEX", "Women are 'F'.", ["women"])]).save(tmp_path / "runs" / "knowledge_single.json")
     prices = {"cache_hit": 0.0, "cache_miss": 1.0, "output": 0.0}
     return {"data_dir": str(tmp_path / "data"), "db": "toy", "runs_dir": str(tmp_path / "runs"),
             "results_dir": str(tmp_path / "results"), "cache_dir": str(tmp_path / "cache"), "max_steps": 2,
             "agent": {"usd_per_million": prices}, "proposer": {"usd_per_million": prices},
-            "protocol": {"budget_usd": 1.0, "max_regressions": 3}, "search": {}}
+            "protocol": {"budget_usd": 1.0, "max_regressions": 3,
+                         "arms": ["docs", "hints", "all@single", "retrieve@verified"]}, "search": {}}
 
 
 def test_run_mode_resumes_without_duplicates_or_torn_lines(cfg):
@@ -63,9 +64,9 @@ def test_run_mode_resumes_without_duplicates_or_torn_lines(cfg):
     lines = [json.loads(line) for line in open(f"{cfg['runs_dir']}/final_docs.jsonl")]
     assert [r["qid"] for r in lines] == [3, 4, 5] and all(r["correct"] for r in lines)
     assert [r["correct_corrected"] for r in lines] == [True, True, False]  # q5 is scored on its corrected gold
-    open(f"{cfg['runs_dir']}/final_all.jsonl", "w").write(json.dumps({**lines[0], "knowledge": "old"}) + "\n")
+    open(f"{cfg['runs_dir']}/final_all@single.jsonl", "w").write(json.dumps({**lines[0], "knowledge": "old"}) + "\n")
     with pytest.raises(SystemExit):
-        run_mode(cfg, "all", "final", agent_llm=FakeAgent())  # a log made with other knowledge is never extended
+        run_mode(cfg, "all@single", "final", agent_llm=FakeAgent())  # a log made with other knowledge is never extended
 
 
 def records(pattern):
@@ -78,27 +79,29 @@ def test_gate_passes_modes_within_the_regression_limit_and_breaks_ties_by_order(
                "all": records([0, 0, 0, 0, 1, 1, 1, 1]),  # +4 / -4: fails, too many regressions
                "retrieve": records([1, 1, 1, 0, 1, 0, 0, 0]),  # +1 / -1: passes, net 0
                "tool": records([1, 1, 1, 1, 0, 0, 0, 0])}  # +0 / -0: passes, net 0
-    rows, headline = gate_decision(results, max_regressions=3)
+    order = ["retrieve", "tool", "all"]  # protocol.arms order decides ties
+    rows, headline = gate_decision(results, 3, order)
     assert (rows["all"]["pass"], rows["retrieve"]["pass"], rows["tool"]["pass"]) == (False, True, True)
     assert headline == "retrieve"  # tie on net: retrieve before tool
     results["tool"] = records([1, 1, 1, 1, 1, 0, 0, 0])
-    assert gate_decision(results, max_regressions=3)[1] == "tool"
+    assert gate_decision(results, 3, order)[1] == "tool"
     results["tool"] = results["retrieve"] = records([0, 0, 1, 1, 0, 0, 0, 0])
-    assert gate_decision(results, max_regressions=3)[1] == "docs"  # nothing passes
+    assert gate_decision(results, 3, order)[1] == "docs"  # nothing passes
     results["all"] = records([0, 0, 0, 0, 1, 1, 1, 1]) | {8: {"correct": True}, 9: {"correct": True}}
     results["docs"] = docs | {8: {"correct": False}, 9: {"correct": False}}  # all: +6 / -4, best net but fails
     results["retrieve"] = records([1, 1, 1, 1, 1, 0, 0, 0]) | {8: {"correct": False}, 9: {"correct": False}}
     results["tool"] = results["docs"]
-    assert gate_decision(results, max_regressions=3)[1] == "retrieve"  # passing modes first, then best net
+    assert gate_decision(results, 3, order)[1] == "retrieve"  # passing modes first, then best net
 
 
 def test_analyze_reports_the_gate_headline_against_docs_on_the_final_set(cfg):
     runs = cfg["runs_dir"]
     run_mode(cfg, "docs", "final", agent_llm=FakeAgent(sql="SELECT 0"))
-    run_mode(cfg, "all", "final", agent_llm=FakeAgent())
-    setups = {m: json.loads(open(f"{runs}/final_{m}.jsonl").readline())["knowledge"] for m in ("docs", "all")}
-    gate = {"docs_right": 0, "headline": "all", "setups": setups,
-            "modes": {"all": {"right": 2, "fixes": 2, "regressions": 0, "pass": True}}}
+    run_mode(cfg, "all@single", "final", agent_llm=FakeAgent())
+    run_mode(cfg, "hints", "final", agent_llm=FakeAgent())
+    setups = {m: json.loads(open(f"{runs}/final_{m}.jsonl").readline())["knowledge"] for m in ("docs", "all@single")}
+    gate = {"docs_right": 0, "headline": "all@single", "setups": setups,
+            "modes": {"all@single": {"right": 2, "fixes": 2, "regressions": 0, "pass": True}}}
     open(f"{runs}/gate.json", "w").write(json.dumps(gate))
     usage = {"agent": {"prompt_tokens": 3_000_000}, "proposer": {"prompt_tokens": 0}}  # discovery cost $3
     log = [{"event": "answers", "right": 0, "failures": [0], "known_wrong_labels": [], "usage": usage},
@@ -108,13 +111,13 @@ def test_analyze_reports_the_gate_headline_against_docs_on_the_final_set(cfg):
     open(f"{runs}/discover.jsonl", "w").write("".join(json.dumps(e) + "\n" for e in log))
     analyze(cfg)
     summary = open(f"{cfg['results_dir']}/summary.md").read()
-    assert "**all** vs docs on the final set (official gold): 3 vs 0 correct of 3" in summary
+    assert "**all@single** vs docs on the final set (official gold): 3 vs 0 correct of 3" in summary
     # Test $3 each; all adds the $3 discovery: $6 / 3 correct. Latency per question 1, 2, 3 s: p50 2.0, p95 2.9.
-    assert "| all | 3/3 = 1.000 |" in summary and "+3/-0, p=0.250; corrected +2/-1" in summary
+    assert "| all@single | 3/3 = 1.000 |" in summary and "+3/-0, p=0.250; corrected +2/-1, p=1.000 | 1.00 |" in summary
     assert "| 3.0000 | 2.0000 | 2.0 / 2.9 |" in summary and "| docs | 0/3 = 0.000 |" in summary
-    assert "Not reported (incomplete final runs): retrieve: 0/3 answered; tool: 0/3 answered; hints: 0/3 answered." in summary
+    assert "Not reported (incomplete final runs): retrieve@verified: 0/3 answered." in summary
     assert "Dropped by checks: {'leakage': 1}" in summary and "'women' kept f1" in summary
-    FactBook([]).save(f"{runs}/knowledge.json")  # knowledge changed after the gate
+    FactBook([]).save(f"{runs}/knowledge_single.json")  # knowledge changed after the gate
     with pytest.raises(SystemExit):
         analyze(cfg)
 

@@ -9,6 +9,12 @@ SETS = ("discovery", "gate", "final")
 KNOWLEDGE = {"single": "knowledge_single.json", "verified": "knowledge_verified.json"}  # discovery variants
 
 
+def split_arm(arm):
+    """An arm is a delivery mode, with a knowledge variant for knowledge modes: "retrieve@verified" -> ("retrieve", "verified")."""
+    mode, _, variant = arm.partition("@")
+    return mode, variant or None
+
+
 def load_config(path="configs/base.yaml", agent=None):
     cfg = yaml.safe_load(Path(path).read_text())
     profile = cfg["agents"][agent or cfg["agent_profile"]]

@@ -54,3 +54,6 @@ protocol:
   batch_size: 5
   max_regressions: 3
   budget_usd: 2.0
+  # Test arms: delivery mode, @ knowledge variant for knowledge modes. Knowledge arms are gate candidates, ties in this order.
+  arms: [docs, hints, retrieve@single, retrieve@verified]
+  final_reused: true  # the final set was seen in the v4 analysis and label review: v5 results on it are diagnostic

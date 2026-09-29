@@ -1,4 +1,4 @@
-"""CLI: python -m evosql partition | labels | discover | run --mode M.. --set S | gate | analyze"""
+"""CLI: python -m evosql partition | labels | discover | run --arm A.. --set S | gate | analyze"""
 import argparse
 import json
 from collections import Counter
@@ -6,7 +6,7 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-from evosql.config import MODES, SETS, load_config
+from evosql.config import SETS, load_config
 
 
 def main():
@@ -18,10 +18,10 @@ def main():
     sub.add_parser("partition", help="make the discovery / gate / final question sets")
     sub.add_parser("labels", help="download the corrected gold labels (asks first)")
     sub.add_parser("discover", help="write checked, merged facts from the discovery failures")
-    run = sub.add_parser("run", help="answer a question set with one or more delivery modes")
-    run.add_argument("--mode", nargs="+", required=True, choices=MODES)
+    run = sub.add_parser("run", help="answer a question set with one or more arms (see protocol.arms)")
+    run.add_argument("--arm", nargs="+", required=True)
     run.add_argument("--set", required=True, choices=SETS)
-    sub.add_parser("gate", help="one-shot gate: pick the headline mode on the gate set")
+    sub.add_parser("gate", help="one-shot gate: pick the headline arm on the gate set")
     sub.add_parser("analyze", help="write summary.md in the profile's results folder")
     args = parser.parse_args()
 
@@ -45,8 +45,11 @@ def main():
         discover(cfg)
     elif args.cmd == "run":
         from evosql.evaluate import run_mode
-        for mode in args.mode:
-            if not run_mode(cfg, mode, args.set):
+        unknown = set(args.arm) - set(cfg["protocol"]["arms"])
+        if unknown:
+            parser.error(f"unknown arm(s) {sorted(unknown)}; protocol.arms: {cfg['protocol']['arms']}")
+        for arm in args.arm:
+            if not run_mode(cfg, arm, args.set):
                 return
     elif args.cmd == "gate":
         from evosql.evaluate import gate
