@@ -1,5 +1,5 @@
 """v3 test phase and report: every arm answers the same frozen test questions; analyze_v3 compares them
-(accuracy, paired tests, cost incl. amortized learning, twin vs no-twin questions, learned knowledge)."""
+(accuracy, paired tests, cost incl. amortized learning, knowledge-relevant vs other questions, learned knowledge)."""
 import json
 import re
 from collections import Counter
