@@ -1,6 +1,6 @@
-"""Knowledge: typed facts about the database (mapping, constraint, encoding, meaning), grouped by subject.
-check_fact drops facts that contain SQL or name columns or values that do not exist; leaks catches answers."""
-import copy
+"""Knowledge: typed facts about the database, each with trigger phrases (applies_to) and an optional evidence probe.
+check_fact drops facts that contain SQL, name columns or values that do not exist, or fail their probe; leaks catches
+answers; merge unites duplicates and resolves phrases mapped to different columns."""
 import hashlib
 import json
 import re
@@ -10,7 +10,7 @@ from pathlib import Path
 from evosql.bird import execute, quote
 from evosql.files import write_atomic
 
-KINDS = ("mapping", "constraint", "encoding", "meaning")
+KINDS = ("mapping", "encoding", "constraint", "meaning", "grain", "relation")
 # Case-sensitive on purpose: "from" is ordinary English, "FROM" is SQL.
 SQL_PATTERN = re.compile(r"\b(SELECT|FROM|WHERE|JOIN|GROUP BY|ORDER BY|LIMIT|DISTINCT)\b|(?i:\bcount\s*\()")
 
@@ -43,57 +43,43 @@ class Fact:
     kind: str
     subject: str
     fact: str
+    applies_to: list = field(default_factory=list)  # short phrases that trigger the fact
+    probe: str | None = None  # read-only evidence query, never shown to the agent
     source_qids: list = field(default_factory=list)
 
 
+def render(facts):
+    if not facts:
+        return ""
+    lines = ["Learned database knowledge:"]
+    for subject in dict.fromkeys(f.subject for f in facts):
+        lines.append(subject)
+        lines += [f"  - [{f.kind}] {f.fact}" for f in facts if f.subject == subject]
+    return "\n".join(lines)
+
+
 class FactBook:
-    def __init__(self, facts=None, next_id=1):
+    def __init__(self, facts=None):
         self.facts = facts or []
-        self.next_id = next_id
-
-    def add(self, kind, subject, fact, source_qids):
-        self.facts.append(Fact(f"f{self.next_id}", kind, subject, fact, source_qids))
-        self.next_id += 1
-
-    def apply(self, edits):
-        """Return a copy with edits applied; edits are dicts {op, id, kind, subject, fact, qid}."""
-        new = copy.deepcopy(self)
-        for e in edits:
-            old = next((f for f in new.facts if f.id == e.get("id")), None)
-            if e["op"] == "add":
-                new.add(e["kind"], e["subject"], e["fact"], [e.get("qid")])
-            elif e["op"] == "modify" and old:
-                old.kind, old.subject, old.fact = e["kind"], e["subject"], e["fact"]
-                old.source_qids.append(e.get("qid"))
-            elif e["op"] == "delete" and old:
-                new.facts.remove(old)
-        return new
 
     def render(self):
-        if not self.facts:
-            return ""
-        lines = ["Learned database knowledge:"]
-        for subject in dict.fromkeys(f.subject for f in self.facts):
-            lines.append(subject)
-            lines += [f"  - [{f.kind}] {f.fact}" for f in self.facts if f.subject == subject]
-        return "\n".join(lines)
+        return render(self.facts)
 
     def total_tokens(self):
         return len(self.render()) // 4
 
     def digest(self):
-        """Short id of the knowledge content, recorded with test answers so logs never mix two versions."""
+        """Short id of the knowledge content, recorded with answers so logs never mix two versions."""
         return hashlib.sha256(json.dumps([asdict(f) for f in self.facts], sort_keys=True).encode()).hexdigest()[:12]
 
     def save(self, path):
-        write_atomic(path, json.dumps({"next_id": self.next_id, "facts": [asdict(f) for f in self.facts]}, indent=1))
+        write_atomic(path, json.dumps({"facts": [asdict(f) for f in self.facts]}, indent=1))
 
     @classmethod
     def load(cls, path, missing_ok=False):
         if missing_ok and not Path(path).exists():
             return cls()
-        data = json.loads(Path(path).read_text())
-        return cls([Fact(**f) for f in data["facts"]], data["next_id"])
+        return cls([Fact(**f) for f in json.loads(Path(path).read_text())["facts"]])
 
 
 def _unquote(text):
@@ -114,9 +100,11 @@ def _value_in(db, table, col, value):
 
 
 def check_fact(fact, db):
-    """Return why the fact must be dropped (bad kind, SQL, unknown column or value), or None."""
+    """Return why the fact must be dropped (bad kind, no trigger phrase, SQL, unknown column or value, bad probe), or None."""
     if fact.kind not in KINDS:
         return "unknown kind"
+    if not any(isinstance(p, str) and p.strip() for p in fact.applies_to):
+        return "no applies_to phrase"
     if SQL_PATTERN.search(fact.fact):
         return "contains SQL"
     subject = _unquote(fact.subject)
@@ -128,4 +116,44 @@ def check_fact(fact, db):
     for literal in re.findall(r"(?<!\w)'([^']*)'(?!\w)", fact.fact):
         if not any(_value_in(db, t, c, literal) for t, c in targets):
             return f"value not in data: {literal!r}"
+    if fact.probe is not None:
+        if not re.match(r"\s*(SELECT|WITH)\b", fact.probe, re.IGNORECASE):
+            return "probe is not a SELECT"
+        rows, error = execute(db.path, fact.probe, max_rows=1)  # read-only, one statement, 30 s timeout
+        if error:
+            return f"probe failed: {error}"
+        if not rows:
+            return "probe returned no rows"
     return None
+
+
+def _norm(text):
+    return " ".join(re.findall(r"\w+", text.lower()))
+
+
+def merge(facts, db):
+    """Unite duplicates (same kind, subject and text); when one phrase maps to different columns, keep the mapping with
+    more source questions and drop the others (all on a tie). Returns (facts, conflicts)."""
+    unique = {}
+    for f in facts:
+        key = (f.kind, _norm(f.subject), _norm(f.fact))
+        if key not in unique:
+            unique[key] = Fact(**asdict(f))
+            continue
+        old = unique[key]
+        old.source_qids = sorted(set(old.source_qids) | set(f.source_qids))
+        old.applies_to = list(dict.fromkeys(old.applies_to + f.applies_to))
+    kept, conflicts = list(unique.values()), []
+    targets = {f.id: frozenset(fact_columns(db, f)) for f in kept}
+    for phrase in sorted({_norm(p) for f in kept if f.kind == "mapping" for p in f.applies_to}):
+        group = [f for f in kept if f.kind == "mapping" and targets[f.id]
+                 and phrase in {_norm(p) for p in f.applies_to}]
+        if len({targets[f.id] for f in group}) < 2:
+            continue
+        most = max(len(f.source_qids) for f in group)
+        top = [f for f in group if len(f.source_qids) == most]
+        winner = top[0] if len({targets[f.id] for f in top}) == 1 else None
+        losers = [f for f in group if winner is None or targets[f.id] != targets[winner.id]]
+        kept = [f for f in kept if f not in losers]
+        conflicts.append({"phrase": phrase, "facts": [f.id for f in group], "kept": winner and winner.id})
+    return kept, conflicts

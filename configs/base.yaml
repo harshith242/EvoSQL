@@ -1,4 +1,4 @@
-# EvoSQL settings: data, agent profiles, proposer and the learn/freeze/test protocol.
+# EvoSQL settings: data, agent profiles, proposer, search and the discover/gate/final protocol.
 data_dir: data/bird_dev
 db: thrombosis_prediction
 cache_dir: cache/llm
@@ -15,8 +15,8 @@ agents:
     options: {extra_body: {thinking: {type: disabled}}}
     value_profile: true
     usd_per_million: {cache_hit: 0.006, cache_miss: 0.30, output: 1.20}  # peak list prices: an upper bound (off-peak is half)
-    runs_dir: runs_v3
-    results_dir: results_v3
+    runs_dir: runs_v4
+    results_dir: results_v4
   # Optional free fallback: local Ollama alias with a 32k context (see ollama/qwen3.5-9b-32k.Modelfile).
   local:
     model: qwen3.5-9b-32k
@@ -27,7 +27,7 @@ agents:
     runs_dir: runs_local
     results_dir: results_local
 
-# Proposer and consolidator: few calls, thinking on for a better diagnosis.
+# Proposer: few calls, thinking on for a better diagnosis.
 proposer:
   model: deepseek-flash
   base_url: https://api.deepseek.com
@@ -35,13 +35,21 @@ proposer:
   options: {extra_body: {thinking: {type: enabled}}, reasoning_effort: high}
   usd_per_million: {cache_hit: 0.006, cache_miss: 0.30, output: 1.20}
 
-# Learn typed facts on n_learn questions, freeze them, test every arm on n_test other questions.
+# Hybrid fact search (retrieve and tool modes): BM25 + local Ollama embeddings, fused with RRF.
+search:
+  embed_model: qwen3-embedding:0.6b
+  embed_url: http://localhost:11434/v1
+  # Measured on v3 facts and discovery questions: 98% of fact/source-question pairs score >= 0.5, unrelated median 0.42.
+  min_cosine: 0.5
+  retrieve_cap: 8
+  tool_k: 5
+
+# Question sets come from the v3 split (seed, halves) minus the first n_pilot questions of the pilot order.
 protocol:
   n_learn: 50
   n_test: 50
+  n_pilot: 15
   seed: 0
-  epochs: 2
   batch_size: 5
-  min_gain: 2
-  budget_usd: 1.0
-  selfcons_max_n: 5
+  max_regressions: 3
+  budget_usd: 2.0

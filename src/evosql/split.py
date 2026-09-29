@@ -1,11 +1,11 @@
-"""Learning/test split: a difficulty-stratified sample of questions, halved into learn and test."""
+"""Question sets. The v3 split (a difficulty-stratified sample halved into learn and test) becomes v4's discovery and
+gate sets, the unused rest is the final set, and the pilot questions seen by the v1/v2 runs are excluded everywhere."""
 import json
 import random
 from collections import defaultdict
 from pathlib import Path
 
 from evosql.bird import load_questions, open_db
-from evosql.files import write_atomic
 
 
 def make_split(questions, n_learn, n_test, seed):
@@ -31,14 +31,27 @@ def make_split(questions, n_learn, n_test, seed):
     return {"learn": learn, "test": test}
 
 
-def save_split(path, split):
-    write_atomic(path, json.dumps(split, indent=1))
+def pilot_qids(questions, n_pilot, seed):
+    """The first n_pilot questions of the v1/v2 streaming order."""
+    order = [q.qid for q in questions]
+    random.Random(seed).shuffle(order)
+    return set(order[:n_pilot])
+
+
+def make_partitions(questions, protocol):
+    p = protocol
+    split = make_split(questions, p["n_learn"], p["n_test"], p["seed"])
+    pilot = pilot_qids(questions, p["n_pilot"], p["seed"])
+    used = set(split["learn"]) | set(split["test"])
+    rest = sorted(q.qid for q in questions if q.qid not in used)
+    keep = lambda qids: [i for i in qids if i not in pilot]
+    return {"discovery": keep(split["learn"]), "gate": keep(split["test"]), "final": keep(rest)}
 
 
 def load_run(cfg):
-    """Everything learn, test and analyze share: (runs folder, split, database, questions by qid)."""
+    """Everything discover, run and analyze share: (runs folder, partitions, database, questions by qid)."""
     out = Path(cfg["runs_dir"])
-    split = json.loads((out / "split.json").read_text())
+    parts = json.loads((out / "partitions.json").read_text())
     db = open_db(cfg["data_dir"], cfg["db"], with_profile=cfg["agent"].get("value_profile", False))
     by_id = {q.qid: q for q in load_questions(cfg["data_dir"], cfg["db"])}
-    return out, split, db, by_id
+    return out, parts, db, by_id

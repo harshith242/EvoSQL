@@ -3,7 +3,7 @@ import sqlite3
 import pytest
 
 from evosql.bird import open_db
-from evosql.facts import Fact, FactBook, check_fact, leaks
+from evosql.facts import Fact, check_fact, leaks, merge
 
 
 @pytest.fixture
@@ -18,8 +18,8 @@ def db(tmp_path):
     return open_db(tmp_path, "toy")
 
 
-def fact(text, subject="Laboratory.RNP", kind="encoding"):
-    return Fact("f1", kind, subject, text)
+def fact(text, subject="Laboratory.RNP", kind="encoding", applies_to=("normal RNP",), probe=None, qids=(1,), id="f1"):
+    return Fact(id, kind, subject, text, list(applies_to), probe, list(qids))
 
 
 def test_sql_is_rejected_but_ordinary_english_passes(db):
@@ -38,18 +38,27 @@ def test_fact_leaking_the_answer_is_rejected(db):
     assert leaks("There are 42 such patients.", q, "SELECT COUNT(*) FROM Laboratory", [(42,)])
 
 
-def test_factbook_edits_and_renders_grouped_by_subject():
-    book = FactBook().apply([
-        {"op": "add", "kind": "encoding", "subject": "Laboratory.RNP", "fact": "Normal is '0' or 'negative'.", "qid": 1},
-        {"op": "add", "kind": "constraint", "subject": "Laboratory.UN", "fact": "Normal is below 30.", "qid": 2},
-        {"op": "add", "kind": "meaning", "subject": "Laboratory.RNP", "fact": "Anti-ribonuclear protein.", "qid": 3},
-    ])
-    book = book.apply([{"op": "modify", "id": "f2", "kind": "constraint", "subject": "Laboratory.UN",
-                        "fact": "Normal is below 30; borderline is 29.", "qid": 4},
-                       {"op": "delete", "id": "f3"}])
-    assert book.render() == ("Learned database knowledge:\nLaboratory.RNP\n  - [encoding] Normal is '0' or 'negative'.\n"
-                             "Laboratory.UN\n  - [constraint] Normal is below 30; borderline is 29.")
-    assert book.facts[1].source_qids == [2, 4]
+def test_fact_needs_a_trigger_phrase_and_a_probe_with_rows(db):
+    assert check_fact(fact("Normal is 'negative'.", applies_to=[]), db) == "no applies_to phrase"
+    assert check_fact(fact("Normal is 'negative'.", probe="SELECT 1 FROM Laboratory WHERE RNP = 'negative'"), db) is None
+    assert check_fact(fact("Normal is 'negative'.", probe="SELECT 1 FROM Laboratory WHERE RNP = 'neg'"), db) == "probe returned no rows"
+    assert check_fact(fact("Normal is 'negative'.", probe="SELECT nope FROM Laboratory"), db).startswith("probe failed")
+    assert check_fact(fact("Normal is 'negative'.", probe="DELETE FROM Laboratory"), db) == "probe is not a SELECT"
+    assert check_fact(fact("Normal is 'negative'.", probe="SELECT 1; DELETE FROM Laboratory"), db).startswith("probe failed")
+
+
+def test_merge_unites_duplicates_and_resolves_mapping_conflicts(db):
+    same = [fact("Normal is 'negative'.", qids=[1], id="f1"), fact("normal is 'negative'", applies_to=["RNP"], qids=[2], id="f2")]
+    merged, conflicts = merge(same, db)
+    assert len(merged) == 1 and merged[0].source_qids == [1, 2] and merged[0].applies_to == ["normal RNP", "RNP"]
+    # "urea" mapped to two different columns: the better-supported mapping wins.
+    rnp = fact("Urea means Laboratory.RNP.", kind="mapping", applies_to=["urea"], qids=[1], id="f1")
+    un = fact("Urea means Laboratory.UN.", subject="Laboratory.UN", kind="mapping", applies_to=["Urea"], qids=[2, 3], id="f2")
+    merged, conflicts = merge([rnp, un], db)
+    assert [f.id for f in merged] == ["f2"] and conflicts == [{"phrase": "urea", "facts": ["f1", "f2"], "kept": "f2"}]
+    # A tie drops both.
+    merged, conflicts = merge([rnp, fact(un.fact, un.subject, "mapping", ["urea"], qids=[5], id="f2")], db)
+    assert merged == [] and conflicts[0]["kept"] is None
 
 
 def test_apostrophes_and_identifier_quotes_do_not_break_grounding(db):
