@@ -1,5 +1,5 @@
 """Tool-loop Text2SQL agent: inspect tables, profile columns, test queries, then submit one SQL.
-The knowledge delivery adds a prompt section and may add tools. Native tool calls or a JSON fallback in the reply text."""
+Learned knowledge is a text section of the system prompt. Native tool calls or a JSON fallback in the reply text."""
 import json
 
 from evosql.bird import execute, quote
@@ -16,7 +16,7 @@ Database schema:
 {profile}{notes}"""
 
 
-def tool_schema(name, description, **params):
+def _tool(name, description, **params):
     props = {p: {"type": "string", "description": d} for p, d in params.items()}
     return {
         "type": "function",
@@ -29,10 +29,10 @@ def tool_schema(name, description, **params):
 
 
 TOOLS = [
-    tool_schema("describe_table", "Show 3 sample rows of a table and its column descriptions.", table="table name"),
-    tool_schema("profile_column", "Null count, distinct count, min/max and top 10 values of a column.", table="table name", column="column name"),
-    tool_schema("run_sql", "Run a read-only SQLite query and see up to 20 rows.", sql="SQLite query"),
-    tool_schema("submit", "Submit the final SQL answer.", sql="final SQLite query"),
+    _tool("describe_table", "Show 3 sample rows of a table and its column descriptions.", table="table name"),
+    _tool("profile_column", "Null count, distinct count, min/max and top 10 values of a column.", table="table name", column="column name"),
+    _tool("run_sql", "Run a read-only SQLite query and see up to 20 rows.", sql="SQLite query"),
+    _tool("submit", "Submit the final SQL answer.", sql="final SQLite query"),
 ]
 
 
@@ -77,19 +77,18 @@ def _parse_json_call(content):
     return {"id": None, "name": obj["tool"], "arguments": json.dumps(args if isinstance(args, dict) else {})}
 
 
-def answer(llm, db, question, knowledge, temperature=0.0, sample=0, max_steps=8):
-    """Run the tool loop; return (submitted SQL or None, agent turns). knowledge is a delivery mode (see delivery.py)."""
+def answer(llm, db, question, notes="", max_steps=8):
+    """Run the tool loop; return (submitted SQL or None, agent turns). notes: learned knowledge for the prompt."""
     messages = [
         # Static parts first (rules, schema, value profile), then knowledge, so the provider's prefix cache hits.
         {"role": "system", "content": SYSTEM.format(ddl=db.ddl, profile=db.profile + "\n\n" if db.profile else "",
-                                                    notes=knowledge.prompt(question))},
+                                                    notes=notes)},
         {"role": "user", "content": question},
     ]
-    tools = TOOLS + knowledge.tools
     for step in range(1, max_steps + 1):
         if step == max_steps:
             messages.append({"role": "user", "content": "Last step: call submit now with your best SQL."})
-        reply = llm.chat(messages, tools=tools, temperature=temperature, sample=sample)
+        reply = llm.chat(messages, tools=TOOLS)
         calls = reply["tool_calls"]
         # With tools, DeepSeek's thinking mode requires every earlier turn's reasoning to be sent back.
         thought = {"reasoning_content": reply["reasoning"]} if reply.get("reasoning") else {}
@@ -120,7 +119,7 @@ def answer(llm, db, question, knowledge, temperature=0.0, sample=0, max_steps=8)
                 args = {}
             if call["name"] == "submit":
                 return args.get("sql"), step
-            result = knowledge.call(call["name"], args) or run_tool(db, call["name"], args)
+            result = run_tool(db, call["name"], args)
             if call["id"]:
                 messages.append({"role": "tool", "tool_call_id": call["id"], "content": result})
             else:

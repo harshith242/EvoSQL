@@ -1,59 +1,56 @@
-# EvoSQL settings: data, agent profiles, proposer, search and the discover/gate/final protocol.
+# EvoSQL settings: a streaming per-database fact memory on Arcwise-Plat (spec docs/specs/2026-09-29-evosql-v6-design.md).
 data_dir: data/bird_dev
-db: thrombosis_prediction
 cache_dir: cache/llm
 max_steps: 8
 
 # SQL agent profiles; pick one with --agent. Each keeps its own runs and results so models never mix.
+# Every prompt has the schema and a per-column value profile ending in the column's corrected description.
 agent_profile: deepseek
 agents:
-  # DeepSeek, thinking off (deterministic, cheap), with the per-column value profile in the prompt.
+  # DeepSeek, thinking off (deterministic, cheap).
   deepseek:
     model: deepseek-flash
     base_url: https://api.deepseek.com
     api_key_env: DEEPSEEK_API_KEY
     options: {extra_body: {thinking: {type: disabled}}}
-    value_profile: true
-    column_docs: true  # BIRD column descriptions (incl. normal ranges) appended to each value-profile line; v4 had false
     usd_per_million: {cache_hit: 0.006, cache_miss: 0.30, output: 1.20}  # peak list prices: an upper bound (off-peak is half)
-    runs_dir: runs_v5
-    results_dir: results_v5
+    runs_dir: runs_v6
+    results_dir: results_v6
   # Optional free fallback: local Ollama alias with a 32k context (see ollama/qwen3.5-9b-32k.Modelfile).
   local:
     model: qwen3.5-9b-32k
     base_url: http://localhost:11434/v1
     api_key_env: null
     options: {reasoning_effort: none}
-    value_profile: true
     runs_dir: runs_local
     results_dir: results_local
 
-# Proposer: few calls, thinking on for a better diagnosis.
+# Proposer: one call per failure of the facts arm, thinking on for a better diagnosis.
 proposer:
   model: deepseek-flash
   base_url: https://api.deepseek.com
   api_key_env: DEEPSEEK_API_KEY
-  options: {extra_body: {thinking: {type: enabled}}, reasoning_effort: high}
+  options: {extra_body: {thinking: {type: enabled}}, reasoning_effort: medium}
   usd_per_million: {cache_hit: 0.006, cache_miss: 0.30, output: 1.20}
 
-# Hybrid fact search (retrieve and tool modes): BM25 + local Ollama embeddings, fused with RRF.
-search:
-  embed_model: qwen3-embedding:0.6b
-  embed_url: http://localhost:11434/v1
-  # Measured on v3 facts and discovery questions: 98% of fact/source-question pairs score >= 0.5, unrelated median 0.42.
-  min_cosine: 0.5
-  retrieve_cap: 8
-  tool_k: 5
+# Local Ollama embeddings for the semantic path of proven facts.
+embed:
+  model: qwen3-embedding:0.6b
+  url: http://localhost:11434/v1
 
-# Question sets come from the v3 split (seed, halves) minus the first n_pilot questions of the pilot order.
-protocol:
-  n_learn: 50
-  n_test: 50
-  n_pilot: 15
-  seed: 0
-  batch_size: 5
-  max_regressions: 3
+stream:
+  questions: data/arcwise/arcwise_plat_full_with_diff.json
+  docs_root: data/arcwise/schemas  # corrected column descriptions: <root>/<db>/database_description/<table>.csv
+  databases: [formula_1, superhero, card_games, european_football_2]
+  seeds: [0, 1]
   budget_usd: 2.0
-  # Test arms: delivery mode, @ knowledge variant for knowledge modes. Knowledge arms are gate candidates, ties in this order.
-  arms: [docs, hints, retrieve@single, retrieve@verified]
-  final_reused: true  # the final set was seen in the v4 analysis and label review: v5 results on it are diagnostic
+  order_budget_usd: [1.0, 2.0]  # cumulative spend allowed by the end of each order
+  precheck_reserve_usd: 0.10    # pre-checks are skipped once an order is this close to its allocation
+  inert_below: 0.10             # report: a stream injecting facts on fewer second-half questions is "inert"
+  rules:
+    generic_min_questions: 8    # genericity applies once a stream has this many earlier questions
+    generic_share: 0.25         # a trigger matching more of them is generic and needs a second cue
+    semantic_min: 0.75          # semantic path (proven facts only): cosine threshold...
+    semantic_margin: 0.05       # ...and margin over the next-best fact
+    idle_uses: 5                # retire a fact still at score 0 after this many uses
+    precheck_max: 2             # earlier matched questions tried before a new fact goes live

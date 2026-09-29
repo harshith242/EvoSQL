@@ -57,10 +57,10 @@ def _usd(usage, prices):
 
 
 def report(cfg):
-    v6, out = cfg["v6"], Path(cfg["runs_dir"])
-    inert_below = v6.get("inert_below", 0.10)
+    sc, out = cfg["stream"], Path(cfg["runs_dir"])
+    inert_below = sc["inert_below"]
     agent_p, prop_p = cfg["agent"].get("usd_per_million"), cfg["proposer"].get("usd_per_million")
-    names = [(s, db) for s in v6["seeds"] for db in v6["databases"]]
+    names = [(s, db) for s in sc["seeds"] for db in sc["databases"]]
     runs = {k: read_jsonl(out / f"stream_s{k[0]}_{k[1]}.jsonl") for k in names}
     runs = {k: r for k, r in runs.items() if r}
     stats = {k: stream_stats(r, inert_below) for k, r in runs.items()}
@@ -87,7 +87,7 @@ def report(cfg):
                   f"(stream-level block bootstrap 95% CI {lo:+.3f} to {hi:+.3f}).",
                   "- **Leave one database out:** " + ", ".join(
                       f"without {db} {pooled_diff([s for (_, d), s in stats.items() if d != db]):+.3f}"
-                      for db in v6["databases"] if any(d == db for _, d in stats)) + "."]
+                      for db in sc["databases"] if any(d == db for _, d in stats)) + "."]
         diffs = [int(r["facts_ok"]) - int(r["none_ok"]) for k, recs in runs.items() for r in recs
                  if r["pos"] > len(recs) / 2]
         lines += [f"- **Heuristic (ignores dependence within a stream, not an exact test):** question-level sign-flip "
@@ -113,7 +113,7 @@ def report(cfg):
     lines += ["", "## Cost, latency, turns", "",
               f"- Logical cost (peak prices; replays counted once per run): " +
               ", ".join(f"{k} ${v:.3f}" for k, v in cost.items()) + f". Real API spend: ${spend:.3f} of "
-              f"${cfg['protocol']['budget_usd']:.2f}.",
+              f"${sc['budget_usd']:.2f}.",
               f"- Latency p50 / p95 s: none {np.percentile(lat('none') or [0], 50):.1f} / "
               f"{np.percentile(lat('none') or [0], 95):.1f}, facts {np.percentile(lat('facts') or [0], 50):.1f} / "
               f"{np.percentile(lat('facts') or [0], 95):.1f}.",
@@ -132,7 +132,7 @@ def report(cfg):
                   f"{' RETIRED (' + f['retired'] + ')' if f.get('retired') else ''} [{f['kind']}] {f['subject']}: "
                   f"{f['fact']}  (applies to: {', '.join(f['applies_to'])})" for f in facts] + ["```"]
 
-    manifest = Path(v6["questions"]).parent / "manifest.json"
+    manifest = Path(sc["questions"]).parent / "manifest.json"
     if manifest.exists():
         m = json.loads(manifest.read_text())
         lines += ["", "## Pinned data", "", f"- Arcwise commit {m['arcwise_commit']}; questions per database "
