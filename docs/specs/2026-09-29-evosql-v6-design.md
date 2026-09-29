@@ -1,7 +1,7 @@
 # EvoSQL v6: A Text-to-SQL Agent That Builds a Memory of Each Database (Design for Review)
 
 Date: 2026-09-29
-Status: draft for external review, before implementation. Revision 3 incorporates two reviews.
+Status: draft for external review, before implementation. Revision 4 incorporates three reviews.
 Repo: `evosql/` (v3, v4 and v5 are tagged; this document is self-contained)
 
 ## 1. Goal
@@ -155,7 +155,9 @@ The proposer (`deepseek-flash`, thinking on, effort medium) sees:
 
 It writes typed facts, one misconception per fact:
 - **Types:** `mapping`, `encoding`, `constraint`, `meaning`, `grain`, `relation`.
-- **Each fact carries its applicability conditions:** 1–5 trigger phrases (`applies_to`), which are also used by retrieval.
+- **Each fact carries its applicability conditions:** 1–5 trigger phrases (`applies_to`), which are also used by retrieval. They may reuse the question's own wording.
+- **Each fact lists the stored values it relies on** in a structured field, `values: [{table, column, value}]`. Quoted words in the text are not treated as values.
+- **Optional evidence query:** it must run and return a result set. For a fact about absence ("there are no X"), the proposer writes a `COUNT(*)` query, which returns a single 0.
 
 Its rules:
 - state the knowledge, never the SQL fix;
@@ -168,10 +170,12 @@ Its rules:
 A fact is dropped if any of these holds:
 - it contains SQL;
 - it names a column that does not exist, or names no table or column of the schema at all (a fact must be scoped to part of the schema);
-- a quoted value is not in the data (question wording in quotes is exempt);
-- its evidence query fails or returns nothing;
+- a value listed in its `values` field does not occur in that table and column (only structured values are checked; quoted text is ignored);
+- its evidence query fails to run or returns no result set (`COUNT(*) = 0` is a valid result);
 - it only restates a column's documented range (unless it flips the documented direction);
-- it leaks the answer: a gold result value, or 5+ words copied from the question.
+- it leaks the answer:
+  - a gold result value, anywhere in the text, trigger phrases or values;
+  - or 5+ words copied from the question, checked in the **fact text only**, because trigger phrases are meant to reuse the user's wording.
 
 **Why it helps:** in v3–v5 the invented values, invented columns and memorized answers were caught cheaply by these checks.
 
@@ -214,25 +218,36 @@ Timing: none's answer and the gold are known only after the question is scored, 
 This is **online pruning after use**, not a gate. A proven fact that shares the prompt with another still shares that outcome's credit.
 
 ### Step 8: Retrieve very selectively, scoped to the schema
-A fact is **eligible** for a question only if all three hold:
+There are two ways a fact can become eligible for a question.
+
+**A. Phrase path (any fact, including unproven):**
 1. **Phrase match:** one of its trigger phrases appears in the question as a whole phrase, with word boundaries (e.g. "age" does not match "average").
-2. **Not generic:** once at least 8 earlier questions exist in the stream, a trigger phrase that matches more than **25%** of them is ignored as too generic (e.g. "normal"). So a fact cannot qualify through that phrase.
-3. **Schema scope:** the question mentions the fact's table or column, either by name or by a content word from that column's description.
+2. **Genericity:** once at least 8 earlier questions exist in the stream, a trigger phrase that matches more than **25%** of them counts as generic. A generic phrase qualifies only together with a second cue: another non-generic trigger of the same fact, or the fact's table or column in the question. It is not dropped outright.
+3. **Schema scope by kind:**
+   - `grain` and `relation` facts also need the question to mention their table or column, by name or by a content word from the column's description;
+   - `mapping`, `encoding`, `constraint` and `meaning` facts do not. Their job is to link wording the schema does not contain ("full name") to columns, and Step 4 already requires them to name real columns.
+
+**B. Semantic path (proven facts only, score ≥ +1).** All of these must hold:
+- embedding similarity to the question of at least **0.75**;
+- a margin of at least **0.05** over the next-best fact;
+- the fact's table or column is in the question's schema scope.
+
+This lets a proven fact transfer to new wording ("full name" to "name of the member"). Unproven facts cannot take this path, so their credit stays attributable.
 
 Among eligible, non-retired facts:
 - proven facts rank before unproven ones;
-- ties are broken by hybrid search (BM25 plus embedding similarity, fused with Reciprocal Rank Fusion);
-- embedding similarity alone never makes a fact eligible.
+- ties are broken by hybrid search (BM25 plus embedding similarity, fused with Reciprocal Rank Fusion).
 
 Injection:
 - **1 unproven fact** at most;
-- **a second slot** only for a fact with score at least +1;
+- **a second slot** only for a proven fact;
 - nothing if no fact is eligible.
 
 **Why it helps:**
-- v5 injected about 8.8 facts per question, and its regressions were mostly style flips on questions the facts had nothing to do with.
-- Matching a whole phrase, filtering generic phrases and scoping to the schema remove facts that merely sound related.
-- A single unproven fact makes each outcome attributable to it.
+- v5 injected about 8.8 facts per question, and its regressions were mostly style flips on unrelated questions.
+- Whole-phrase matching and the two-cue rule for generic phrases stop facts that merely sound related, without making common but useful triggers ("age") unusable.
+- Scoping by fact kind keeps mappings usable exactly where they are needed.
+- The semantic path gives proven facts the transfer that exact phrases cannot.
 
 ### Step 9: Keep learning
 Each database's memory grows throughout its stream, and later questions draw on everything learned before them.
@@ -266,6 +281,7 @@ The claims are sized accordingly.
 - **Sensitivity analyses:**
   - a stream-level block bootstrap of the pooled difference, resampling whole streams;
   - a leave-one-database-out analysis.
+- **Injection rate (pre-registered check):** the share of second-half questions with at least one fact injected, per stream. If it is below **10%**, the report states that the facts arm was mostly inert. A null result then means "the memory was rarely used", not "memory does not help".
 - **Heuristic statistics, labelled as such:**
   - a question-level paired sign-flip test;
   - a question-clustered bootstrap CI;
@@ -310,7 +326,8 @@ The claims are sized accordingly.
 |---|---|
 | Few failures per database (about 20–30), so few facts | Streaming uses every question; the learning curve shows whether the facts help late in the stream |
 | Wrong or over-general facts | Checks (Step 4), merge (Step 5), a pre-activation check on earlier questions (Step 6), pruning after the first regression for unproven facts (Step 7); all facts and their credit listed in the report |
-| Distraction from injected facts | At most 1 unproven fact; whole-phrase, non-generic, schema-scoped eligibility; per-question regressions reported with the injected IDs |
+| Distraction from injected facts | At most 1 unproven fact; whole-phrase matching, the two-cue rule for generic phrases, schema scope for grain/relation facts, and a strict semantic path for proven facts only; per-question regressions reported with the injected IDs |
+| Safeguards make the facts arm inert | Scope by fact kind, generic phrases kept with a second cue, a semantic path for proven facts, and the injection-rate check (Section 7) |
 | Order effects and few independent streams | Two pre-registered orders; results per stream; conservative claims (Section 7) |
 | Credit is shared when 2 facts are injected | Only a proven fact may share the prompt; unproven facts are always alone |
 | The effect is too small to detect | Direction count over 8 streams; block bootstrap; heuristic power stated as heuristic |
@@ -331,5 +348,9 @@ The claims are sized accordingly.
 ## 11. Questions for the reviewer
 
 1. Is a pre-activation check on at most 2 earlier matched questions (reject on any regression) a reasonable budget-limited gate, or should an unmatched fact stay inactive rather than going live as unproven?
-2. Are the eligibility thresholds sound as pre-registered values: a genericity cut-off of 25% of earlier questions, applied from 8 questions on, and retirement after 5 uses with no effect?
+2. Are the pre-registered values sound?
+   - genericity: 25% of earlier questions, applied from 8 questions on, with a second cue required;
+   - semantic path: similarity 0.75 with a 0.05 margin, proven facts only;
+   - retirement after 5 uses with no effect;
+   - the 10% injection-rate threshold for calling the arm inert.
 3. Is the 8-stream direction count, with a stream-level block bootstrap, the right primary framing given the dependence structure?
