@@ -100,7 +100,8 @@ def run_test(cfg, arm, agent_llm=None):
                 bar.update(1)
                 bar.set_postfix_str(f"acc {right}/{bar.n} | spent ${budget.total:.3f}")
         except (BudgetExceeded, ProviderExhausted) as e:
-            print(f"stopped: {e}. Rerun the same command later; it resumes.")
+            print(f"stopped: {e}. To continue, raise protocol.budget_usd (or wait out the provider limit) "
+                  f"and rerun; it resumes.")
             return False
     return True
 

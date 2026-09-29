@@ -1,5 +1,5 @@
 """OpenAI-compatible chat client (DeepSeek or Ollama) with a disk cache, retry/backoff, usage and spend reporting.
-Cached replies still count toward usage (the logical cost of the run) but not toward real spend.
+A reply cached by an earlier run counts toward usage (logical cost) once per process, never toward real spend.
 The cache key has no model digest: clear cache/llm after changing an Ollama Modelfile."""
 import hashlib
 import json
@@ -59,6 +59,7 @@ class LLM:
         self.options = options or {}  # extra request params, e.g. {"reasoning_effort": "low"}
         self.prices, self.on_spend = prices, on_spend  # on_spend(usd) runs after every real (non-cached) call
         self.usage = {"calls": 0, "cached": 0, **dict.fromkeys(TOKENS, 0)}
+        self.seen = set()  # cache keys already counted in this process: in-run replays are free
 
     def chat(self, messages, tools=None, temperature=0.0, sample=0):
         """Return {content, reasoning, tool_calls: [{id, name, arguments}], model, and the TOKENS counts}."""
@@ -67,12 +68,15 @@ class LLM:
         path = self.cache_dir / key[:2] / f"{key}.json"
         if path.exists():
             reply = json.loads(path.read_text())
+            if key in self.seen:
+                return reply
             self.usage["cached"] += 1
         else:
             reply = self._call(messages, tools, temperature)
             write_atomic(path, json.dumps(reply))
             if self.on_spend:
                 self.on_spend(usd(reply, self.prices))
+        self.seen.add(key)
         self.usage["calls"] += 1
         for k in TOKENS:
             self.usage[k] += reply.get(k, 0)

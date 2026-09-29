@@ -72,9 +72,10 @@ def test_consolidation_is_kept_only_if_it_does_not_lower_the_learning_score():
 
 def test_ungated_keeps_every_checked_fact_even_from_rejected_batches():
     check = lambda e, q: "contains SQL" if e["fact"] == "elsewhere" else None
-    k, ungated, log = run(proposer("small", "elsewhere", "good", "small"), check=check, epochs=2)
-    assert [f.fact for f in ungated.facts] == ["small", "good"]  # the repeated "small" is kept once
-    assert log[2]["dropped"][0]["reason"] == "contains SQL"
+    k, ungated, log = run(proposer("elsewhere", "small"), check=check)
+    assert [f.fact for f in ungated.facts] == ["small"] and log[1]["dropped"][0]["reason"] == "contains SQL"
+    _, ungated, _ = run(proposer("small", "small"))
+    assert [f.fact for f in ungated.facts] == ["small"]  # a repeated fact is kept once
 
 
 def test_budget_persists_real_spend_and_stops_past_the_cap(tmp_path):

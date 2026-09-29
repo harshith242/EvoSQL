@@ -112,6 +112,8 @@ def learn_loop(learn_qs, solve, propose, check, consolidate, epochs, batch_size,
 
     ungated, seen = FactBook(), set()
     for epoch in range(1, epochs + 1):
+        if epoch > 1 and version == 0:
+            break  # nothing was accepted, so another epoch would replay the same batches and proposals
         failures = [q for q in learn_qs if not scores[q.qid][0]]
         for i in range(0, len(failures), batch_size):
             batch = [q for q in failures[i:i + batch_size] if not scores[q.qid][0]]
@@ -200,6 +202,8 @@ def run_learn(cfg):
 
     log_path = out / "learn.jsonl"
     write_atomic(log_path, "")
+    for name in ("knowledge_final.json", "ungated.json"):  # never leave an older run's knowledge next to this log
+        (out / name).unlink(missing_ok=True)
 
     def log(entry):
         entry["usage"] = {"agent": dict(agent.usage), "proposer": dict(proposer.usage)}  # cumulative
@@ -212,7 +216,8 @@ def run_learn(cfg):
                                        check, lambda book: consolidate(proposer, db, book),
                                        p["epochs"], p["batch_size"], p["min_gain"], log, neutral_fact(db))
     except (BudgetExceeded, ProviderExhausted) as e:
-        print(f"stopped: {e}. Rerun `learn` later; finished calls replay from cache.")
+        print(f"stopped: {e}. To continue, raise protocol.budget_usd (or wait out the provider limit) and rerun "
+              f"`learn`; finished calls replay from cache for free.")
         return False
     finally:
         bar.close()

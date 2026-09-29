@@ -28,9 +28,12 @@ def test_repeat_call_is_served_from_cache_but_still_counted(tmp_path):
     llm = LLM("m", cache_dir=tmp_path, client=transport)
     messages = [{"role": "user", "content": "hi"}]
     first = llm.chat(messages)
-    second = llm.chat(messages)
-    assert first == second and transport.calls == 1
-    assert llm.usage == {"calls": 2, "cached": 1, "prompt_tokens": 200, "completion_tokens": 20, "provider_cached_tokens": 0}
+    assert llm.chat(messages) == first and transport.calls == 1
+    assert llm.usage["calls"] == 1  # an in-run replay is free
+    rerun = LLM("m", cache_dir=tmp_path, client=transport)  # a later run replaying the cache counts it once
+    rerun.chat(messages)
+    assert transport.calls == 1 and rerun.usage == {"calls": 1, "cached": 1, "prompt_tokens": 100,
+                                                    "completion_tokens": 10, "provider_cached_tokens": 0}
 
 
 def test_different_sample_index_bypasses_cache(tmp_path):
