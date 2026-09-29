@@ -59,7 +59,8 @@ def setup(tmp_path):
             "max_steps": 3}
 
 
-def test_crash_then_rerun_resumes_without_duplicates_and_keeps_learned_notes(tmp_path):
+def test_crash_then_rerun_resumes_without_duplicates_and_keeps_learned_notes(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)  # gold results cache under ./cache; keep it out of the repo
     cfg = setup(tmp_path)
     # Calls: step 0 answer, gate before, gate after, step 1 answer, step 2 answer -> crash on 5th call.
     finished = run_arm(cfg, "ratchet", 0, agent_llm=FakeAgent(crash_at=5), proposer_llm=FakeProposer())
@@ -105,7 +106,8 @@ class RetryProposer(FakeProposer):
                 "prompt_tokens": 10, "completion_tokens": 1}
 
 
-def test_note_that_does_not_fix_the_question_gets_one_retry_with_the_sql_it_produced(tmp_path):
+def test_note_that_does_not_fix_the_question_gets_one_retry_with_the_sql_it_produced(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
     cfg = setup(tmp_path)
     proposer = RetryProposer()
     assert run_arm(cfg, "ratchet", 0, limit=1, agent_llm=PickyAgent(), proposer_llm=proposer)

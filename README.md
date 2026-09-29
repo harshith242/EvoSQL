@@ -44,7 +44,32 @@ uv run python smoke_test.py                           # 2 questions, prints ever
 ollama pull qwen3.5:9b && ollama create qwen3.5-9b-32k -f ollama/qwen3.5-9b-32k.Modelfile
 ```
 
-## Run
+## v3 protocol: learn, freeze, test (main result)
+
+Streaming pilots (v1/v2) showed notes turning into SQL patches and copying BIRD annotation errors, with gains lost in noise. v3 learns **typed facts about the data** on 50 learning questions, freezes them, and judges them only on 50 **different** test questions (stratified by difficulty). The design is in `docs/specs/2026-09-29-evosql-v3-design.md`.
+
+- **Facts, not fixes:** each fact is a `mapping` ("admitted to the hospital" means `Patient.Admission` is `'+'`), `constraint`, `encoding` or `meaning`. Facts containing SQL, naming columns or values that do not exist in the data, or leaking an answer are dropped for free before any LLM test. The proposer may `skip` questions whose gold SQL looks like an annotation error.
+- **Gated versions:** a batch of up to 5 failures yields a candidate knowledge version. It is kept only if it beats the current version on the whole learning set by at least `max(2, calibration flips)` and fixes a question in its batch. After 2 epochs the knowledge is consolidated (kept only if not worse) and frozen.
+- **Budget:** the agent runs with thinking off (deterministic); all calls are cached; a spend guard stops at `v3.budget_usd` ($1) of real API spend and resumes on rerun.
+
+```bash
+uv run python -m evosql split                               # 50 learn / 50 test, saved to runs_v3/split.json
+uv run python -m evosql learn                               # typed facts -> runs_v3/knowledge_final.json
+uv run python -m evosql test --arm docs evosql ungated      # frozen test answers
+uv run python -m evosql test --arm selfcons                 # needs docs + evosql first (budget-matched N)
+uv run python -m evosql analyze-v3                          # results_v3/summary.md
+```
+
+| Arm | Knowledge in the prompt | Answers per question |
+|---|---|---|
+| docs | none | 1 |
+| evosql | frozen, gated, consolidated facts | 1 |
+| ungated | every fact that passed the free checks, no gate | 1 |
+| selfcons | none | N (majority of result sets), N matched to evosql's spend incl. learning |
+
+The report shows test accuracy with 95% CIs, McNemar p against docs, test and learning cost, accuracy on test questions that share a filter column with a learning question ("twins") vs not, what was learned, skipped and dropped, and the final facts verbatim.
+
+## Run (v1/v2 streaming)
 
 Arms: `vanilla`, `docs`, `ratchet`, `evosql`, `selfcons`, plus `docs_hints` as a reference only. Each one is a YAML file in `configs/arms/`.
 

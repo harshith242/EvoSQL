@@ -21,10 +21,13 @@ def main():
     sub.add_parser("analyze", help="build charts and results/summary.md from runs/")
     sub.add_parser("split", help="v3: make the 50/50 learning/test split")
     sub.add_parser("learn", help="v3: learn and freeze typed facts on the learning set")
+    test = sub.add_parser("test", help="v3: answer the test set with one or more arms")
+    test.add_argument("--arm", nargs="+", required=True, choices=["docs", "evosql", "ungated", "selfcons"])
+    sub.add_parser("analyze-v3", help="v3: write results_v3/summary.md")
     args = parser.parse_args()
 
     # v3 commands default to the v3 agent profile (thinking off + value profile).
-    v3 = args.cmd in ("split", "learn")
+    v3 = args.cmd in ("split", "learn", "test", "analyze-v3")
     cfg = load_config(args.config, args.agent or ("deepseek_v3" if v3 else None))
     print(f"agent: {cfg['agent']['model']} -> {cfg['runs_dir']}/")
     if args.cmd == "run":
@@ -54,6 +57,14 @@ def main():
     elif args.cmd == "learn":
         from evosql.learn import run_learn
         run_learn(cfg)
+    elif args.cmd == "test":
+        from evosql.evaluate import run_test
+        for arm in args.arm:
+            if not run_test(cfg, arm):
+                return
+    elif args.cmd == "analyze-v3":
+        from evosql.evaluate import analyze_v3
+        analyze_v3(cfg)
 
 
 if __name__ == "__main__":
