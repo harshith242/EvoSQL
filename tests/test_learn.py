@@ -15,6 +15,7 @@ OUTCOMES = {
     ("small",): {1, 2, 3},             # net +1: below the threshold of 2
     ("elsewhere",): {1, 2, 5, 6},      # net +2, but proposed for batch [3, 4], which it does not fix
     ("good",): {1, 2, 3, 4},           # net +2 and fixes the batch
+    ("good", "helper"): {1, 2, 3, 4},  # two facts, so consolidation has something to merge
     ("merged",): {1, 2, 3},            # consolidation that loses a question
 }
 
@@ -55,12 +56,17 @@ def test_qualifying_candidate_is_accepted_and_becomes_the_new_version():
     assert next(e for e in log if e["event"] == "batch")["version"] == 1
 
 
+def two_facts(batch, book):
+    edits = [{"op": "add", "kind": "meaning", "subject": "T.c", "fact": t, "qid": batch[0].qid} for t in ("good", "helper")]
+    return (edits, []) if not book.facts else ([], [])
+
+
 def test_consolidation_is_kept_only_if_it_does_not_lower_the_learning_score():
     worse = lambda book: FactBook([Fact("f1", "meaning", "T.c", "merged")])
-    k, _, log = run(proposer("good"), consolidate=worse)
-    assert [f.fact for f in k.facts] == ["good"] and log[-1]["kept"] is False
+    k, _, log = run(two_facts, consolidate=worse)
+    assert [f.fact for f in k.facts] == ["good", "helper"] and log[-1]["kept"] is False
     same = lambda book: FactBook([Fact("f9", "meaning", "T.c", "good")])
-    k, _, log = run(proposer("good"), consolidate=same)
+    k, _, log = run(two_facts, consolidate=same)
     assert k.facts[0].id == "f9" and log[-1]["kept"] is True
 
 

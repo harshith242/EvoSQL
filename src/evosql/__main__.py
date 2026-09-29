@@ -28,7 +28,8 @@ def main():
 
     # v3 commands default to the v3 agent profile (thinking off + value profile).
     v3 = args.cmd in ("split", "learn", "test", "analyze-v3")
-    cfg = load_config(args.config, args.agent or ("deepseek_v3" if v3 else None))
+    default = load_config(args.config)["v3"]["agent_profile"] if v3 else None
+    cfg = load_config(args.config, args.agent or default)
     print(f"agent: {cfg['agent']['model']} -> {cfg['runs_dir']}/")
     if args.cmd == "run":
         for arm in args.arm:

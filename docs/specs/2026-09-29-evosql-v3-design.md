@@ -54,7 +54,7 @@ Laboratory.UN
 A fact is dropped, with the reason logged, if it fails any check:
 
 1. **No SQL.** The fact text contains a SQL clause or keyword (`SELECT`, `FROM`, `WHERE`, `JOIN`, `GROUP BY`, `ORDER BY`, `COUNT(`, `DISTINCT`, `LIMIT`). Column names, operators and values are allowed.
-2. **Grounded.** A `Table.Column` subject must exist. Every quoted literal in the fact must occur in that column. If the subject is a term, the literal must occur in some column the fact names.
+2. **Grounded.** A `Table.Column` subject must exist (identifier quotes such as backticks are ignored). Every quoted literal in the fact must occur in the subject column or in a `Table.Column` the fact names; if no column is named, in any column of the database.
 3. **No leakage.** The fact contains a gold-result value that is not in the gold SQL, or it shares a 5-word run with the question (checked on the fact text only).
 
 ## 4. Proposer

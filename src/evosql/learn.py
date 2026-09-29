@@ -21,11 +21,11 @@ NEUTRAL = {"op": "add", "kind": "meaning", "subject": "Patient.ID", "qid": None,
            "fact": "Identifies one patient; the same ID links Patient, Laboratory and Examination rows."}
 
 PROPOSER_V3 = """You build a knowledge base about ONE SQLite database so that a Text2SQL agent answers future, different questions correctly.
-Below are questions the agent got wrong, with its SQL and the correct SQL. For each one, find what the agent did not KNOW about this database and state it as facts. Fact kinds:
-- mapping: what a phrase used in questions means in the data. Example: "admitted to the hospital" means Patient.Admission is '+'.
-- constraint: a range or business rule. Example: normal urea nitrogen (Laboratory.UN) is below 30.
-- encoding: how values are stored. Example: normal Laboratory.RNP results are stored as both '0' and 'negative'.
-- meaning: what a column represents. Example: Examination.aCL IgA is the anti-cardiolipin antibody concentration used for rankings.
+Below are questions the agent got wrong, with its SQL and the correct SQL. For each one, find what the agent did not KNOW about this database and state it as facts. Fact kinds (examples use a made-up shop database):
+- mapping: what a phrase used in questions means in the data. Example: "shipped orders" means Orders.Status is 'S'.
+- constraint: a range or business rule. Example: a normal Orders.Discount is at most 30.
+- encoding: how values are stored. Example: unpaid Orders.Payment is stored as both 'none' and '0'.
+- meaning: what a column represents. Example: Orders.Amt is the order total in cents.
 Rules:
 - State facts about the data, never the SQL fix. Do not write SQL keywords or clauses.
 - A fact must help other questions too; never state this question's answer or copy its wording.
@@ -100,11 +100,9 @@ def consolidate(llm, db, book):
 
 
 def learn_loop(learn_qs, solve, propose, check, consolidate, epochs, batch_size, min_gain, log):
-    """Gated, versioned learning. Returns (frozen knowledge, ungated knowledge, calibration flips)."""
+    """Gated, versioned learning; check(edit, batch) -> reason | None. Returns (knowledge, ungated, calibration flips)."""
     score = lambda book: {q.qid: solve(q, book) for q in learn_qs}
     right = lambda scores: sum(scores.values())
-    by_id = {q.qid: q for q in learn_qs}
-
     k, version = FactBook(), 0
     scores = score(k)
     neutral = score(k.apply([NEUTRAL]))
@@ -122,11 +120,12 @@ def learn_loop(learn_qs, solve, propose, check, consolidate, epochs, batch_size,
             edits, skips = propose(batch, k)
             kept, dropped = [], []
             for e in edits:
-                reason = None if e["op"] == "delete" else check(e, by_id.get(e.get("qid")))
+                reason = None if e["op"] == "delete" else check(e, batch)
                 (dropped if reason else kept).append({**e, "reason": reason} if reason else e)
-            # Ungated keeps every checked add once (the proposer may repeat itself across batches and epochs).
-            known = {(f.subject, f.fact) for f in ungated.facts}
-            ungated = ungated.apply([e for e in kept if e["op"] == "add" and (e["subject"], e["fact"]) not in known])
+            # Ungated keeps every checked fact text once (the proposer may repeat itself across batches and epochs).
+            for e in kept:
+                if e["op"] != "delete" and (e["subject"], e["fact"]) not in {(f.subject, f.fact) for f in ungated.facts}:
+                    ungated = ungated.apply([{**e, "op": "add"}])
             entry = {"event": "batch", "epoch": epoch, "batch": [q.qid for q in batch], "kept": kept,
                      "dropped": dropped, "skips": skips}
             if not kept:
@@ -141,11 +140,12 @@ def learn_loop(learn_qs, solve, propose, check, consolidate, epochs, batch_size,
                 version += 1
             log({**entry, "net_gain": net, "fixed": fixed, "right": right(cand_scores), "version": version,
                  "decision": "accepted" if accepted else f"rejected (net {net}, need {threshold}, fixed {len(fixed)})",
-                 "facts": [asdict(f) for f in candidate.facts] if accepted else None})
+                 "facts": [asdict(f) for f in candidate.facts] if accepted else None,
+                 "next_id": candidate.next_id})
             if accepted:
                 k, scores = candidate, cand_scores
 
-    if k.facts:
+    if len(k.facts) > 1:
         merged = consolidate(k)
         merged_scores = score(merged)
         keep = right(merged_scores) >= right(scores)
@@ -180,8 +180,10 @@ def run_learn(cfg):
     bar = tqdm(desc="learn", unit="run", dynamic_ncols=True)
 
     def run(q, book):
-        r = answer(agent, db, q.question, book, max_steps=cfg["max_steps"])
-        budget.charge(billed)
+        try:
+            r = answer(agent, db, q.question, book, max_steps=cfg["max_steps"])
+        finally:
+            budget.charge(billed)
         bar.update(1)
         bar.set_postfix_str(f"spent ${budget.total:.3f}")
         return r.sql
@@ -191,13 +193,17 @@ def run_learn(cfg):
 
     def propose(batch, book):
         # The agent's SQL under the current knowledge is a cache hit from scoring it.
-        edits, skips = propose_facts(proposer, db, book, [(q, run(q, book)) for q in batch])
-        budget.charge(billed)
-        return edits, skips
+        sqls = [(q, run(q, book)) for q in batch]
+        try:
+            return propose_facts(proposer, db, book, sqls)
+        finally:
+            budget.charge(billed)
 
-    def check(edit, q):
+    def check(edit, batch):
+        # Leakage is checked against every question in the batch: the proposer saw all of their gold SQL.
         fact = Fact("new", edit["kind"], edit["subject"], edit["fact"])
-        return check_fact(fact, db, q.question, q.gold_sql, gold_rows(db.path, q)) if q else check_fact(fact, db)
+        reasons = [check_fact(fact, db, q.question, q.gold_sql, gold_rows(db.path, q)) for q in batch]
+        return next((r for r in reasons if r), None)
 
     log_path = out / "learn.jsonl"
     log_path.write_text("")
@@ -207,7 +213,7 @@ def run_learn(cfg):
         with open(log_path, "a") as f:
             f.write(json.dumps(entry) + "\n")
         if entry.get("decision", "").startswith("accepted"):
-            FactBook([Fact(**f) for f in entry["facts"]]).save(out / f"knowledge_v{entry['version']}.json")
+            FactBook([Fact(**f) for f in entry["facts"]], entry["next_id"]).save(out / f"knowledge_v{entry['version']}.json")
         tqdm.write("  " + describe(entry))
 
     try:

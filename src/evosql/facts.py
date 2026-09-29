@@ -13,7 +13,7 @@ from evosql.learner import leaks
 
 KINDS = ("mapping", "constraint", "encoding", "meaning")
 # Case-sensitive on purpose: "from" is ordinary English, "FROM" is SQL.
-SQL_PATTERN = re.compile(r"\b(SELECT|FROM|WHERE|JOIN|GROUP BY|ORDER BY|LIMIT|DISTINCT)\b|\bCOUNT\s*\(")
+SQL_PATTERN = re.compile(r"\b(SELECT|FROM|WHERE|JOIN|GROUP BY|ORDER BY|LIMIT|DISTINCT)\b|(?i:\bcount\s*\()")
 
 
 @dataclass
@@ -75,10 +75,10 @@ def columns(db, table):
 
 
 def _named_columns(db, text):
-    """(table, column) pairs written as Table.Column in the text, longest column names first."""
+    """(table, column) pairs written as Table.Column in the text."""
     found = []
     for table in db.tables:
-        for col in sorted(columns(db, table), key=len, reverse=True):
+        for col in columns(db, table):
             if f"{table}.{col}".lower() in text.lower():
                 found.append((table, col))
     return found
@@ -96,13 +96,16 @@ def check_fact(fact, db, question=None, gold_sql=None, gold=None):
         return "unknown kind"
     if SQL_PATTERN.search(fact.fact):
         return "contains SQL"
-    if "." in fact.subject and fact.subject.split(".", 1)[0] in db.tables:
-        table, col = fact.subject.split(".", 1)
+    # Identifier quotes (`aCL IgG`, "T-BIL") are style, not part of the name.
+    subject = re.sub(r'[`"]', "", fact.subject)
+    if "." in subject and subject.split(".", 1)[0] in db.tables:
+        table, col = subject.split(".", 1)
         if col not in columns(db, table):
             return "unknown column"
-    named = _named_columns(db, f"{fact.subject} {fact.fact}")
+    named = _named_columns(db, re.sub(r'[`"]', "", f"{subject} {fact.fact}"))
     targets = named or [(t, c) for t in db.tables for c in columns(db, t)]
-    for literal in re.findall(r"'([^']*)'", fact.fact):
+    # Quoted values only: an apostrophe inside a word ("patient's") is not a quote.
+    for literal in re.findall(r"(?<!\w)'([^']*)'(?!\w)", fact.fact):
         if not any(_value_in(db, t, c, literal) for t, c in targets):
             return f"value not in data: {literal!r}"
     if question is not None:

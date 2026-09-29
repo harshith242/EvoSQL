@@ -73,6 +73,11 @@ def leaks(edit, question, gold_sql, gold, max_rows=50):
             word = rf"(?<!\w){re.escape(v)}(?!\w)"
             if len(v) >= 2 and not re.search(word, sql) and re.search(word, note):
                 return f"contains answer value {v!r}"
+    if len(gold) == 1 and len(gold[0]) == 1 and isinstance(gold[0][0], int | float):
+        # A single numeric answer: even a one-digit number in the note is the answer.
+        v = str(gold[0][0])
+        if not re.search(rf"(?<![\w.]){re.escape(v)}(?![\w.])", sql) and re.search(rf"(?<![\w.]){re.escape(v)}(?![\w.])", note):
+            return f"contains answer value {v!r}"
     q_words, n_words = re.findall(r"\w+", question.lower()), re.findall(r"\w+", note)
     q_grams = {tuple(q_words[i:i + 5]) for i in range(len(q_words) - 4)}
     if any(tuple(n_words[i:i + 5]) in q_grams for i in range(len(n_words) - 4)):

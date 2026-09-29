@@ -51,3 +51,15 @@ def test_factbook_edits_and_renders_grouped_by_subject():
     assert book.render() == ("Learned database knowledge:\nLaboratory.RNP\n  - [encoding] Normal is '0' or 'negative'.\n"
                              "Laboratory.UN\n  - [constraint] Normal is below 30; borderline is 29.")
     assert book.facts[1].source_qids == [2, 4]
+
+
+def test_apostrophes_and_identifier_quotes_do_not_break_grounding(db):
+    assert check_fact(fact("A patient's normal result is stored as 'negative'."), db) is None
+    assert check_fact(fact("Normal is 'negative'.", subject="Laboratory.`RNP`"), db) is None
+    assert check_fact(fact("Uses count(ID) per patient."), db) == "contains SQL"
+
+
+def test_single_digit_numeric_answer_is_a_leak(db):
+    q = "How many lab results show a high urea nitrogen level?"
+    assert check_fact(fact("Exactly 7 results are high.", subject="Laboratory.UN", kind="constraint"),
+                      db, q, "SELECT COUNT(*) FROM Laboratory WHERE UN > 30", [(7,)]).startswith("leakage")

@@ -6,6 +6,7 @@ from pathlib import Path
 
 
 def make_split(questions, n_learn, n_test, seed):
+    assert n_learn == n_test, "alternating assignment keeps the difficulty mix only for equal halves"
     total = n_learn + n_test
     rng = random.Random(seed)
     groups = defaultdict(list)
@@ -22,7 +23,8 @@ def make_split(questions, n_learn, n_test, seed):
         picked += groups[d][: counts[d]]
     # Alternate within the difficulty-sorted sample so both halves keep the mix.
     learn = [q.qid for i, q in enumerate(picked) if i % 2 == 0][:n_learn]
-    test = [q.qid for q in picked if q.qid not in set(learn)][:n_test]
+    chosen = set(learn)
+    test = [q.qid for q in picked if q.qid not in chosen][:n_test]
     return {"learn": learn, "test": test}
 
 

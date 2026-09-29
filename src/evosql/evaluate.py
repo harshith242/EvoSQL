@@ -84,11 +84,13 @@ def run_test(cfg, arm, agent_llm=None):
             if qid in seen:
                 continue
             q, before = by_id[qid], dict(agent.usage)
-            if n:
-                r = answer_self_consistent(agent, db, q.question, book, n, cfg["max_steps"])
-            else:
-                r = answer(agent, db, q.question, book, max_steps=cfg["max_steps"])
-            budget.charge([(agent, cfg["agent"].get("usd_per_million"))])
+            try:
+                if n:
+                    r = answer_self_consistent(agent, db, q.question, book, n, cfg["max_steps"])
+                else:
+                    r = answer(agent, db, q.question, book, max_steps=cfg["max_steps"])
+            finally:
+                budget.charge([(agent, cfg["agent"].get("usd_per_million"))])
             correct = exec_match(db.path, r.sql, gold_rows(db.path, q))
             right += correct
             rec = {"qid": qid, "difficulty": q.difficulty, "sql": r.sql, "correct": correct, "samples": n or 1,
