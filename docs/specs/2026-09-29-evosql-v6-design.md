@@ -1,7 +1,7 @@
 # EvoSQL v6: A Text-to-SQL Agent That Builds a Memory of Each Database (Design for Review)
 
 Date: 2026-09-29
-Status: draft for external review, before implementation. Revision 5 incorporates four reviews.
+Status: draft for external review, before implementation. Revision 6 incorporates four reviews; the examples arm is dropped for budget.
 Repo: `evosql/` (v3, v4 and v5 are tagged; this document is self-contained)
 
 ## 1. Goal
@@ -18,7 +18,7 @@ The claim is tested honestly:
 - expert-corrected labels;
 - two question orders;
 - paired statistics reported per stream, with conservative claims;
-- a $2.5 budget for the whole run.
+- a $2 budget for the whole run.
 
 ## 2. Background
 
@@ -67,7 +67,6 @@ v6 changes course accordingly:
 - a pre-activation check on past questions;
 - very selective, schema-scoped retrieval;
 - online pruning of facts that do not help;
-- a simple memory baseline to beat;
 - two orders.
 
 ## 3. Testbed
@@ -103,11 +102,9 @@ for seed in (0, 1):
         memory = empty
         for q in shuffled(questions[db], seed):            # position 1..N
             none_ok  = cached_none_answer(q)                # the none arm does not depend on order
-            ex_sql   = agent(q, examples(memory, q))
             fx_sql, used = agent(q, facts(memory, q))       # `used` = IDs of the injected facts (Step 8)
-            score all three
+            score both
             reveal gold(q):
-                memory.examples.add(q, gold_sql)                          # every question
                 memory.credit(used, fx_ok, none_ok)                       # Step 7: online pruning
                 if not fx_ok:
                     candidates = learn(q, fx_sql, gold_sql)               # Steps 2-5
@@ -128,12 +125,9 @@ rules | schema | value profile + column descriptions | [memory section] | questi
 | Arm | Memory section |
 |---|---|
 | **none** (baseline) | empty |
-| **examples** (simple memory) | the 3 most similar earlier questions of this database, each with its correct SQL (every earlier question is stored) |
 | **facts** (EvoSQL) | at most **1 unproven** fact, or up to **2** if the second has a positive record; only facts passing the strict, schema-scoped eligibility test (Step 8); often none |
 
-The **examples** arm is the practical bar to clear. It learns from every earlier question, while facts learn only from failures. So a facts-vs-examples difference mixes two things: how knowledge is represented, and how much supervision it gets. This is stated as a limitation, not resolved (Section 10).
-
-Every question logs the IDs of the facts or examples that were injected.
+Every question logs the IDs of the facts that were injected.
 
 ## 6. The facts arm, step by step, and why each step should help
 
@@ -254,16 +248,6 @@ Each database's memory grows throughout its stream, and later questions draw on 
 
 **Why it helps:** questions about one database reuse the same tables, codes, conventions and join paths. A lesson learned at position 10 can fix positions 30, 45 and 60. The learning curve (Section 7) tests this: if memory works, the gap over the baseline widens later in the stream.
 
-### Why facts might beat examples, and when they might not
-- **Facts can win because:**
-  - a fact transfers across questions that look different but share a concept;
-  - it carries the reason, not just the SQL;
-  - it is short, checked before use, and pruned by its observed effect.
-- **Examples can win because:**
-  - they need no distillation, so there are no proposer errors;
-  - they see every question, not only failures;
-  - they are strong when later questions are near-duplicates.
-
 ## 7. Evaluation
 
 The unit of independent evidence is the **stream**: one (database, order) pair, 8 in total.
@@ -290,8 +274,6 @@ The claims are sized accordingly.
   These ignore sequential dependence within a stream and are **not exact tests**.
 - **What the result can and cannot show:** with 8 streams, it can show a consistent late-stream gain. It cannot give a strong frequentist guarantee, or prove that particular facts caused the gain. Per-fact records (Steps 6–7) are descriptive evidence only.
 - **Secondary endpoints:**
-  - examples vs none;
-  - facts vs examples (same per-stream reporting);
   - whole-stream accuracy (this mostly measures the cold start);
   - a learning curve per quarter of the stream.
 - **Also reported:**
@@ -306,19 +288,18 @@ The claims are sized accordingly.
   - pinned data hashes.
 - **If the budget guard stops the run inside order 1:** only completed streams are reported, with no primary claim.
 
-## 8. Budget ($2.5 cap, peak prices, persisted spend guard)
+## 8. Budget ($2 cap, peak prices, persisted spend guard)
 
 | Item | Estimate |
 |---|---|
-| none arm, 221 questions, run once | ~$0.27 |
-| examples arm, 2 orders × 221 | ~$0.57 |
+| none arm, 221 questions, run once (the second order replays it from the LLM cache) | ~$0.27 |
 | facts arm, 2 orders × 221 | ~$0.50 |
 | Proposer, ~2 × 90 failures, one fact each (thinking effort medium) | ~$0.50 |
 | Pre-activation checks, ≤ 2 runs per new fact (≤ 2 × 180 runs; many facts have fewer matches) | ≤ ~$0.45 |
-| **Total** | **~$2.3** (the cap of $2.5 leaves a $0.2 margin) |
+| **Total** | **~$1.7** (a $0.3 margin) |
 
-- **Allocation per order:** order 1 may spend up to **$1.25** (including the none arm), order 2 the rest of the $2.5 cap. Within each order, pre-activation checks are the only optional cost. They are skipped once the order is within $0.10 of its allocation (Step 6), so both orders always complete.
-- **Run order:** order 1 (all arms, all databases) runs before order 2.
+- **Allocation per order:** order 1 may spend up to **$1.0** (including the none arm), order 2 the rest of the $2 cap. Pre-activation checks are the only optional cost. They are skipped once an order is within $0.10 of its allocation (Step 6), so both orders complete.
+- **Run order:** order 1 (all databases) runs before order 2.
 - **Caching:** all LLM replies are cached, so a stopped run resumes and replays cost nothing.
 
 ## 9. Risks and mitigations
@@ -336,7 +317,7 @@ The claims are sized accordingly.
 
 ## 10. Limitations and out of scope
 
-- **Supervision is confounded between facts and examples:** examples learn from every question, facts only from failures. We do not add a failure-only examples arm (budget).
+- **No example-memory baseline** (storing past questions with their SQL): dropped for budget. v6 shows whether facts help compared with no memory, not whether they beat simpler memory designs.
 - **Out of scope:**
   - hints of earlier questions as a learning signal (feedback is the correct SQL only);
   - right/wrong-only feedback, or no feedback;
