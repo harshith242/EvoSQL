@@ -15,12 +15,15 @@ KINDS = ("mapping", "encoding", "constraint", "meaning", "grain", "relation")
 SQL_PATTERN = re.compile(r"\b(SELECT|FROM|WHERE|JOIN|GROUP BY|ORDER BY|LIMIT|DISTINCT)\b|(?i:\bcount\s*\()")
 
 
-def leaks(text, question, gold_sql, gold, max_rows=50):
-    """Return a reason if the text memorizes this question (its answer or wording) instead of stating knowledge."""
+def leaks(text, question, gold_sql, gold, max_rows=50, allowed=(), wording=True):
+    """Return a reason if the text memorizes this question (its answer or wording) instead of stating knowledge.
+    allowed: lowercase values that may equal an answer (reusable codes); wording=False skips the copied-words check."""
     text, sql = text.lower(), gold_sql.lower()
     for row in gold[:max_rows]:
         for value in row:
             v = str(value).strip().lower()
+            if v in allowed:
+                continue
             # Constants that already appear in the gold SQL (e.g. 'F', 1) are schema knowledge, not answers.
             word = rf"(?<!\w){re.escape(v)}(?!\w)"
             if len(v) >= 2 and not re.search(word, sql) and re.search(word, text):
@@ -28,8 +31,10 @@ def leaks(text, question, gold_sql, gold, max_rows=50):
     if len(gold) == 1 and len(gold[0]) == 1 and isinstance(gold[0][0], int | float):
         # A single numeric answer: even a one-digit number is the answer.
         word = rf"(?<![\w.]){re.escape(str(gold[0][0]))}(?![\w.])"
-        if not re.search(word, sql) and re.search(word, text):
+        if str(gold[0][0]).lower() not in allowed and not re.search(word, sql) and re.search(word, text):
             return f"contains answer value {str(gold[0][0])!r}"
+    if not wording:
+        return None
     q_words, t_words = re.findall(r"\w+", question.lower()), re.findall(r"\w+", text)
     q_grams = {tuple(q_words[i:i + 5]) for i in range(len(q_words) - 4)}
     if any(tuple(t_words[i:i + 5]) in q_grams for i in range(len(t_words) - 4)):
@@ -46,6 +51,7 @@ class Fact:
     applies_to: list = field(default_factory=list)  # short phrases that trigger the fact
     probe: str | None = None  # read-only evidence query, never shown to the agent
     source_qids: list = field(default_factory=list)
+    values: list | None = None  # v6: stored values the fact relies on, [{table, column, value}]; None = v4/v5 fact
 
 
 def render(facts):
@@ -111,14 +117,12 @@ def check_fact(fact, db):
     table, _, col = subject.partition(".")
     if col and table in db.tables and col not in db.columns[table]:
         return "unknown column"
-    targets = fact_columns(db, fact) or [(t, c) for t in db.tables for c in db.columns[t]]
-    # Quoted values only: an apostrophe inside a word ("patient's") is not a quote.
-    for m in re.finditer(r"(?<!\w)'([^']*)'(?!\w)", fact.fact):
-        literal = m.group(1)
-        if PHRASE_CONTEXT.search(fact.fact[:m.start()]):
-            continue
-        if not any(_value_in(db, t, c, literal) for t, c in targets):
-            return f"value not in data: {literal!r}"
+    if fact.values is None:
+        reason = _quoted_values_grounded(fact, db)
+    else:
+        reason = _structured_values_grounded(fact, db) or (None if names_schema(db, fact) else "not scoped to the schema")
+    if reason:
+        return reason
     if in_docs(fact, db):
         return "already in docs"
     if fact.probe is not None:
@@ -130,6 +134,36 @@ def check_fact(fact, db):
         if not rows:
             return "probe returned no rows"
     return None
+
+
+def _quoted_values_grounded(fact, db):
+    # v4/v5 facts: every quoted literal must occur in a named column (or anywhere when none is named).
+    targets = fact_columns(db, fact) or [(t, c) for t in db.tables for c in db.columns[t]]
+    # Quoted values only: an apostrophe inside a word ("patient's") is not a quote.
+    for m in re.finditer(r"(?<!\w)'([^']*)'(?!\w)", fact.fact):
+        literal = m.group(1)
+        if PHRASE_CONTEXT.search(fact.fact[:m.start()]):
+            continue
+        if not any(_value_in(db, t, c, literal) for t, c in targets):
+            return f"value not in data: {literal!r}"
+    return None
+
+
+def _structured_values_grounded(fact, db):
+    # v6 facts: only the declared {table, column, value} entries are checked; quoted prose is ignored.
+    for v in fact.values:
+        table, column = v.get("table"), v.get("column")
+        if table not in db.tables or column not in db.columns[table]:
+            return "unknown column"
+        if not _value_in(db, table, column, str(v.get("value"))):
+            return f"value not in data: {v.get('value')!r}"
+    return None
+
+
+def names_schema(db, fact):
+    """True when the fact names a column (Table.Column) or a table of this database."""
+    text = _unquote(f"{fact.subject} {fact.fact}").lower()
+    return bool(fact_columns(db, fact)) or any(re.search(rf"\b{re.escape(t.lower())}\b", text) for t in db.tables)
 
 
 # Quoted words right after "phrased as", "words like", "asks" etc. are question wording, not stored values.

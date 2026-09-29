@@ -62,3 +62,15 @@ def test_column_docs_end_each_profile_line_only_when_enabled(db):
     assert next(line for line in prof if line.startswith("- patient.age")).endswith(" | age in years")
     assert "- patient.id INTEGER: unique per row" in prof  # undocumented column: no note
     assert value_profile(db, ["patient"], max_values=2).splitlines()[0] == "Database value profile (computed from the data):"
+
+
+def test_load_arcwise_keeps_only_requested_databases(tmp_path):
+    import json
+    from evosql.bird import load_arcwise
+    path = tmp_path / "plat.json"
+    path.write_text(json.dumps([
+        {"question_id": "7", "db_id": "formula_1", "question": "q7", "SQL": "SELECT 7", "difficulty": "simple"},
+        {"question_id": 8, "db_id": "financial", "question": "q8", "SQL": "SELECT 8"},
+    ]))
+    [only] = load_arcwise(path, {"formula_1"})
+    assert (only.qid, only.gold_sql, only.difficulty) == (7, "SELECT 7", "simple")

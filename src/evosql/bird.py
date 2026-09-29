@@ -34,12 +34,13 @@ def quote(name):
     return '"' + name.replace('"', '""') + '"'
 
 
-def open_db(data_dir, db_id, with_profile=False, with_column_docs=False):
+def open_db(data_dir, db_id, with_profile=False, with_column_docs=False, docs_dir=None):
+    """docs_dir: a folder of <table>.csv descriptions to use instead of the database's own (e.g. corrected ones)."""
     path = db_path(data_dir, db_id)
     tables = table_names(path)
     columns = {t: [r[1] for r in execute(path, f"PRAGMA table_info({quote(t)})")[0]] for t in tables}
-    docs = {t: table_docs(data_dir, db_id, t) for t in tables}
-    notes = {t: column_docs(data_dir, db_id, t) for t in tables} if with_column_docs else None
+    docs = {t: table_docs(data_dir, db_id, t, docs_dir) for t in tables}
+    notes = {t: column_docs(data_dir, db_id, t, docs_dir) for t in tables} if with_column_docs else None
     profile = value_profile(path, tables, docs=notes) if with_profile else ""
     return Database(path, schema_ddl(path), tables, columns, docs, profile, notes or {})
 
@@ -82,6 +83,13 @@ def value_profile(path, tables, max_values=20, docs=None):
             if note:
                 lines[-1] += f" | {note}"
     return "\n".join(lines)
+
+
+def load_arcwise(path, db_ids):
+    """Questions of the given databases from an Arcwise-Plat file (corrected BIRD Mini-Dev)."""
+    items = json.loads(Path(path).read_text())
+    return [Question(int(q["question_id"]), q["db_id"], q["question"], q["SQL"], q.get("difficulty", "unknown"))
+            for q in items if q["db_id"] in db_ids]
 
 
 def load_questions(data_dir, db_id):
@@ -150,9 +158,9 @@ def schema_ddl(path):
     return "\n\n".join(r[0] for r in rows)
 
 
-def column_docs(data_dir, db_id, table):
+def column_docs(data_dir, db_id, table, docs_dir=None):
     """{column: "description | values: ..."} from BIRD's database_description CSV ({} when it is missing)."""
-    path = Path(data_dir) / db_id / "database_description" / f"{table}.csv"
+    path = Path(docs_dir or Path(data_dir) / db_id / "database_description") / f"{table}.csv"
     if not path.exists():
         return {}
     text = path.read_bytes().decode("utf-8", errors="replace").lstrip("\ufeff")
@@ -166,6 +174,6 @@ def column_docs(data_dir, db_id, table):
     return docs
 
 
-def table_docs(data_dir, db_id, table):
+def table_docs(data_dir, db_id, table, docs_dir=None):
     """Column descriptions, one line per column (the describe_table tool shows these)."""
-    return "\n".join(f"- {c}: {d}" for c, d in column_docs(data_dir, db_id, table).items())
+    return "\n".join(f"- {c}: {d}" for c, d in column_docs(data_dir, db_id, table, docs_dir).items())

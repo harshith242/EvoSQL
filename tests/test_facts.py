@@ -98,3 +98,14 @@ def test_facts_that_only_restate_the_column_docs_are_dropped(db):
     assert check_fact(restated, db) is None
     db.column_notes = {}
     assert check_fact(restated, db) is None  # without column docs (v4) nothing counts as restated
+
+
+def test_v6_facts_ground_only_their_structured_values(db):
+    good = Fact("f1", "encoding", "Laboratory.RNP", "A normal 'result' is stored as a code.", ["normal RNP"], None, [1],
+                [{"table": "Laboratory", "column": "RNP", "value": "negative"}])
+    assert check_fact(good, db) is None  # quoted prose ('result') is not treated as a stored value
+    bad = Fact("f2", "encoding", "Laboratory.RNP", "Normal is stored as a code.", ["normal RNP"], None, [1],
+               [{"table": "Laboratory", "column": "RNP", "value": "neg"}])
+    assert check_fact(bad, db) == "value not in data: 'neg'"
+    unscoped = Fact("f3", "meaning", "averages", "Averages are over rows.", ["average"], None, [1], [])
+    assert check_fact(unscoped, db) == "not scoped to the schema"

@@ -69,3 +69,19 @@ def test_proposer_reply_is_normalized_so_good_facts_survive_sloppy_fields(db):
     men, women = propose_facts(ReplyLLM(reply), db, batch, [])
     assert (men.source_qids, men.applies_to, men.probe) == ([7], ["men"], None)
     assert (women.source_qids, women.applies_to, women.probe) == ([4], [], "SELECT 1")  # dropped later: no phrase
+
+
+def test_one_fact_proposer_and_codes_that_equal_the_answer(db):
+    from evosql.learn import check, leak_exempt, propose_one
+    q2 = q(2, "Which sex has patient 1?")
+    reply = {"kind": "encoding", "subject": "Patient.SEX", "fact": "Women are stored as 'F' in Patient.SEX.",
+             "applies_to": ["women", "Which sex"], "values": [{"table": "Patient", "column": "SEX", "value": "F"}],
+             "probe": "SELECT COUNT(*) FROM Patient WHERE SEX = 'Z'"}
+    fact = propose_one(ReplyLLM(reply), db, q2, "SELECT 1", [])
+    fact.id = "f1"
+    assert fact.values == [{"table": "Patient", "column": "SEX", "value": "F"}] and fact.probe.startswith("SELECT COUNT")
+    # 'F' is the answer, but it is a code stored in 2 rows: allowed. A trigger phrase may reuse the question's words.
+    assert leak_exempt(fact, db) == {"f"} and check(fact, [q2], db, {2: [("F",)]}) is None
+    unique = Fact("f2", "encoding", "Patient.ID", "Patient.ID 2 is the only man.", ["man"], None, [2],
+                  [{"table": "Patient", "column": "ID", "value": "2"}])
+    assert check(unique, [q2], db, {2: [(2,)]}).startswith("leakage")  # a unique entity value stays a leak
