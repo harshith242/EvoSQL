@@ -1,6 +1,6 @@
 """Discovery: one pass in which the proposer turns the docs agent's failures on the discovery set into typed facts.
-Facts that fail the free checks or leak an answer are dropped with the reason logged; the rest are merged.
-No gate, no noise calibration, no LLM consolidation. discover_facts is pure so it can be tested without an LLM."""
+Checked facts give two sets: single (all, merged) and verified (only bundles that fix their own question when re-answered).
+discover_facts is pure so it can be tested without an LLM."""
 from collections import Counter
 from dataclasses import asdict
 from itertools import count
@@ -10,7 +10,8 @@ from tqdm import tqdm
 from evosql.agent import answer
 from evosql.bird import exec_match, gold_rows
 from evosql.budget import Budget, BudgetExceeded
-from evosql.delivery import NoKnowledge
+from evosql.config import KNOWLEDGE
+from evosql.delivery import AllFacts, NoKnowledge
 from evosql.facts import Fact, FactBook, check_fact, leaks, merge
 from evosql.files import append_jsonl, write_atomic
 from evosql.labels import corrected, known_wrong
@@ -19,13 +20,14 @@ from evosql.split import load_run
 
 PROPOSER = """You build a knowledge base about ONE SQLite database so that a Text2SQL agent answers future, different questions correctly.
 Below are questions the agent got wrong, with its SQL and the correct SQL. For each one, find what the agent did not KNOW about this database and state it as facts, one misconception per fact. Fact kinds (examples use a made-up shop database):
-- mapping: what a phrase used in questions means in the data. Example: "shipped orders" means Orders.Status is 'S'.
+- mapping: what a phrase used in questions means in the data. Example: "shipped orders" means Orders.Status is 'S'; a status named in a question matches Orders.Status exactly, never as a substring.
 - encoding: how values are stored. Example: unpaid Orders.Payment is stored as both 'none' and '0'.
-- constraint: a range or business rule. Example: a normal Orders.Discount is at most 30.
+- constraint: a range or business rule. Example: an abnormal Orders.Discount includes the boundary: at most 5 or at least 30, not strictly below or above.
 - meaning: what a column represents. Example: Orders.Amt is the order total in cents.
 - grain: what one row is and how to count entities. Example: one Orders row is one order line; a customer count needs distinct Orders.CustID.
 - relation: a join path and its cardinality. Example: Customer 1:N Orders via Customer.ID and Orders.CustID.
 Rules:
+- Do not restate anything the column docs or the value profile already say (documented ranges, codes, meanings). Write only what they miss: conventions (how ages, dates and counts are computed), stored codes that differ from the documented symbols, what question phrases mean, row grain and join paths.
 - State facts about the data, never the SQL fix. Do not write SQL keywords or clauses in a fact.
 - A fact must help other questions too; never state this question's answer or copy its wording.
 - Name columns as Table.Column and quote stored values in single quotes exactly as they appear in the data.
@@ -78,9 +80,9 @@ def check(fact, batch, db, gold):
     return None
 
 
-def discover_facts(qs, db, gold, solve, propose, wrong_label, batch_size, log):
-    """solve(q) -> (correct, sql); propose([(q, sql)], facts) -> [Fact]; wrong_label(q) -> bool.
-    Returns (merged facts, merge conflicts)."""
+def discover_facts(qs, db, gold, solve, propose, wrong_label, verify, batch_size, log):
+    """solve(q) -> (correct, sql); propose([(q, sql)], facts) -> [Fact]; wrong_label(q) -> bool; verify(q, facts) -> bool.
+    Returns (single, verified, conflicts): all checked facts merged, and only those whose source question they fix."""
     answers = {q.qid: solve(q) for q in qs}
     failed = [q for q in qs if not answers[q.qid][0]]
     excluded = [q.qid for q in failed if wrong_label(q)]
@@ -100,9 +102,18 @@ def discover_facts(qs, db, gold, solve, propose, wrong_label, batch_size, log):
                 kept.append(f)
         facts += kept
         log({"event": "batch", "batch": [q.qid for q in batch], "kept": [asdict(f) for f in kept], "dropped": dropped})
-    merged, conflicts = merge(facts, db)
-    log({"event": "merge", "before": len(facts), "after": len(merged), "conflicts": conflicts})
-    return merged, conflicts
+    passed = []
+    for q in failures:
+        bundle = [f for f in facts if f.source_qids == [q.qid]]
+        if bundle:
+            ok = verify(q, bundle)
+            passed += bundle if ok else []
+            log({"event": "verify", "qid": q.qid, "facts": [f.id for f in bundle], "passed": ok})
+    single, conflicts = merge(facts, db)
+    verified, _ = merge(passed, db)
+    log({"event": "merge", "before": len(facts), "after": len(single), "conflicts": conflicts,
+         "verified": len(verified)})
+    return single, verified, conflicts
 
 
 def describe(entry):
@@ -112,11 +123,14 @@ def describe(entry):
                 f"{len(entry['known_wrong_labels'])} skipped as known-wrong labels")
     if entry["event"] == "batch":
         return f"batch {entry['batch']}: {len(entry['kept'])} facts kept, {len(entry['dropped'])} dropped"
-    return f"merge: {entry['before']} -> {entry['after']} facts, {len(entry['conflicts'])} conflicts"
+    if entry["event"] == "verify":
+        return f"verify q{entry['qid']}: {len(entry['facts'])} facts {'fix it' if entry['passed'] else 'do not fix it'}"
+    return (f"merge: {entry['before']} -> {entry['after']} facts (single), {entry['verified']} verified, "
+            f"{len(entry['conflicts'])} conflicts")
 
 
 def discover(cfg):
-    """Run discovery with the real LLMs and save runs/knowledge.json. Returns False if stopped by budget or provider."""
+    """Run discovery with the real LLMs and save one knowledge file per variant. False if stopped by budget or provider."""
     out, parts, db, by_id = load_run(cfg)
     qs = [by_id[i] for i in parts["discovery"]]
     budget = Budget(out / "spend.json", cfg["protocol"]["budget_usd"])
@@ -126,8 +140,9 @@ def discover(cfg):
     fixes = corrected(cfg["data_dir"], cfg["db"])
     log_path = out / "discover.jsonl"
     write_atomic(log_path, "")
-    (out / "knowledge.json").unlink(missing_ok=True)  # never leave an older run's knowledge next to this log
-    bar = tqdm(total=len(qs), desc="discover", unit="q", dynamic_ncols=True)
+    for name in KNOWLEDGE.values():  # never leave an older run's knowledge next to this log
+        (out / name).unlink(missing_ok=True)
+    bar = tqdm(desc="discover", unit="run", dynamic_ncols=True)
 
     def solve(q):
         sql, _ = answer(agent, db, q.question, NoKnowledge(), max_steps=cfg["max_steps"])
@@ -135,20 +150,28 @@ def discover(cfg):
         bar.set_postfix_str(f"spent ${budget.total:.3f}")
         return exec_match(db.path, sql, gold[q.qid]), sql
 
+    def verify(q, facts):
+        sql, _ = answer(agent, db, q.question, AllFacts(FactBook(facts)), max_steps=cfg["max_steps"])
+        bar.update(1)
+        return exec_match(db.path, sql, gold[q.qid])
+
     def log(entry):
         entry["usage"] = {"agent": dict(agent.usage), "proposer": dict(proposer.usage)}  # cumulative
         append_jsonl(log_path, entry)
         tqdm.write("  " + describe(entry))
 
     try:
-        facts, _ = discover_facts(qs, db, gold, solve, lambda batch, known: propose_facts(proposer, db, batch, known),
-                                  lambda q: known_wrong(db, q, fixes), cfg["protocol"]["batch_size"], log)
+        single, verified, _ = discover_facts(qs, db, gold, solve,
+                                             lambda batch, known: propose_facts(proposer, db, batch, known),
+                                             lambda q: known_wrong(db, q, fixes), verify, cfg["protocol"]["batch_size"], log)
     except (BudgetExceeded, ProviderExhausted) as e:
         print(f"stopped: {e}. To continue, raise protocol.budget_usd (or wait out the provider limit) and rerun "
               f"`discover`; finished calls replay from cache for free.")
         return False
     finally:
         bar.close()
-    FactBook(facts).save(out / "knowledge.json")
-    print(f"done: {len(facts)} facts {dict(Counter(f.kind for f in facts))}, spent ${budget.total:.3f} total")
+    for variant, facts in (("single", single), ("verified", verified)):
+        FactBook(facts).save(out / KNOWLEDGE[variant])
+        print(f"{variant}: {len(facts)} facts {dict(Counter(f.kind for f in facts))}")
+    print(f"done, spent ${budget.total:.3f} total")
     return True

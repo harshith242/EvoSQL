@@ -36,13 +36,17 @@ def test_discovery_skips_wrong_labels_drops_bad_facts_and_merges(db):
         return [women(qid), Fact("", "meaning", "Patient.AGE", "Age in years.", ["age"], None, [qid]),
                 Fact("", "encoding", "Patient.SEX", "The women are ids 11 and 13.", ["women"], None, [qid])]
 
-    facts, conflicts = discover_facts(qs, db, gold, solve=lambda x: (x.qid == 1, "SELECT 1"), propose=propose,
-                                      wrong_label=lambda x: x.qid == 3, batch_size=1, log=logs.append)
+    single, verified, conflicts = discover_facts(
+        qs, db, gold, solve=lambda x: (x.qid == 1, "SELECT 1"), propose=propose, wrong_label=lambda x: x.qid == 3,
+        verify=lambda x, bundle: x.qid == 2, batch_size=1, log=logs.append)
     assert seen == [([2], 0), ([4], 1)]  # q3 never reaches the proposer; later batches see earlier facts
     assert logs[0]["known_wrong_labels"] == [3] and logs[0]["right"] == 1
     reasons = [d["reason"] for d in logs[1]["dropped"]]
     assert reasons == ["unknown column", "leakage: contains answer value '11'"]
-    assert len(facts) == 1 and facts[0].source_qids == [2, 4] and conflicts == []
+    assert len(single) == 1 and single[0].source_qids == [2, 4] and conflicts == []
+    # Only q2's bundle fixed q2 when re-answered, so verified keeps its copy of the fact and drops q4's.
+    assert [(e["qid"], e["passed"]) for e in logs if e["event"] == "verify"] == [(2, True), (4, False)]
+    assert len(verified) == 1 and verified[0].source_qids == [2]
 
 
 class ReplyLLM:

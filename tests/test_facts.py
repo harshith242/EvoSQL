@@ -78,3 +78,14 @@ def test_apostrophes_and_identifier_quotes_do_not_break_grounding(db):
 def test_single_digit_numeric_answer_is_a_leak(db):
     q = "How many lab results show a high urea nitrogen level?"
     assert leaks("Exactly 7 results are high.", q, "SELECT COUNT(*) FROM Laboratory WHERE UN > 30", [(7,)])
+
+
+def test_facts_that_only_restate_the_column_docs_are_dropped(db):
+    db.column_notes = {"Laboratory": {"un": "urea nitrogen | values: Commonsense evidence:Normal range: N < 30"}}
+    restated = fact("A normal Laboratory.UN is below 30.", "Laboratory.UN", "constraint")
+    assert check_fact(restated, db) == "already in docs"
+    boundary = fact("An abnormal Laboratory.UN includes the boundary: 30 or more.", "Laboratory.UN", "constraint")
+    new_range = fact("A dangerous Laboratory.UN is above 40.", "Laboratory.UN", "constraint")
+    assert check_fact(boundary, db) is None and check_fact(new_range, db) is None
+    db.column_notes = {}
+    assert check_fact(restated, db) is None  # without column docs (v4) nothing counts as restated

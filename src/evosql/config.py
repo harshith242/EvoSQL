@@ -6,6 +6,7 @@ import yaml
 MODES = ("docs", "all", "retrieve", "tool", "hints")  # delivery modes; hints = docs plus BIRD hints (diagnostic only)
 NO_FACTS = ("docs", "hints")
 SETS = ("discovery", "gate", "final")
+KNOWLEDGE = {"single": "knowledge_single.json", "verified": "knowledge_verified.json"}  # discovery variants
 
 
 def load_config(path="configs/base.yaml", agent=None):

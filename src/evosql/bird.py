@@ -3,7 +3,7 @@ import csv
 import json
 import sqlite3
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from evosql.files import write_atomic
@@ -26,6 +26,7 @@ class Database:
     columns: dict  # table -> column names
     docs: dict  # table -> BIRD column descriptions ("" when the CSV is missing)
     profile: str = ""  # value profile of every column; empty when the profile is off
+    column_notes: dict = field(default_factory=dict)  # table -> {column: docs text}, only when column docs are on
 
 
 def quote(name):
@@ -40,7 +41,7 @@ def open_db(data_dir, db_id, with_profile=False, with_column_docs=False):
     docs = {t: table_docs(data_dir, db_id, t) for t in tables}
     notes = {t: column_docs(data_dir, db_id, t) for t in tables} if with_column_docs else None
     profile = value_profile(path, tables, docs=notes) if with_profile else ""
-    return Database(path, schema_ddl(path), tables, columns, docs, profile)
+    return Database(path, schema_ddl(path), tables, columns, docs, profile, notes or {})
 
 
 def _row(path, sql):
