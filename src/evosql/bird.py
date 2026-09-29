@@ -33,12 +33,13 @@ def quote(name):
     return '"' + name.replace('"', '""') + '"'
 
 
-def open_db(data_dir, db_id, with_profile=False):
+def open_db(data_dir, db_id, with_profile=False, with_column_docs=False):
     path = db_path(data_dir, db_id)
     tables = table_names(path)
     columns = {t: [r[1] for r in execute(path, f"PRAGMA table_info({quote(t)})")[0]] for t in tables}
     docs = {t: table_docs(data_dir, db_id, t) for t in tables}
-    profile = value_profile(path, tables) if with_profile else ""
+    notes = {t: column_docs(data_dir, db_id, t) for t in tables} if with_column_docs else None
+    profile = value_profile(path, tables, docs=notes) if with_profile else ""
     return Database(path, schema_ddl(path), tables, columns, docs, profile)
 
 
@@ -46,9 +47,10 @@ def _row(path, sql):
     return execute(path, sql)[0][0]
 
 
-def value_profile(path, tables, max_values=20):
-    """One line per column, computed from the data: coded values with counts, numeric/date ranges, null share."""
-    lines = ["Database value profile (computed from the data):"]
+def value_profile(path, tables, max_values=20, docs=None):
+    """One line per column, computed from the data: coded values with counts, numeric/date ranges, null share.
+    With docs ({table: {column: text}}), each line ends with the column's BIRD description after " | "."""
+    lines = ["Database value profile (computed from the data" + ("; after | : column docs):" if docs else "):")]
     for table in tables:
         t = quote(table)
         total = _row(path, f"SELECT COUNT(*) FROM {t}")[0]
@@ -75,6 +77,9 @@ def value_profile(path, tables, max_values=20):
                 span = f", {low!r} .. {high!r}" if col_type.upper() == "DATE" else ""
                 top = execute(path, f"SELECT {c}, COUNT(*) FROM {t} WHERE {c} IS NOT NULL GROUP BY {c} ORDER BY 2 DESC LIMIT 5")[0]
                 lines.append(f"{head}, {distinct} distinct{span}, most common: " + ", ".join(f"{v!r} {n}" for v, n in top))
+            note = {k.lower(): v for k, v in (docs or {}).get(table, {}).items()}.get(name.lower())
+            if note:
+                lines[-1] += f" | {note}"
     return "\n".join(lines)
 
 
@@ -144,17 +149,22 @@ def schema_ddl(path):
     return "\n\n".join(r[0] for r in rows)
 
 
-def table_docs(data_dir, db_id, table):
-    """Column descriptions from BIRD's database_description CSV, one line per column."""
+def column_docs(data_dir, db_id, table):
+    """{column: "description | values: ..."} from BIRD's database_description CSV ({} when it is missing)."""
     path = Path(data_dir) / db_id / "database_description" / f"{table}.csv"
     if not path.exists():
-        return ""
-    text = path.read_bytes().decode("utf-8", errors="replace").lstrip("﻿")
-    lines = []
+        return {}
+    text = path.read_bytes().decode("utf-8", errors="replace").lstrip("\ufeff")
+    docs = {}
     for row in csv.DictReader(text.splitlines()):
         row = {(k or "").strip(): " ".join((v or "").split()) for k, v in row.items()}
-        line = f"- {row.get('original_column_name', '')}: {row.get('column_description', '')}"
+        doc = row.get("column_description", "")
         if row.get("value_description"):
-            line += f" | values: {row['value_description']}"
-        lines.append(line)
-    return "\n".join(lines)
+            doc += f" | values: {row['value_description']}"
+        docs[row.get("original_column_name", "")] = doc
+    return docs
+
+
+def table_docs(data_dir, db_id, table):
+    """Column descriptions, one line per column (the describe_table tool shows these)."""
+    return "\n".join(f"- {c}: {d}" for c, d in column_docs(data_dir, db_id, table).items())

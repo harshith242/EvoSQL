@@ -14,9 +14,10 @@ agents:
     api_key_env: DEEPSEEK_API_KEY
     options: {extra_body: {thinking: {type: disabled}}}
     value_profile: true
+    column_docs: true  # BIRD column descriptions (incl. normal ranges) appended to each value-profile line; v4 had false
     usd_per_million: {cache_hit: 0.006, cache_miss: 0.30, output: 1.20}  # peak list prices: an upper bound (off-peak is half)
-    runs_dir: runs_v4
-    results_dir: results_v4
+    runs_dir: runs_v5
+    results_dir: results_v5
   # Optional free fallback: local Ollama alias with a 32k context (see ollama/qwen3.5-9b-32k.Modelfile).
   local:
     model: qwen3.5-9b-32k

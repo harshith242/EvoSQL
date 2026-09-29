@@ -52,3 +52,13 @@ def test_value_profile_lists_coded_values_nulls_and_ids(db):
     age = next(line for line in prof if line.startswith("- patient.age"))
     assert age.startswith("- patient.age INTEGER, 33% null:") and "50 1" in age and "30 1" in age
     assert "- patient.id INTEGER: unique per row" in prof
+
+
+def test_column_docs_end_each_profile_line_only_when_enabled(db):
+    from evosql.bird import value_profile
+    docs = {"patient": {"SEX": "sex | values: F: female; M: male", "Age": "age in years"}}
+    prof = value_profile(db, ["patient"], max_values=2, docs=docs).splitlines()
+    assert "- patient.sex TEXT: 'F' 2, 'M' 1 | sex | values: F: female; M: male" in prof  # doc names match any case
+    assert next(line for line in prof if line.startswith("- patient.age")).endswith(" | age in years")
+    assert "- patient.id INTEGER: unique per row" in prof  # undocumented column: no note
+    assert value_profile(db, ["patient"], max_values=2).splitlines()[0] == "Database value profile (computed from the data):"

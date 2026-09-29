@@ -52,6 +52,7 @@ def load_run(cfg):
     """Everything discover, run and analyze share: (runs folder, partitions, database, questions by qid)."""
     out = Path(cfg["runs_dir"])
     parts = json.loads((out / "partitions.json").read_text())
-    db = open_db(cfg["data_dir"], cfg["db"], with_profile=cfg["agent"].get("value_profile", False))
+    db = open_db(cfg["data_dir"], cfg["db"], with_profile=cfg["agent"].get("value_profile", False),
+                 with_column_docs=cfg["agent"].get("column_docs", False))
     by_id = {q.qid: q for q in load_questions(cfg["data_dir"], cfg["db"])}
     return out, parts, db, by_id
