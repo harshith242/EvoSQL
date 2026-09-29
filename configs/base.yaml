@@ -31,6 +31,16 @@ agents:
     usd_per_million: {cache_hit: 0.003, cache_miss: 0.15, output: 0.60}
     runs_dir: runs_deepseek
     results_dir: results_deepseek
+  # v3 agent: thinking off (deterministic, cheap) with the value profile. Used by split/learn/test/analyze-v3.
+  deepseek_v3:
+    model: deepseek-flash
+    base_url: https://api.deepseek.com
+    api_key_env: DEEPSEEK_API_KEY
+    options: {extra_body: {thinking: {type: disabled}}}
+    value_profile: true
+    usd_per_million: {cache_hit: 0.003, cache_miss: 0.15, output: 0.60}
+    runs_dir: runs_v3
+    results_dir: results_v3
   # Local Ollama alias with a 32k context (see ollama/qwen3.5-9b-32k.Modelfile). Free, no limits, slow.
   local:
     model: qwen3.5-9b-32k
@@ -47,3 +57,15 @@ proposer:
   api_key_env: DEEPSEEK_API_KEY
   options: {extra_body: {thinking: {type: enabled}}, reasoning_effort: high}
   usd_per_million: {cache_hit: 0.003, cache_miss: 0.15, output: 0.60}
+
+# v3 protocol: learn typed facts on n_learn questions, freeze, test all arms on n_test other questions.
+v3:
+  agent_profile: deepseek_v3
+  n_learn: 50
+  n_test: 50
+  seed: 0
+  epochs: 2
+  batch_size: 5
+  min_gain: 2
+  budget_usd: 1.0
+  selfcons_max_n: 5
