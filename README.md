@@ -89,10 +89,11 @@ uv run python -m evosql analyze
 
 | Profile | Model | Limits | Output folders |
 |---|---|---|---|
-| `deepseek` (default) | DeepSeek `deepseek-flash`, thinking off | pay per token (~$0.001 per question with prefix-cache hits) | `runs_deepseek/`, `results_deepseek/` |
+| `deepseek` (default) | DeepSeek `deepseek-flash`, thinking on (high) + value profile | pay per token, cents per question | `runs_deepseek_v2/`, `results_deepseek_v2/` |
+| `deepseek_v1` | DeepSeek `deepseek-flash`, thinking off, no value profile | first DeepSeek runs, kept for comparison | `runs_deepseek/`, `results_deepseek/` |
 | `local` | Ollama `qwen3.5:9b` | free, no limits, slow | `runs/`, `results/` |
 
-The proposer is always `deepseek-flash` with thinking on (one call per wrong answer). Each profile has its own runs, noise rate and results, so answers from different agent models never mix, and every profile needs its own `calibrate`. Ollama is a manual fallback (`--agent local`), never an automatic switch mid-run. Prompts are ordered static-first (rules, schema, notes, then the question) so DeepSeek's prefix cache serves most input tokens at the cache-hit price; `analyze` reports the hit ratio and $ per correct answer.
+The proposer is always `deepseek-flash` with thinking on (one call per wrong answer). The **value profile** is built once from the data before question 1 (plain SQL, no LLM): for every column its null share, its coded values with counts (e.g. `Laboratory.RNP: '0' 72, 'negative' 22, ...`), or its numeric/date range. It sits in every arm's system prompt between the schema and the learned notes, so it is part of the cached prefix. Each profile has its own runs, noise rate and results, so answers from different agent models never mix, and every profile needs its own `calibrate`. Ollama is a manual fallback (`--agent local`), never an automatic switch mid-run. Prompts are ordered static-first (rules, schema, notes, then the question) so DeepSeek's prefix cache serves most input tokens at the cache-hit price; `analyze` reports the hit ratio and $ per correct answer.
 
 Runs are resumable. Every LLM reply is cached under `cache/`, and each arm appends one line per question to `runs/<arm>/<db>/order<k>.jsonl`. If a run stops (Ctrl-C, crash, provider limit), rerun the same command and it continues where it stopped. A later run without `--limit` extends a limited one.
 

@@ -26,13 +26,51 @@ class Database:
     ddl: str
     tables: list
     docs: dict  # table -> column descriptions; empty when the arm has no docs
+    profile: str = ""  # value profile of every column; empty when the profile is off
 
 
-def open_db(data_dir, db_id, with_docs):
+def open_db(data_dir, db_id, with_docs, with_profile=False):
     path = db_path(data_dir, db_id)
     tables = table_names(path)
     docs = {t: table_docs(data_dir, db_id, t) for t in tables} if with_docs else {}
-    return Database(db_id, path, schema_ddl(path), tables, docs)
+    profile = value_profile(path, tables) if with_profile else ""
+    return Database(db_id, path, schema_ddl(path), tables, docs, profile)
+
+
+def _row(path, sql):
+    return execute(path, sql)[0][0]
+
+
+def value_profile(path, tables, max_values=20):
+    """One line per column, computed from the data: coded values with counts, numeric/date ranges, null share."""
+    lines = ["Database value profile (computed from the data):"]
+    for table in tables:
+        t = '"' + table.replace('"', '""') + '"'
+        total = _row(path, f"SELECT COUNT(*) FROM {t}")[0]
+        for _, name, col_type, *_ in execute(path, f"PRAGMA table_info({t})")[0]:
+            c = '"' + name.replace('"', '""') + '"'
+            nulls, distinct = _row(path, f"SELECT COUNT(*) - COUNT({c}), COUNT(DISTINCT {c}) FROM {t}")
+            share = f"{nulls / total:.0%}" if nulls / total >= 0.005 else "<1%"
+            head = f"- {table}.{name} {col_type or 'ANY'}" + (f", {share} null" if total and nulls else "")
+            if distinct == 0:
+                lines.append(f"{head}: all null")
+            elif distinct == total - nulls and distinct > max_values:
+                lines.append(f"{head}: unique per row")
+            elif distinct <= max_values:
+                rows = execute(path, f"SELECT {c}, COUNT(*) FROM {t} WHERE {c} IS NOT NULL GROUP BY {c} ORDER BY 2 DESC")[0]
+                lines.append(f"{head}: " + ", ".join(f"{v!r} {n}" for v, n in rows))
+            elif col_type.upper() in ("INTEGER", "REAL"):
+                low, high = _row(path, f"SELECT MIN({c}), MAX({c}) FROM {t}")
+                pick = lambda frac: _row(path, f"SELECT {c} FROM {t} WHERE {c} IS NOT NULL ORDER BY {c} "
+                                               f"LIMIT 1 OFFSET {int((total - nulls - 1) * frac)}")[0]
+                lines.append(f"{head}, range {low} .. {high}, typical {pick(0.05)} .. {pick(0.95)}")
+            else:
+                # Dates get their range; free text only its most common values (min/max of text is noise).
+                low, high = _row(path, f"SELECT MIN({c}), MAX({c}) FROM {t}")
+                span = f", {low!r} .. {high!r}" if col_type.upper() == "DATE" else ""
+                top = execute(path, f"SELECT {c}, COUNT(*) FROM {t} WHERE {c} IS NOT NULL GROUP BY {c} ORDER BY 2 DESC LIMIT 5")[0]
+                lines.append(f"{head}, {distinct} distinct{span}, most common: " + ", ".join(f"{v!r} {n}" for v, n in top))
+    return "\n".join(lines)
 
 
 def load_questions(data_dir, db_id):

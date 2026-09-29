@@ -37,9 +37,10 @@ Headline result: a learning curve (accuracy vs. questions seen) per arm, plus no
 | Dataset               | BIRD dev, one database: `thrombosis_prediction` (163 questions, 69% moderate/challenging)  | Mini-dev has only ~45 per database; user chose one hard database to keep the download small |
 | BIRD `evidence` hints | Hidden in all main arms                                                                    | Hints overlap with what learning should discover                                    |
 | Feedback signal       | Correct/incorrect + gold SQL after each answer                                             | Stands in for an analyst correcting the query; stated openly in README              |
+| Value profile         | v2: a per-column value profile (null share, coded values with counts, numeric/date ranges) computed with SQL before question 1; in every arm's prompt after the schema | Many misses were value encodings (e.g. RNP stored as both 'negative' and '0'); static, free, no leakage |
 | Knowledge delivery    | All notes rendered into the system prompt                                                  | Simplest; stable prefix; token cost is directly measurable                          |
 | Gate                  | Targeted replay gate (Section 5)                                                           | Per-note decisions, explainable log; ratchet is the same code with regularizers off |
-| Models                | Agent: DeepSeek `deepseek-flash`, thinking off (fallback: local Ollama `qwen3.5:9b`, separate runs). Proposer: `deepseek-flash`, thinking on. OpenAI-compatible API | Free tiers (Groq, OpenRouter, NVIDIA) were too rate limited or unreliable; DeepSeek with prefix caching is ~$0.001 per question |
+| Models                | Agent: DeepSeek `deepseek-flash`, thinking on (high) in v2, off in v1 (fallback: local Ollama `qwen3.5:9b`, separate runs). Proposer: `deepseek-flash`, thinking on. OpenAI-compatible API | Free tiers (Groq, OpenRouter, NVIDIA) were too rate limited or unreliable; DeepSeek with prefix caching is ~$0.001 per question |
 | Language / tooling    | Python, `uv`                                                                               |                                                                                     |
 
 

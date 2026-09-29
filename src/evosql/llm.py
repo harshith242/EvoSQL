@@ -86,6 +86,7 @@ class LLM:
             calls = [{"id": c.id, "name": c.function.name, "arguments": c.function.arguments} for c in msg.tool_calls or []]
             return {
                 "content": msg.content,
+                "reasoning": getattr(msg, "reasoning_content", None),  # DeepSeek thinking; must be sent back with tools
                 "tool_calls": calls,
                 "model": resp.model,
                 "prompt_tokens": resp.usage.prompt_tokens,

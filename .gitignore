@@ -9,3 +9,5 @@ __pycache__/
 *.egg-info/
 runs_deepseek/
 results_deepseek/
+runs_deepseek_v2/
+results_deepseek_v2/

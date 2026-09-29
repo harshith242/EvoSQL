@@ -10,14 +10,25 @@ max_steps: 8
 # noise rate and results, so answers from different agent models never mix. Ollama is the manual fallback.
 agent_profile: deepseek
 agents:
-  # DeepSeek API. Thinking off: cheapest and deterministic at temperature 0 (turn on if accuracy is poor).
-  # Prompts are static-first (rules, schema, notes, then question) so DeepSeek's prefix cache hits across calls.
+  # DeepSeek API, thinking on, plus the value profile of every column in the prompt (v2).
+  # Prompts are static-first (rules, schema, profile, notes, then question) so DeepSeek's prefix cache hits.
   deepseek:
     model: deepseek-flash
     base_url: https://api.deepseek.com
     api_key_env: DEEPSEEK_API_KEY
-    options: {extra_body: {thinking: {type: disabled}}}
+    options: {extra_body: {thinking: {type: enabled}}, reasoning_effort: high}  # levels: low, high, max
+    value_profile: true
     usd_per_million: {cache_hit: 0.003, cache_miss: 0.15, output: 0.60}  # off-peak list prices; peak is 2x
+    runs_dir: runs_deepseek_v2
+    results_dir: results_deepseek_v2
+  # First DeepSeek setup (thinking off, no value profile); kept so its runs can be re-analyzed.
+  deepseek_v1:
+    model: deepseek-flash
+    base_url: https://api.deepseek.com
+    api_key_env: DEEPSEEK_API_KEY
+    options: {extra_body: {thinking: {type: disabled}}}
+    value_profile: false
+    usd_per_million: {cache_hit: 0.003, cache_miss: 0.15, output: 0.60}
     runs_dir: runs_deepseek
     results_dir: results_deepseek
   # Local Ollama alias with a 32k context (see ollama/qwen3.5-9b-32k.Modelfile). Free, no limits, slow.
@@ -29,10 +40,10 @@ agents:
     runs_dir: runs
     results_dir: results
 
-# Proposer: one call per wrong answer, no tools. Thinking on for a better diagnosis of the mistake.
+# Proposer: one call per wrong answer, no tools. Thinking on (high) for a better diagnosis of the mistake.
 proposer:
   model: deepseek-flash
   base_url: https://api.deepseek.com
   api_key_env: DEEPSEEK_API_KEY
-  options: {extra_body: {thinking: {type: enabled}}}
+  options: {extra_body: {thinking: {type: enabled}}, reasoning_effort: high}
   usd_per_million: {cache_hit: 0.003, cache_miss: 0.15, output: 0.60}

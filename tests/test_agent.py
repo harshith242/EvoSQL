@@ -5,7 +5,7 @@ import pytest
 
 from evosql.agent import answer, answer_self_consistent
 from evosql.bird import open_db
-from evosql.knowledge import Knowledge
+from evosql.knowledge import Edit, Knowledge
 
 
 def call(name, **args):
@@ -22,10 +22,11 @@ class FakeLLM:
 
     def __init__(self, scripts):
         self.scripts = {k: list(v) for k, v in scripts.items()}
-        self.seen = []
+        self.seen, self.history = [], []
 
     def chat(self, messages, tools=None, temperature=0.0, sample=0):
         self.seen.append(messages[-1])
+        self.history.append([dict(m) for m in messages])
         return self.scripts[sample].pop(0)
 
 
@@ -75,3 +76,21 @@ def test_non_dict_tool_arguments_do_not_crash_the_run(db):
     bad["tool_calls"][0]["arguments"] = "null"
     result = answer(FakeLLM({0: [bad]}), db, "ids?", Knowledge())
     assert result.sql is None
+
+
+def test_thinking_reasoning_is_sent_back_with_the_tool_call(db):
+    first = call("run_sql", sql="SELECT 1")
+    first["reasoning"] = "count the rows first"
+    llm = FakeLLM({0: [first, call("submit", sql="SELECT 1")]})
+    answer(llm, db, "q?", Knowledge())
+    assistant = [m for m in llm.history[-1] if m["role"] == "assistant"][0]
+    assert assistant["reasoning_content"] == "count the rows first"
+
+
+def test_value_profile_goes_between_schema_and_notes(db):
+    db.profile = "Database value profile (computed from the data):\n- patient.sex TEXT: 'F' 2"
+    k, _ = Knowledge().apply(Edit("add", when="women", text="use sex = 'F'"), 1, 1)
+    llm = FakeLLM({0: [call("submit", sql="SELECT 1")]})
+    answer(llm, db, "q?", k)
+    system = llm.history[-1][0]["content"]
+    assert system.index("CREATE TABLE") < system.index("value profile") < system.index("Learned notes")

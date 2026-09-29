@@ -21,7 +21,7 @@ Reply with only JSON: {{"kind": "add" | "modify" | "delete", "note_id": "<id for
 Database schema:
 {ddl}
 
-Current notes:
+{profile}Current notes:
 {notes}
 
 Question: {question}
@@ -40,7 +40,8 @@ Compare this SQL with the correct SQL clause by clause and reply with a revised 
 def propose(llm, db, question, wrong_sql, gold_sql, knowledge, retry=None):
     """Ask the proposer for one edit; retry = (previous Edit, SQL the agent wrote with it). Returns an Edit or None."""
     prompt = PROPOSER_PROMPT.format(
-        ddl=db.ddl, notes=knowledge.render() or "(none yet)", question=question,
+        ddl=db.ddl, profile=db.profile + "\n\n" if db.profile else "", notes=knowledge.render() or "(none yet)",
+        question=question,
         wrong_sql=wrong_sql or "(no SQL submitted)", gold_sql=gold_sql,
     )
     if retry:

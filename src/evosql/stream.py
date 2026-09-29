@@ -67,7 +67,8 @@ def resume_point(log_path, notes_path):
 
 def run_arm(cfg, arm_name, order_seed, limit=None, agent_llm=None, proposer_llm=None):
     arm = load_arm(arm_name, cfg.get("arms_dir", "configs/arms"))
-    db = open_db(cfg["data_dir"], cfg["db"], with_docs=arm.get("docs", False))
+    db = open_db(cfg["data_dir"], cfg["db"], with_docs=arm.get("docs", False),
+                 with_profile=cfg.get("agent", {}).get("value_profile", False))
     questions = load_questions(cfg["data_dir"], cfg["db"])
     by_id = {q.qid: q for q in questions}
     order = list(questions)
@@ -182,7 +183,7 @@ NEUTRAL_NOTE = Edit("add", when="any question", text="Double-check that every co
 
 def calibrate(cfg, n=20, agent_llm=None):
     """Flip rate p: how often correctness changes when a harmless note is added (the gate's noise)."""
-    db = open_db(cfg["data_dir"], cfg["db"], with_docs=True)
+    db = open_db(cfg["data_dir"], cfg["db"], with_docs=True, with_profile=cfg.get("agent", {}).get("value_profile", False))
     order = load_questions(cfg["data_dir"], cfg["db"])
     random.Random(0).shuffle(order)
     agent_llm = agent_llm or make_llm(cfg["agent"], cfg["cache_dir"])

@@ -15,7 +15,7 @@ If you cannot call tools natively, reply with only a JSON object like {{"tool": 
 Database schema:
 {ddl}
 
-{notes}"""
+{profile}{notes}"""
 
 
 def _tool(name, description, **params):
@@ -100,7 +100,9 @@ def _parse_json_call(content):
 def answer(llm, db, question, knowledge, temperature=0.0, sample=0, max_steps=8, on_step=None):
     """on_step(step, tool_names) is called for live progress: once while the model thinks, once with its tools."""
     messages = [
-        {"role": "system", "content": SYSTEM.format(ddl=db.ddl, notes=knowledge.render())},
+        # Static parts first (rules, schema, value profile), then notes, so the provider's prefix cache hits.
+        {"role": "system", "content": SYSTEM.format(ddl=db.ddl, profile=db.profile + "\n\n" if db.profile else "",
+                                                    notes=knowledge.render())},
         {"role": "user", "content": question},
     ]
     for step in range(1, max_steps + 1):
@@ -110,17 +112,20 @@ def answer(llm, db, question, knowledge, temperature=0.0, sample=0, max_steps=8,
             on_step(step, [])
         reply = llm.chat(messages, tools=TOOLS, temperature=temperature, sample=sample)
         calls = reply["tool_calls"]
+        # With tools, DeepSeek's thinking mode requires every earlier turn's reasoning to be sent back.
+        thought = {"reasoning_content": reply["reasoning"]} if reply.get("reasoning") else {}
         if calls:
             messages.append({
                 "role": "assistant",
                 "content": reply["content"],
+                **thought,
                 "tool_calls": [
                     {"id": c["id"], "type": "function", "function": {"name": c["name"], "arguments": c["arguments"]}}
                     for c in calls
                 ],
             })
         else:
-            messages.append({"role": "assistant", "content": reply["content"] or ""})
+            messages.append({"role": "assistant", "content": reply["content"] or "", **thought})
             fallback = _parse_json_call(reply["content"])
             if not fallback:
                 messages.append({"role": "user", "content": "Call a tool (or reply with the JSON object) to continue."})

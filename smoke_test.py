@@ -13,7 +13,7 @@ from evosql.knowledge import Knowledge
 from evosql.llm import LLM, ProviderExhausted
 from evosql.stream import load_config, make_llm
 
-# Edit these two lines: PROFILE is an agent profile from configs/base.yaml (deepseek or local).
+# Edit these two lines: PROFILE is an agent profile from configs/base.yaml (deepseek, deepseek_v1 or local).
 PROFILE = "deepseek"
 N_QUESTIONS = 2
 
@@ -46,7 +46,7 @@ def main():
     llm.prices = cfg["agent"].get("usd_per_million")
     print(f"profile: {PROFILE} | model: {llm.model} | questions: {N_QUESTIONS}", flush=True)
 
-    db = open_db(cfg["data_dir"], cfg["db"], with_docs=True)
+    db = open_db(cfg["data_dir"], cfg["db"], with_docs=True, with_profile=cfg["agent"].get("value_profile", False))
     questions = load_questions(cfg["data_dir"], cfg["db"])
     random.Random(0).shuffle(questions)  # same order 0 as every arm
 

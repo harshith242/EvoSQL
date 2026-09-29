@@ -49,3 +49,12 @@ def test_tables_used_matches_whole_names_only():
     tables = ["Patient", "Laboratory", "Lab"]
     sql = "SELECT * FROM Patient AS T1 INNER JOIN `Laboratory` AS T2 ON T1.ID = T2.ID"
     assert tables_used(sql, tables) == {"Patient", "Laboratory"}
+
+
+def test_value_profile_lists_coded_values_nulls_and_ids(db):
+    from evosql.bird import value_profile
+    prof = value_profile(db, ["patient"], max_values=2).splitlines()
+    assert "- patient.sex TEXT: 'F' 2, 'M' 1" in prof
+    age = next(line for line in prof if line.startswith("- patient.age"))
+    assert age.startswith("- patient.age INTEGER, 33% null:") and "50 1" in age and "30 1" in age
+    assert "- patient.id INTEGER: unique per row" in prof
