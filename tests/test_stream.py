@@ -79,3 +79,37 @@ def test_resume_drops_partial_line_and_redoes_a_step_whose_notes_were_not_saved(
     log.write_text('{"step": 0}\n{"step": 1}\n{"step": 2}\n{"ste')
     assert resume_point(log, notes) == 2
     assert log.read_text() == '{"step": 0}\n{"step": 1}\n'
+
+
+class PickyAgent(FakeAgent):
+    """Right only when the note about sex = 'F' is in the prompt."""
+
+    def chat(self, messages, tools=None, temperature=0.0, sample=0):
+        self.calls += 1
+        return reply(GOLD if "sex = 'F'" in messages[0]["content"] else "SELECT 0")
+
+
+class RetryProposer(FakeProposer):
+    """First proposes an unhelpful note; on retry (prompt shows the SQL written with it) proposes the right one."""
+
+    def __init__(self):
+        super().__init__()
+        self.prompts = []
+
+    def chat(self, messages, tools=None, temperature=0.0, sample=0):
+        self.prompts.append(messages[0]["content"])
+        good = "Your previous note" in self.prompts[-1]
+        note = {"kind": "add", "note_id": None, "when": "counting women",
+                "text": "women are sex = 'F'" if good else "count carefully"}
+        return {"content": json.dumps(note), "tool_calls": [], "model": "fake-proposer",
+                "prompt_tokens": 10, "completion_tokens": 1}
+
+
+def test_note_that_does_not_fix_the_question_gets_one_retry_with_the_sql_it_produced(tmp_path):
+    cfg = setup(tmp_path)
+    proposer = RetryProposer()
+    assert run_arm(cfg, "ratchet", 0, limit=1, agent_llm=PickyAgent(), proposer_llm=proposer)
+    rec = json.loads((tmp_path / "runs/ratchet/toy/order0.jsonl").read_text())
+    assert rec["first_reason"] == "does not fix question" and rec["first_edit"]["text"] == "count carefully"
+    assert rec["decision"] == "accepted" and rec["edit"]["text"] == "women are sex = 'F'"
+    assert len(proposer.prompts) == 2 and "SELECT 0" in proposer.prompts[1].split("Your previous note")[1]

@@ -8,11 +8,15 @@ from dataclasses import dataclass
 from evosql.bird import tables_used
 from evosql.knowledge import Edit
 
+# Static instructions and schema come first so the provider's prefix cache can serve them on every call.
 PROPOSER_PROMPT = """You maintain short notes that help a Text2SQL agent avoid mistakes on ONE SQLite database.
-The agent answered a question wrong. Compare its SQL with the correct SQL and write ONE general, reusable note
-that would have led to the correct SQL: about column meanings, value encodings, units, date formats, or join/filter conventions.
+The agent answered a question wrong. Compare its SQL with the correct SQL clause by clause: selected columns,
+COUNT and DISTINCT, joins, filters and their values, grouping, ordering and LIMIT. Find the difference that changes
+the result and write ONE general, reusable note that would have led to the correct SQL: about column meanings,
+value encodings, units, date formats, or counting/join/filter conventions of this database.
 Never include the specific answer and never restate the question. Keep the note under 50 words.
 If an existing note caused the mistake, you may modify or delete it instead.
+Reply with only JSON: {{"kind": "add" | "modify" | "delete", "note_id": "<id for modify/delete, else null>", "when": "<kind of question this applies to>", "text": "<the note>"}}
 
 Database schema:
 {ddl}
@@ -22,17 +26,27 @@ Current notes:
 
 Question: {question}
 Agent SQL: {wrong_sql}
-Correct SQL: {gold_sql}
+Correct SQL: {gold_sql}"""
 
-Reply with only JSON: {{"kind": "add" | "modify" | "delete", "note_id": "<id for modify/delete, else null>", "when": "<kind of question this applies to>", "text": "<the note>"}}"""
+RETRY_PROMPT = """
+
+Your previous note was:
+When {when}: {text}
+With that note the agent wrote this SQL, which is still wrong:
+{sql_with_note}
+Compare this SQL with the correct SQL clause by clause and reply with a revised note that fixes every difference that changes the result."""
 
 
-def propose(llm, db, question, wrong_sql, gold_sql, knowledge):
-    """Ask the proposer for one edit. Returns an Edit, or None if the reply is unusable."""
+def propose(llm, db, question, wrong_sql, gold_sql, knowledge, retry=None):
+    """Ask the proposer for one edit; retry = (previous Edit, SQL the agent wrote with it). Returns an Edit or None."""
     prompt = PROPOSER_PROMPT.format(
         ddl=db.ddl, notes=knowledge.render() or "(none yet)", question=question,
         wrong_sql=wrong_sql or "(no SQL submitted)", gold_sql=gold_sql,
     )
+    if retry:
+        previous, sql_with_note = retry
+        prompt += RETRY_PROMPT.format(when=previous.when, text=previous.text,
+                                      sql_with_note=sql_with_note or "(no SQL submitted)")
     reply = llm.chat([{"role": "user", "content": prompt}])
     match = re.search(r"\{.*\}", reply["content"] or "", re.DOTALL)
     try:

@@ -135,6 +135,17 @@ def run_arm(cfg, arm_name, order_seed, limit=None, agent_llm=None, proposer_llm=
                 else:
                     d = gate.accept(edit, q, knowledge, order[:step], step, gold)
                     knowledge = d.knowledge
+                    if d.reason == "does not fix question":
+                        # One retry: show the proposer the SQL the agent wrote with its note (a cache hit from the gate).
+                        status(f"q{q.qid} note did not fix it, retrying once")
+                        candidate, _ = knowledge.apply(edit, step, q.qid)
+                        tried = answer(agent_llm, db, question_text(q, hints), candidate, max_steps=max_steps).sql
+                        retry = propose(proposer_llm, db, q.question, r.sql, q.gold_sql, knowledge, retry=(edit, tried))
+                        rec.update(first_edit=asdict(edit), first_reason=d.reason, first_sql_with_note=tried)
+                        if retry:
+                            edit, rec["edit"] = retry, asdict(retry)
+                            d = gate.accept(edit, q, knowledge, order[:step], step, gold)
+                            knowledge = d.knowledge
                     rec["decision"] = "accepted" if d.accepted else "rejected"
                     rec.update(reason=d.reason, gain=d.gain, replay_n=d.replay_n, pruned=d.pruned or [])
             if learning and gate.cfg.prune_every and (step + 1) % gate.cfg.prune_every == 0:
