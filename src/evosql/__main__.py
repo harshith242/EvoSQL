@@ -1,4 +1,5 @@
-"""CLI: python -m evosql partition | labels | discover | run --arm A.. --set S | gate | analyze"""
+"""CLI: v5: partition | labels | discover | run --arm A.. --set S | gate | analyze.
+v6 (--config configs/v6.yaml): stream | report"""
 import argparse
 import json
 from collections import Counter
@@ -23,6 +24,8 @@ def main():
     run.add_argument("--set", required=True, choices=SETS)
     sub.add_parser("gate", help="one-shot gate: pick the headline arm on the gate set")
     sub.add_parser("analyze", help="write summary.md in the profile's results folder")
+    sub.add_parser("stream", help="v6: run the streaming fact-memory experiment")
+    sub.add_parser("report", help="v6: write the per-stream report")
     args = parser.parse_args()
 
     cfg = load_config(args.config, args.agent)
@@ -57,6 +60,12 @@ def main():
     elif args.cmd == "analyze":
         from evosql.evaluate import analyze
         analyze(cfg)
+    elif args.cmd == "stream":
+        from evosql.stream import run
+        run(cfg)
+    elif args.cmd == "report":
+        from evosql.report import report
+        report(cfg)
 
 
 if __name__ == "__main__":
