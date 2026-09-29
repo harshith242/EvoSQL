@@ -5,19 +5,33 @@ import re
 from collections import Counter
 from pathlib import Path
 
+import numpy as np
+from scipy.stats import binomtest
 from tqdm import tqdm
 
 from evosql.agent import answer, answer_self_consistent
-from evosql.analysis import bootstrap_ci, mcnemar, usd
 from evosql.bird import exec_match, gold_rows, load_questions, open_db
 from evosql.budget import Budget, BudgetExceeded
 from evosql.facts import FactBook, _named_columns, columns
-from evosql.llm import ProviderExhausted
+from evosql.llm import ProviderExhausted, make_llm, usd
 from evosql.split import load_split
-from evosql.stream import make_llm
 
 ARMS = ("docs", "evosql", "ungated", "selfcons")
 KNOWLEDGE_FILE = {"evosql": "knowledge_final.json", "ungated": "ungated.json"}
+
+
+def mcnemar(a, b):
+    """Two-sided exact McNemar p-value for paired boolean outcomes."""
+    a, b = np.asarray(a, bool), np.asarray(b, bool)
+    only_a, only_b = int(np.sum(a & ~b)), int(np.sum(~a & b))
+    return binomtest(only_a, only_a + only_b, 0.5).pvalue if only_a + only_b else 1.0
+
+
+def bootstrap_ci(outcomes, iters=2000, seed=0):
+    """95% bootstrap CI of the mean of boolean outcomes."""
+    rng, x = np.random.default_rng(seed), np.asarray(outcomes, float)
+    means = [x[rng.integers(0, len(x), len(x))].mean() for _ in range(iters)]
+    return float(np.percentile(means, 2.5)), float(np.percentile(means, 97.5))
 
 
 def read_jsonl(path):
@@ -132,7 +146,7 @@ def relevant(test_qs, book, db):
     return {q.qid for q in test_qs if sql_columns(q.gold_sql, names) & about}
 
 
-def analyze_v3(cfg):
+def analyze(cfg):
     out, res = Path(cfg["runs_dir"]), Path(cfg["results_dir"])
     res.mkdir(parents=True, exist_ok=True)
     split = load_split(out / "split.json")
@@ -153,7 +167,7 @@ def analyze_v3(cfg):
     for arm, res_arm in results.items():
         qids = list(res_arm)
         seq = [res_arm[q] for q in qids]
-        lo, hi = bootstrap_ci([seq])
+        lo, hi = bootstrap_ci(seq)
         common = [q for q in qids if q in results.get("docs", {})]
         p = f"{mcnemar([res_arm[q] for q in common], [results['docs'][q] for q in common]):.3f}" if arm != "docs" and common else "-"
         acc_on = lambda ids: (f"{sum(res_arm[q] for q in ids) / len(ids):.2f} ({len(ids)})" if ids else "-")

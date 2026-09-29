@@ -12,9 +12,8 @@ from evosql.agent import answer
 from evosql.bird import exec_match, gold_rows, load_questions, open_db
 from evosql.budget import Budget, BudgetExceeded
 from evosql.facts import Fact, FactBook, check_fact, columns
-from evosql.llm import ProviderExhausted
+from evosql.llm import ProviderExhausted, make_llm
 from evosql.split import load_split
-from evosql.stream import make_llm
 
 
 

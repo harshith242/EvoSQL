@@ -3,7 +3,7 @@ from types import SimpleNamespace
 import openai
 import pytest
 
-from evosql.llm import LLM, ProviderExhausted
+from evosql.llm import LLM, ProviderExhausted, usd
 
 
 class FakeTransport:
@@ -70,3 +70,11 @@ def test_response_without_choices_is_retried_then_stops_cleanly(tmp_path, monkey
     transport.chat.completions.create = lambda **kw: SimpleNamespace(choices=None, error={"message": "upstream failed"})
     with pytest.raises(ProviderExhausted, match="empty response"):
         LLM("m", cache_dir=tmp_path, client=transport, max_tries=3).chat([{"role": "user", "content": "c"}])
+
+
+def test_usd_charges_cache_hits_at_the_cheap_rate_and_local_models_nothing():
+    prices = {"cache_hit": 0.003, "cache_miss": 0.15, "output": 0.60}
+    usage = {"prompt_tokens": 1_000_000, "provider_cached_tokens": 900_000, "completion_tokens": 100_000}
+    # 0.9M hits * 0.003 + 0.1M misses * 0.15 + 0.1M output * 0.60 = 0.0027 + 0.015 + 0.06
+    assert abs(usd(usage, prices) - 0.0777) < 1e-9
+    assert usd(usage, None) == 0.0

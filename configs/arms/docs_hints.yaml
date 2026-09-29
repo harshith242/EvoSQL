@@ -1,4 +1,0 @@
-# Reference ceiling only: docs arm with BIRD's hand-written hints shown.
-docs: true
-hints: true
-learning: false

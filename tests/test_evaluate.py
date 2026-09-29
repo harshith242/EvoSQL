@@ -5,7 +5,9 @@ import pytest
 
 from evosql.bird import Question
 from evosql.bird import open_db
-from evosql.evaluate import relevant, run_test, selfcons_n, sql_columns
+import numpy as np
+
+from evosql.evaluate import bootstrap_ci, mcnemar, relevant, run_test, selfcons_n, sql_columns
 from evosql.facts import Fact, FactBook
 from evosql.llm import ProviderExhausted
 
@@ -93,3 +95,16 @@ def test_selfcons_n_matches_evosql_spend_per_test_question_and_is_capped(cfg):
     open(f"{runs}/test_evosql.jsonl", "w").write(record(3) + "\n")
     with pytest.raises(SystemExit):
         selfcons_n(cfg)  # a partial evosql run would understate its cost
+
+
+def test_mcnemar_uses_only_discordant_pairs():
+    # 10 pairs where only A is right, 2 where only B is right, 20 ties: exact binomial p(10 of 12) = 0.0386.
+    a = [True] * 10 + [False] * 2 + [True] * 10 + [False] * 10
+    b = [False] * 10 + [True] * 2 + [True] * 10 + [False] * 10
+    assert abs(mcnemar(a, b) - 0.03857) < 1e-4
+    assert mcnemar(a, a) == 1.0
+
+
+def test_bootstrap_ci_brackets_true_accuracy():
+    lo, hi = bootstrap_ci(np.random.default_rng(1).random(200) < 0.6)
+    assert lo < 0.6 < hi and hi - lo < 0.2

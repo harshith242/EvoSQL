@@ -1,56 +1,33 @@
-# Shared settings for every arm. Arms live in configs/arms/<name>.yaml.
+# EvoSQL settings: data, agent profiles, proposer and the learn/freeze/test protocol.
 data_dir: data/bird_dev
 db: thrombosis_prediction
 cache_dir: cache/llm
-arms_dir: configs/arms
-orders: [0, 1, 2]
 max_steps: 8
 
-# SQL agent profiles. Pick one per run with --agent (default below). Each profile keeps its own runs,
-# noise rate and results, so answers from different agent models never mix. Ollama is the manual fallback.
+# SQL agent profiles; pick one with --agent. Each keeps its own runs and results so models never mix.
 agent_profile: deepseek
 agents:
-  # DeepSeek API, thinking on, plus the value profile of every column in the prompt (v2).
-  # Prompts are static-first (rules, schema, profile, notes, then question) so DeepSeek's prefix cache hits.
+  # DeepSeek, thinking off (deterministic, cheap), with the per-column value profile in the prompt.
   deepseek:
     model: deepseek-flash
     base_url: https://api.deepseek.com
     api_key_env: DEEPSEEK_API_KEY
-    options: {extra_body: {thinking: {type: enabled}}, reasoning_effort: high}  # levels: low, high, max
+    options: {extra_body: {thinking: {type: disabled}}}
     value_profile: true
     usd_per_million: {cache_hit: 0.003, cache_miss: 0.15, output: 0.60}  # off-peak list prices; peak is 2x
-    runs_dir: runs_deepseek_v2
-    results_dir: results_deepseek_v2
-  # First DeepSeek setup (thinking off, no value profile); kept so its runs can be re-analyzed.
-  deepseek_v1:
-    model: deepseek-flash
-    base_url: https://api.deepseek.com
-    api_key_env: DEEPSEEK_API_KEY
-    options: {extra_body: {thinking: {type: disabled}}}
-    value_profile: false
-    usd_per_million: {cache_hit: 0.003, cache_miss: 0.15, output: 0.60}
-    runs_dir: runs_deepseek
-    results_dir: results_deepseek
-  # v3 agent: thinking off (deterministic, cheap) with the value profile. Used by split/learn/test/analyze-v3.
-  deepseek_v3:
-    model: deepseek-flash
-    base_url: https://api.deepseek.com
-    api_key_env: DEEPSEEK_API_KEY
-    options: {extra_body: {thinking: {type: disabled}}}
-    value_profile: true
-    usd_per_million: {cache_hit: 0.003, cache_miss: 0.15, output: 0.60}
     runs_dir: runs_v3
     results_dir: results_v3
-  # Local Ollama alias with a 32k context (see ollama/qwen3.5-9b-32k.Modelfile). Free, no limits, slow.
+  # Optional free fallback: local Ollama alias with a 32k context (see ollama/qwen3.5-9b-32k.Modelfile).
   local:
     model: qwen3.5-9b-32k
     base_url: http://localhost:11434/v1
     api_key_env: null
-    options: {reasoning_effort: none}  # thinking off: ~10x faster
-    runs_dir: runs
-    results_dir: results
+    options: {reasoning_effort: none}
+    value_profile: true
+    runs_dir: runs_local
+    results_dir: results_local
 
-# Proposer: one call per wrong answer, no tools. Thinking on (high) for a better diagnosis of the mistake.
+# Proposer and consolidator: few calls, thinking on for a better diagnosis.
 proposer:
   model: deepseek-flash
   base_url: https://api.deepseek.com
@@ -58,9 +35,8 @@ proposer:
   options: {extra_body: {thinking: {type: enabled}}, reasoning_effort: high}
   usd_per_million: {cache_hit: 0.003, cache_miss: 0.15, output: 0.60}
 
-# v3 protocol: learn typed facts on n_learn questions, freeze, test all arms on n_test other questions.
+# Learn typed facts on n_learn questions, freeze them, test every arm on n_test other questions.
 v3:
-  agent_profile: deepseek_v3
   n_learn: 50
   n_test: 50
   seed: 0

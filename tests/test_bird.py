@@ -2,7 +2,7 @@ import sqlite3
 
 import pytest
 
-from evosql.bird import exec_match, execute, tables_used
+from evosql.bird import exec_match, execute
 
 
 @pytest.fixture
@@ -43,12 +43,6 @@ def test_slow_query_times_out(db):
     slow = "WITH RECURSIVE c(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM c) SELECT COUNT(*) FROM c"
     rows, error = execute(db, slow, timeout=0.2)
     assert rows is None and "interrupt" in error
-
-
-def test_tables_used_matches_whole_names_only():
-    tables = ["Patient", "Laboratory", "Lab"]
-    sql = "SELECT * FROM Patient AS T1 INNER JOIN `Laboratory` AS T2 ON T1.ID = T2.ID"
-    assert tables_used(sql, tables) == {"Patient", "Laboratory"}
 
 
 def test_value_profile_lists_coded_values_nulls_and_ids(db):

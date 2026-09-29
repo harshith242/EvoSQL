@@ -97,3 +97,19 @@ class LLM:
                 "provider_cached_tokens": _cache_hit_tokens(resp.usage),
             }
         raise ProviderExhausted(f"{self.model}: {last}")
+
+
+def make_llm(role_cfg, cache_dir):
+    """LLM for a config role (agent profile or proposer); a role without api_key_env is a local server."""
+    key_env = role_cfg.get("api_key_env")
+    api_key = os.environ[key_env] if key_env else "local"
+    return LLM(role_cfg["model"], role_cfg["base_url"], api_key, cache_dir, options=role_cfg.get("options"))
+
+
+def usd(usage, prices):
+    """Dollar cost of a usage record; prices are USD per 1M tokens (missing prices = free, e.g. local)."""
+    if not prices:
+        return 0.0
+    hit = usage.get("provider_cached_tokens", 0)
+    miss = usage.get("prompt_tokens", 0) - hit
+    return (hit * prices["cache_hit"] + miss * prices["cache_miss"] + usage.get("completion_tokens", 0) * prices["output"]) / 1e6

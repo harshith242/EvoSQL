@@ -2,7 +2,6 @@
 import csv
 import json
 import os
-import re
 import sqlite3
 import time
 from dataclasses import dataclass
@@ -134,10 +133,6 @@ def table_names(path):
 def schema_ddl(path):
     rows, _ = execute(path, "SELECT sql FROM sqlite_master WHERE type='table' AND sql IS NOT NULL")
     return "\n\n".join(r[0] for r in rows)
-
-
-def tables_used(sql, tables):
-    return {t for t in tables if re.search(rf"(?<!\w){re.escape(t)}(?!\w)", sql, re.IGNORECASE)}
 
 
 def table_docs(data_dir, db_id, table):

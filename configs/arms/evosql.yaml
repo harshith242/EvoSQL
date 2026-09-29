@@ -1,4 +1,0 @@
-# EvoSQL: targeted replay, noise band from calibration, leakage and size checks, knowledge cap, pruning.
-docs: true
-learning: true
-gate: {replay_k: 5, noise_p: calibrated, leakage_check: true, token_check: true, max_note_tokens: 80, cap_tokens: 8000, prune_every: 20}

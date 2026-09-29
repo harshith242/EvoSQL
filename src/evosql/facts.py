@@ -8,12 +8,36 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 from evosql.bird import execute
-from evosql.knowledge import Edit, approx_tokens
-from evosql.learner import leaks
 
 KINDS = ("mapping", "constraint", "encoding", "meaning")
 # Case-sensitive on purpose: "from" is ordinary English, "FROM" is SQL.
 SQL_PATTERN = re.compile(r"\b(SELECT|FROM|WHERE|JOIN|GROUP BY|ORDER BY|LIMIT|DISTINCT)\b|(?i:\bcount\s*\()")
+
+
+def approx_tokens(text):
+    return len(text) // 4 + 1
+
+
+def leaks(text, question, gold_sql, gold, max_rows=50):
+    """Return a reason if the text memorizes this question (its answer or wording) instead of stating knowledge."""
+    text, sql = text.lower(), gold_sql.lower()
+    for row in gold[:max_rows]:
+        for value in row:
+            v = str(value).strip().lower()
+            # Constants that already appear in the gold SQL (e.g. 'F', 1) are schema knowledge, not answers.
+            word = rf"(?<!\w){re.escape(v)}(?!\w)"
+            if len(v) >= 2 and not re.search(word, sql) and re.search(word, text):
+                return f"contains answer value {v!r}"
+    if len(gold) == 1 and len(gold[0]) == 1 and isinstance(gold[0][0], int | float):
+        # A single numeric answer: even a one-digit number is the answer.
+        word = rf"(?<![\w.]){re.escape(str(gold[0][0]))}(?![\w.])"
+        if not re.search(word, sql) and re.search(word, text):
+            return f"contains answer value {str(gold[0][0])!r}"
+    q_words, t_words = re.findall(r"\w+", question.lower()), re.findall(r"\w+", text)
+    q_grams = {tuple(q_words[i:i + 5]) for i in range(len(q_words) - 4)}
+    if any(tuple(t_words[i:i + 5]) in q_grams for i in range(len(t_words) - 4)):
+        return "copies question wording"
+    return None
 
 
 @dataclass
@@ -109,7 +133,7 @@ def check_fact(fact, db, question=None, gold_sql=None, gold=None):
         if not any(_value_in(db, t, c, literal) for t, c in targets):
             return f"value not in data: {literal!r}"
     if question is not None:
-        reason = leaks(Edit("add", when="", text=fact.fact), question, gold_sql, gold)
+        reason = leaks(fact.fact, question, gold_sql, gold)
         if reason:
             return f"leakage: {reason}"
     return None

@@ -2,7 +2,7 @@
 import json
 from pathlib import Path
 
-from evosql.analysis import usd
+from evosql.llm import usd
 
 
 class BudgetExceeded(Exception):
