@@ -51,6 +51,9 @@ def test_merge_unites_duplicates_and_resolves_mapping_conflicts(db):
     same = [fact("Normal is 'negative'.", qids=[1], id="f1"), fact("normal is 'negative'", applies_to=["RNP"], qids=[2], id="f2")]
     merged, conflicts = merge(same, db)
     assert len(merged) == 1 and merged[0].source_qids == [1, 2] and merged[0].applies_to == ["normal RNP", "RNP"]
+    # Texts that differ only in a symbolic stored value are different facts, not duplicates.
+    plus, minus = fact("Positive is stored as '+'.", id="f1"), fact("Positive is stored as '-'.", qids=[2], id="f2")
+    assert len(merge([plus, minus], db)[0]) == 2
     # "urea" mapped to two different columns: the better-supported mapping wins.
     rnp = fact("Urea means Laboratory.RNP.", kind="mapping", applies_to=["urea"], qids=[1], id="f1")
     un = fact("Urea means Laboratory.UN.", subject="Laboratory.UN", kind="mapping", applies_to=["Urea"], qids=[2, 3], id="f2")

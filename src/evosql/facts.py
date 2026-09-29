@@ -128,7 +128,8 @@ def check_fact(fact, db):
 
 
 def _norm(text):
-    return " ".join(re.findall(r"\w+", text.lower()))
+    # Quoted values stay whole: "'+'" and "'-'" differ although they have no word characters.
+    return " ".join(re.findall(r"'[^']*'|\w+", _unquote(text).lower()))
 
 
 def merge(facts, db):
