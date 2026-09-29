@@ -1,7 +1,6 @@
 """Tool-loop Text2SQL agent: inspect tables, profile columns, test queries, then submit one SQL.
-Works with native tool calls or, as a fallback, a JSON object in the reply text."""
+The knowledge delivery adds a prompt section and may add tools. Native tool calls or a JSON fallback in the reply text."""
 import json
-from collections import Counter
 
 from evosql.bird import execute, quote
 from evosql.llm import extract_json
@@ -17,7 +16,7 @@ Database schema:
 {profile}{notes}"""
 
 
-def _tool(name, description, **params):
+def tool_schema(name, description, **params):
     props = {p: {"type": "string", "description": d} for p, d in params.items()}
     return {
         "type": "function",
@@ -30,10 +29,10 @@ def _tool(name, description, **params):
 
 
 TOOLS = [
-    _tool("describe_table", "Show 3 sample rows of a table and its column descriptions.", table="table name"),
-    _tool("profile_column", "Null count, distinct count, min/max and top 10 values of a column.", table="table name", column="column name"),
-    _tool("run_sql", "Run a read-only SQLite query and see up to 20 rows.", sql="SQLite query"),
-    _tool("submit", "Submit the final SQL answer.", sql="final SQLite query"),
+    tool_schema("describe_table", "Show 3 sample rows of a table and its column descriptions.", table="table name"),
+    tool_schema("profile_column", "Null count, distinct count, min/max and top 10 values of a column.", table="table name", column="column name"),
+    tool_schema("run_sql", "Run a read-only SQLite query and see up to 20 rows.", sql="SQLite query"),
+    tool_schema("submit", "Submit the final SQL answer.", sql="final SQLite query"),
 ]
 
 
@@ -79,17 +78,18 @@ def _parse_json_call(content):
 
 
 def answer(llm, db, question, knowledge, temperature=0.0, sample=0, max_steps=8):
-    """Run the tool loop; return the submitted SQL, or None if the agent never submits."""
+    """Run the tool loop; return (submitted SQL or None, agent turns). knowledge is a delivery mode (see delivery.py)."""
     messages = [
-        # Static parts first (rules, schema, value profile), then notes, so the provider's prefix cache hits.
+        # Static parts first (rules, schema, value profile), then knowledge, so the provider's prefix cache hits.
         {"role": "system", "content": SYSTEM.format(ddl=db.ddl, profile=db.profile + "\n\n" if db.profile else "",
-                                                    notes=knowledge.render())},
+                                                    notes=knowledge.prompt(question))},
         {"role": "user", "content": question},
     ]
+    tools = TOOLS + knowledge.tools
     for step in range(1, max_steps + 1):
         if step == max_steps:
             messages.append({"role": "user", "content": "Last step: call submit now with your best SQL."})
-        reply = llm.chat(messages, tools=TOOLS, temperature=temperature, sample=sample)
+        reply = llm.chat(messages, tools=tools, temperature=temperature, sample=sample)
         calls = reply["tool_calls"]
         # With tools, DeepSeek's thinking mode requires every earlier turn's reasoning to be sent back.
         thought = {"reasoning_content": reply["reasoning"]} if reply.get("reasoning") else {}
@@ -119,26 +119,10 @@ def answer(llm, db, question, knowledge, temperature=0.0, sample=0, max_steps=8)
             if not isinstance(args, dict):
                 args = {}
             if call["name"] == "submit":
-                return args.get("sql")
-            result = run_tool(db, call["name"], args)
+                return args.get("sql"), step
+            result = knowledge.call(call["name"], args) or run_tool(db, call["name"], args)
             if call["id"]:
                 messages.append({"role": "tool", "tool_call_id": call["id"], "content": result})
             else:
                 messages.append({"role": "user", "content": f"Tool result:\n{result}"})
-    return None
-
-
-def answer_self_consistent(llm, db, question, knowledge, n, max_steps=8):
-    """Sample n answers at temperature 0.7 and return the SQL whose result set is most common."""
-    results, votes = [], Counter()
-    for i in range(n):
-        sql = answer(llm, db, question, knowledge, temperature=0.7, sample=i, max_steps=max_steps)
-        rows, error = execute(db.path, sql)
-        key = None if error else frozenset(rows)
-        results.append((sql, key))
-        if key is not None:
-            votes[key] += 1
-    if not votes:
-        return None
-    best = votes.most_common(1)[0][0]
-    return next(sql for sql, key in results if key == best)
+    return None, max_steps

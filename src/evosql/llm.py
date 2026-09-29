@@ -15,7 +15,7 @@ from evosql.files import write_atomic
 
 RETRYABLE = (openai.APIConnectionError, openai.APITimeoutError, openai.InternalServerError)
 MAX_WAIT = 120  # a longer retry-after means a daily limit: stop and resume later instead of sleeping
-TOKENS = ("prompt_tokens", "completion_tokens", "provider_cached_tokens")
+USAGE_KEYS = ("prompt_tokens", "completion_tokens", "provider_cached_tokens", "latency_s")  # summed per call
 
 
 class ProviderExhausted(Exception):
@@ -58,11 +58,11 @@ class LLM:
         self.max_tries = max_tries
         self.options = options or {}  # extra request params, e.g. {"reasoning_effort": "low"}
         self.prices, self.on_spend = prices, on_spend  # on_spend(usd) runs after every real (non-cached) call
-        self.usage = {"calls": 0, "cached": 0, **dict.fromkeys(TOKENS, 0)}
+        self.usage = {"calls": 0, "cached": 0, **dict.fromkeys(USAGE_KEYS, 0)}
         self.seen = set()  # cache keys already counted in this process: in-run replays are free
 
     def chat(self, messages, tools=None, temperature=0.0, sample=0):
-        """Return {content, reasoning, tool_calls: [{id, name, arguments}], model, and the TOKENS counts}."""
+        """Return {content, reasoning, tool_calls: [{id, name, arguments}], model, USAGE_KEYS}; replays keep latency_s."""
         payload = [self.model, self.options, messages, tools, temperature, sample]
         key = hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
         path = self.cache_dir / key[:2] / f"{key}.json"
@@ -78,13 +78,14 @@ class LLM:
                 self.on_spend(usd(reply, self.prices))
         self.seen.add(key)
         self.usage["calls"] += 1
-        for k in TOKENS:
+        for k in USAGE_KEYS:
             self.usage[k] += reply.get(k, 0)
         return reply
 
     def _call(self, messages, tools, temperature):
         extra = {"tools": tools, **self.options} if tools else dict(self.options)
         for attempt in range(self.max_tries):
+            start = time.monotonic()
             try:
                 resp = self.client.chat.completions.create(
                     model=self.model, messages=messages, temperature=temperature, **extra
@@ -116,6 +117,7 @@ class LLM:
                 "prompt_tokens": resp.usage.prompt_tokens,
                 "completion_tokens": resp.usage.completion_tokens,
                 "provider_cached_tokens": _cache_hit_tokens(resp.usage),
+                "latency_s": round(time.monotonic() - start, 3),
             }
         raise ProviderExhausted(f"{self.model}: {last}")
 
