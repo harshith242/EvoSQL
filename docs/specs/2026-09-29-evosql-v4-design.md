@@ -85,10 +85,15 @@ All arms use the same agent (`deepseek-flash`, thinking off), schema, BIRD docs 
 |---|---|
 | docs | none |
 | all | every fact in the system prompt (v3 style, control) |
-| retrieve | per question: the matched facts (cap 8, by score) plus every grain and relation fact, in the system prompt |
-| tool | a one-line manifest of the subjects that have knowledge, plus a tool `search_knowledge(query)` that returns the top 5 matched facts. Tool calls count toward the 8-step limit. |
+| retrieve | per question: the top facts from hybrid search on the question (cap 8) plus every grain and relation fact, in the system prompt |
+| tool | a one-line manifest of the subjects that have knowledge, plus a tool `search_knowledge(query)` that returns the top 5 facts from hybrid search, each tagged with how it matched. Tool calls count toward the 8-step limit. |
 
-**Matcher** (shared by retrieve and tool, local and deterministic): text is lowercased and split into words, and a light suffix strip is applied (`s`, `es`, `ed`, `ing`). A fact's score is the number of its `applies_to` phrases and subject words whose words all appear in the query. Only facts scoring above 0 are returned, highest first, with ties broken by fact id.
+**Hybrid search** (shared by retrieve and tool, so the two arms differ only in who issues the query):
+- **Keyword:** BM25 over each fact's `applies_to` phrases, subject and text. Text is lowercased and split into words, and a light suffix strip is applied (`s`, `es`, `ed`, `ing`).
+- **Semantic:** cosine similarity between the query embedding and the fact embeddings (`applies_to` + subject + fact). The embeddings come from local Ollama `qwen3-embedding:0.6b`, are free, and are cached on disk by text hash.
+- **Fusion:** Reciprocal Rank Fusion, score = 1/(60 + keyword rank) + 1/(60 + semantic rank). The result is one deduplicated list; ties are broken by fact id.
+- **Relevance floor:** a fact is eligible only if its BM25 score is above 0 or its cosine is at least `min_cosine` (config, default 0.5). This avoids returning irrelevant facts to fill the list.
+- **Output of the tool:** one list, each fact tagged `keyword`, `semantic` or `keyword + semantic`.
 
 ## 7. Gate (one-shot)
 
@@ -120,7 +125,7 @@ All arms use the same agent (`deepseek-flash`, thinking off), schema, BIRD docs 
 ## 11. Out of scope (possible v5)
 
 - Draft-then-correct mode (Tk-Boost style) and a self-consistency baseline, if budget remains.
-- MCP server; embedding search; shrinking the value profile.
+- MCP server; LLM-based reranking; shrinking the value profile.
 - Other databases; learning without gold SQL.
 
 ## 12. Success criteria

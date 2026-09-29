@@ -30,18 +30,18 @@ Headline result: a learning curve (accuracy vs. questions seen) per arm, plus no
 ## 3. Key decisions
 
 
-| Topic                 | Decision                                                                                   | Why                                                                                 |
-| --------------------- | ------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------- |
-| Knowledge transfer    | Knowledge is per database, never shared across databases                                   | Schema quirks are database-specific                                                 |
-| Evaluation style      | Prequential: each question is scored *before* the system learns from it                    | No fixed split needed; no testing on learned questions                              |
-| Dataset               | BIRD dev, one database: `thrombosis_prediction` (163 questions, 69% moderate/challenging)  | Mini-dev has only ~45 per database; user chose one hard database to keep the download small |
-| BIRD `evidence` hints | Hidden in all main arms                                                                    | Hints overlap with what learning should discover                                    |
-| Feedback signal       | Correct/incorrect + gold SQL after each answer                                             | Stands in for an analyst correcting the query; stated openly in README              |
-| Value profile         | v2: a per-column value profile (null share, coded values with counts, numeric/date ranges) computed with SQL before question 1; in every arm's prompt after the schema | Many misses were value encodings (e.g. RNP stored as both 'negative' and '0'); static, free, no leakage |
-| Knowledge delivery    | All notes rendered into the system prompt                                                  | Simplest; stable prefix; token cost is directly measurable                          |
-| Gate                  | Targeted replay gate (Section 5)                                                           | Per-note decisions, explainable log; ratchet is the same code with regularizers off |
+| Topic                 | Decision                                                                                                                                                                                   | Why                                                                                                                             |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------- |
+| Knowledge transfer    | Knowledge is per database, never shared across databases                                                                                                                                   | Schema quirks are database-specific                                                                                             |
+| Evaluation style      | Prequential: each question is scored *before* the system learns from it                                                                                                                    | No fixed split needed; no testing on learned questions                                                                          |
+| Dataset               | BIRD dev, one database: `thrombosis_prediction` (163 questions, 69% moderate/challenging)                                                                                                  | Mini-dev has only ~45 per database; user chose one hard database to keep the download small                                     |
+| BIRD `evidence` hints | Hidden in all main arms                                                                                                                                                                    | Hints overlap with what learning should discover                                                                                |
+| Feedback signal       | Correct/incorrect + gold SQL after each answer                                                                                                                                             | Stands in for an analyst correcting the query; stated openly in README                                                          |
+| Value profile         | v2: a per-column value profile (null share, coded values with counts, numeric/date ranges) computed with SQL before question 1; in every arm's prompt after the schema                     | Many misses were value encodings (e.g. RNP stored as both 'negative' and '0'); static, free, no leakage                         |
+| Knowledge delivery    | All notes rendered into the system prompt                                                                                                                                                  | Simplest; stable prefix; token cost is directly measurable                                                                      |
+| Gate                  | Targeted replay gate (Section 5)                                                                                                                                                           | Per-note decisions, explainable log; ratchet is the same code with regularizers off                                             |
 | Models                | Agent: DeepSeek `deepseek-flash`, thinking on (high) in v2, off in v1 (fallback: local Ollama `qwen3.5:9b`, separate runs). Proposer: `deepseek-flash`, thinking on. OpenAI-compatible API | Free tiers (Groq, OpenRouter, NVIDIA) were too rate limited or unreliable; DeepSeek with prefix caching is ~$0.001 per question |
-| Language / tooling    | Python, `uv`                                                                               |                                                                                     |
+| Language / tooling    | Python, `uv`                                                                                                                                                                               |                                                                                                                                 |
 
 
 
@@ -138,16 +138,16 @@ Optional reference: docs arm **with** BIRD hints, 1 order, reported as a ceiling
 Repo: `new-techniques/evosql/` (standalone git repo).
 
 
-| Module         | Responsibility                                                                                                                                                                       |
-| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `bird.py`      | Download BIRD dev; load questions per database; read-only SQLite execution (30 s timeout, row cap); execution-match using BIRD's set-comparison semantics                            |
-| `llm.py`       | OpenAI-compatible client, one pinned provider/model per role (agent, proposer); disk cache keyed by (model, messages, params, sample index); backoff on 429; token and call counters |
+| Module         | Responsibility                                                                                                                                                                        |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `bird.py`      | Download BIRD dev; load questions per database; read-only SQLite execution (30 s timeout, row cap); execution-match using BIRD's set-comparison semantics                             |
+| `llm.py`       | OpenAI-compatible client, one pinned provider/model per role (agent, proposer); disk cache keyed by (model, messages, params, sample index); backoff on 429; token and call counters  |
 | `agent.py`     | Schema DDL in the system prompt; tools `describe_table` (+ docs if the arm has them), `profile_column`, `run_sql`, `submit`; native tool calls with strict-JSON fallback; max 8 steps |
-| `knowledge.py` | `Note {id, when, text, source_qids, credited_qids, tokens, created_step}`; render to prompt; JSON save/load                                                                          |
-| `learner.py`   | Proposer prompt and parsing; `Gate` with switches `replay_k`, `leakage_check`, `token_check`, `prune_every`, `cap`, `noise_p`                                                        |
-| `stream.py`    | Prequential runner; appends one JSONL record per step; resumes from the last record                                                                                                  |
-| `analysis/`    | Learning curves, bootstrap CIs, paired McNemar tests, tokens/calls per correct answer, note-count growth, accept/reject summary                                                      |
-| `configs/`     | One YAML per arm, plus provider/model/database settings                                                                                                                              |
+| `knowledge.py` | `Note {id, when, text, source_qids, credited_qids, tokens, created_step}`; render to prompt; JSON save/load                                                                           |
+| `learner.py`   | Proposer prompt and parsing; `Gate` with switches `replay_k`, `leakage_check`, `token_check`, `prune_every`, `cap`, `noise_p`                                                         |
+| `stream.py`    | Prequential runner; appends one JSONL record per step; resumes from the last record                                                                                                   |
+| `analysis/`    | Learning curves, bootstrap CIs, paired McNemar tests, tokens/calls per correct answer, note-count growth, accept/reject summary                                                       |
+| `configs/`     | One YAML per arm, plus provider/model/database settings                                                                                                                               |
 
 
 Outputs: `runs/<arm>/<db>/order<k>.jsonl` and `runs/<arm>/<db>/order<k>.notes.json` (the final notes; each note records the step at which it was created).
@@ -191,11 +191,4 @@ Outputs: `runs/<arm>/<db>/order<k>.jsonl` and `runs/<arm>/<db>/order<k>.notes.js
 - Unit tests: execution-match comparator (order, duplicates, NULLs, floats), leakage check, gate decisions (with a stub agent returning scripted correctness), knowledge render/save, runner resume.
 - A fake LLM client for deterministic tests; no network in the test suite.
 - Smoke run: 5 questions end to end on the real models before any longer run.
-
-
-
-## 12. Success criteria
-
-- End-to-end run of all 5 arms on at least 1 database, resumable, fully re-analyzable from the cache with zero new calls.
-- README with the learning-curve chart, cost table, note-growth chart and an honest verdict, including if EvoSQL does **not** beat the ratchet or self-consistency.
 
