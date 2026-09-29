@@ -35,6 +35,15 @@ agents:
     options: {}
     runs_dir: runs_nvidia
     results_dir: results_nvidia
+  # OpenRouter free model, pinned (never `openrouter/free`, which switches models per call).
+  # Free tier: ~20 requests/min, 50 requests/day (1,000/day after a one-time $10 credit purchase).
+  openrouter:
+    model: qwen/qwen3.8-27b:free
+    base_url: https://openrouter.ai/api/v1
+    api_key_env: OPENROUTER_API_KEY
+    options: {}
+    runs_dir: runs_openrouter
+    results_dir: results_openrouter
 
 # Proposer: only called after wrong answers, so it fits Groq's free daily limits.
 proposer:
