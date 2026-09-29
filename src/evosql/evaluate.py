@@ -1,5 +1,6 @@
 """Runs and report: any delivery mode answers any question set (official and corrected scoring, latency, knowledge use).
 The one-shot gate picks the headline mode on the gate set; analyze compares every mode with docs on the final set."""
+import hashlib
 import json
 from collections import Counter
 from pathlib import Path
@@ -45,16 +46,24 @@ def mode_book(out, mode):
     return FactBook.load(path)
 
 
+def setup_digest(book, mode, cfg):
+    """Id of what a mode's answers depend on: no facts (docs), the facts, plus the search settings (retrieve, tool)."""
+    if mode not in ("retrieve", "tool"):
+        return (FactBook() if mode == "docs" else book).digest()
+    return hashlib.sha256((book.digest() + json.dumps(cfg["search"], sort_keys=True)).encode()).hexdigest()[:12]
+
+
 def run_mode(cfg, mode, set_name, agent_llm=None, knowledge=None):
     """Answer every question of a set with one delivery mode; resumes by skipping logged questions."""
     out, parts, db, by_id = load_run(cfg)
     book = mode_book(out, mode)
     knowledge = knowledge or make_delivery(mode, book, cfg["search"])
     fixes = corrected(cfg["data_dir"], cfg["db"])
+    setup = setup_digest(book, mode, cfg)
     log_path = out / f"{set_name}_{mode}.jsonl"
     done = read_jsonl(log_path)
-    if done and done[0]["knowledge"] != book.digest():
-        raise SystemExit(f"{log_path.name} was made with different knowledge; delete it to rerun {mode}")
+    if done and done[0]["knowledge"] != setup:
+        raise SystemExit(f"{log_path.name} was made with different knowledge or search settings; delete it to rerun {mode}")
     write_atomic(log_path, "".join(json.dumps(r) + "\n" for r in done))  # drops a torn last line
     seen, right = {r["qid"] for r in done}, sum(r["correct"] for r in done)
     budget = Budget(out / "spend.json", cfg["protocol"]["budget_usd"])
@@ -71,7 +80,7 @@ def run_mode(cfg, mode, set_name, agent_llm=None, knowledge=None):
                 right += correct
                 append_jsonl(log_path, {"qid": qid, "difficulty": q.difficulty, "sql": sql, "correct": correct,
                                         "correct_corrected": exec_match(db.path, sql, corrected_gold(db, q, fixes)),
-                                        "turns": turns, **knowledge.used, "knowledge": book.digest(),
+                                        "turns": turns, **knowledge.used, "knowledge": setup,
                                         "usage": {k: agent.usage[k] - before.get(k, 0) for k in agent.usage}})
                 bar.update(1)
                 bar.set_postfix_str(f"acc {right}/{bar.n} | spent ${budget.total:.3f}")
@@ -117,7 +126,9 @@ def gate(cfg):
     results = load_results(out, "gate", parts)
     rows, headline = gate_decision(results, cfg["protocol"]["max_regressions"])
     docs_right = sum(r["correct"] for r in results["docs"].values())
-    write_atomic(out / "gate.json", json.dumps({"docs_right": docs_right, "modes": rows, "headline": headline}, indent=1))
+    setups = {m: r[parts["gate"][0]]["knowledge"] for m, r in results.items()}  # final runs must use the same setups
+    write_atomic(out / "gate.json", json.dumps({"docs_right": docs_right, "modes": rows, "headline": headline,
+                                                "setups": setups}, indent=1))
     print(f"gate ({len(parts['gate'])} questions, docs right {docs_right}):")
     for mode, row in rows.items():
         print(f"  {mode}: right {row['right']}, +{row['fixes']} / -{row['regressions']}, "
@@ -167,8 +178,19 @@ def analyze(cfg):
     gate_file = out / "gate.json"
     gated = json.loads(gate_file.read_text()) if gate_file.exists() else None
     headline = gated["headline"] if gated else None
+    book = FactBook.load(out / "knowledge.json", missing_ok=True)
+    for mode, res in results.items():
+        # The gate chose the headline with one knowledge setup; the final answers must come from that same setup.
+        current = setup_digest(book, mode, cfg)
+        if {r["knowledge"] for r in res.values()} | ({gated["setups"][mode]} if gated else set()) != {current}:
+            raise SystemExit(f"final {mode} answers, gate.json and knowledge.json do not share one knowledge setup")
     learn_usd, docs = discovery_usd(cfg), results["docs"]
     n = len(parts["final"])
+    missing = [f"{m}: {len(read_jsonl(out / f'final_{m}.jsonl'))}/{n} answered" for m in MODES if m not in results]
+    spend_file = out / "spend.json"
+    real = json.loads(spend_file.read_text())["usd"] if spend_file.exists() else 0.0
+    gate_usd = sum(usd(r["usage"], cfg["agent"].get("usd_per_million"))
+                   for m in MODES for r in read_jsonl(out / f"gate_{m}.jsonl"))
 
     lines = ["# EvoSQL v4 results", "",
              f"Question sets: discovery {len(parts['discovery'])}, gate {len(parts['gate'])}, final {n} (never used before).", ""]
@@ -191,8 +213,12 @@ def analyze(cfg):
               "| Mode | Accuracy | 95% CI | vs docs (official \\| corrected) | Corrected acc | Test $ | $/correct "
               "| Latency p50 / p95 s | Turns | Knowledge use |", "|---|---|---|---|---|---|---|---|---|---|"]
     lines += [mode_row(mode, res, docs, cfg, learn_usd) for mode, res in results.items()]
-    lines += ["", f"Discovery cost ${learn_usd:.4f} is added to the knowledge modes' $/correct. Latency is the summed API "
-              "time of the calls that answered a question. Corrected scores use the annotation-error study's gold where "
+    if missing:
+        lines.append(f"\nNot reported (incomplete final runs): {'; '.join(missing)}.")
+    lines += ["", f"Discovery cost ${learn_usd:.4f} is added to the knowledge modes' $/correct; the gate runs cost "
+              f"${gate_usd:.4f}. Real API spend so far: ${real:.3f} of ${cfg['protocol']['budget_usd']:.2f} (peak prices, "
+              "cached replies free). Latency is the summed agent API time of the calls that answered a question; local "
+              "embedding time (retrieve, tool) is excluded. Corrected scores use the annotation-error study's gold where "
               "it exists, otherwise official."]
 
     if gated:
@@ -201,9 +227,11 @@ def analyze(cfg):
         lines += [f"| {m} | {r['right']} | {r['fixes']} | {r['regressions']} | {r['pass']} |" for m, r in gated["modes"].items()]
         lines.append(f"\nHeadline mode: {headline} (pass: fixes >= regressions and regressions <= "
                      f"{cfg['protocol']['max_regressions']}; ties: retrieve, tool, all).")
+        row = gated["modes"].get(headline)
+        if row and row["fixes"] == row["regressions"]:
+            lines.append("The headline mode had net 0 on the gate: it passed by not hurting, not by helping.")
 
     log = read_jsonl(out / "discover.jsonl")
-    book = FactBook.load(out / "knowledge.json", missing_ok=True)
     if log:
         answers = log[0]
         dropped = Counter(d["reason"].split(":")[0] for e in log if e["event"] == "batch" for d in e["dropped"])
