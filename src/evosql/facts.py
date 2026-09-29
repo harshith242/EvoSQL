@@ -113,7 +113,10 @@ def check_fact(fact, db):
         return "unknown column"
     targets = fact_columns(db, fact) or [(t, c) for t in db.tables for c in db.columns[t]]
     # Quoted values only: an apostrophe inside a word ("patient's") is not a quote.
-    for literal in re.findall(r"(?<!\w)'([^']*)'(?!\w)", fact.fact):
+    for m in re.finditer(r"(?<!\w)'([^']*)'(?!\w)", fact.fact):
+        literal = m.group(1)
+        if PHRASE_CONTEXT.search(fact.fact[:m.start()]):
+            continue
         if not any(_value_in(db, t, c, literal) for t, c in targets):
             return f"value not in data: {literal!r}"
     if in_docs(fact, db):
@@ -129,6 +132,8 @@ def check_fact(fact, db):
     return None
 
 
+# Quoted words right after "phrased as", "words like", "asks" etc. are question wording, not stored values.
+PHRASE_CONTEXT = re.compile(r"\b(phrase[sd]?|word(s|ed|ing)?|terms?|says?|asks?)\s*(as|like)?\s*('[^']*'\s*(,|or|and)\s*)*$", re.I)
 # Wording that adds a boundary rule the docs' "N < 30" style ranges leave open.
 BOUNDARY = re.compile(r"includ|boundary|inclusive|exclusive|strictly|at least|at most|or more|or less|or above|or below", re.I)
 

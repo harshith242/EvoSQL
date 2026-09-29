@@ -30,7 +30,7 @@ Rules:
 - Do not restate anything the column docs or the value profile already say (documented ranges, codes, meanings). Write only what they miss: conventions (how ages, dates and counts are computed), stored codes that differ from the documented symbols, what question phrases mean, row grain and join paths.
 - State facts about the data, never the SQL fix. Do not write SQL keywords or clauses in a fact.
 - A fact must help other questions too; never state this question's answer or copy its wording.
-- Name columns as Table.Column and quote stored values in single quotes exactly as they appear in the data.
+- Name columns as Table.Column and quote stored values in single quotes exactly as they appear in the data; write question phrases in double quotes.
 - Each fact under 40 words, with applies_to: 1 to 5 short phrases a future question may use when the fact matters (e.g. "shipped", "shipping status").
 - probe: one read-only SELECT on this database whose rows show evidence for the fact (e.g. rows with the stored values it names), or null.
 - Do not repeat a fact that is already in the current knowledge.

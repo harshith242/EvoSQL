@@ -69,6 +69,12 @@ def test_merge_unites_duplicates_and_resolves_mapping_conflicts(db):
     assert [f.applies_to for f in merged] == [["normal RNP"], ["normal urea"]] and conflicts[0]["phrase"] == "normal"
 
 
+def test_quoted_question_wording_is_not_checked_as_a_stored_value(db):
+    phrased = fact("For urea questions phrased as 'high' or 'raised', compare Laboratory.UN with 30.", "Laboratory.UN", "constraint")
+    assert check_fact(phrased, db) is None
+    assert check_fact(fact("Urea is high when stored as 'high' in Laboratory.UN."), db).startswith("value not in data")
+
+
 def test_apostrophes_and_identifier_quotes_do_not_break_grounding(db):
     assert check_fact(fact("A patient's normal result is stored as 'negative'."), db) is None
     assert check_fact(fact("Normal is 'negative'.", subject="Laboratory.`RNP`"), db) is None
