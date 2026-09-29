@@ -10,7 +10,7 @@ def main():
     load_dotenv()
     parser = argparse.ArgumentParser(prog="evosql")
     parser.add_argument("--config", default="configs/base.yaml")
-    parser.add_argument("--agent", help="agent profile from the config (default: agent_profile), e.g. local or groq")
+    parser.add_argument("--agent", help="agent profile from the config (default: agent_profile), e.g. deepseek or local")
     sub = parser.add_subparsers(dest="cmd", required=True)
     run = sub.add_parser("run", help="run one or more arms over one or more question orders")
     run.add_argument("--arm", nargs="+", required=True, help="arm names, run in the given order")

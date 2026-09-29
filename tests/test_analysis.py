@@ -1,6 +1,6 @@
 import numpy as np
 
-from evosql.analysis import bootstrap_ci, correctness_by_order, mcnemar
+from evosql.analysis import bootstrap_ci, correctness_by_order, mcnemar, usd
 
 
 def test_mcnemar_uses_only_discordant_pairs():
@@ -22,3 +22,11 @@ def test_non_learning_arm_is_replayed_in_every_order_by_question_id():
     recs = {0: [{"qid": 7, "correct": True}, {"qid": 8, "correct": False}]}
     seqs = correctness_by_order(recs, learning=False, qids_by_order={0: [7, 8], 1: [8, 7]})
     assert seqs == {0: [True, False], 1: [False, True]}
+
+
+def test_usd_charges_cache_hits_at_the_cheap_rate_and_local_models_nothing():
+    prices = {"cache_hit": 0.003, "cache_miss": 0.15, "output": 0.60}
+    usage = {"prompt_tokens": 1_000_000, "provider_cached_tokens": 900_000, "completion_tokens": 100_000}
+    # 0.9M hits * 0.003 + 0.1M misses * 0.15 + 0.1M output * 0.60 = 0.0027 + 0.015 + 0.06
+    assert abs(usd(usage, prices) - 0.0777) < 1e-9
+    assert usd(usage, None) == 0.0

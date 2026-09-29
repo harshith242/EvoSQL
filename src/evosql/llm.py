@@ -1,4 +1,4 @@
-"""OpenAI-compatible chat client (Ollama or Groq) with a disk cache, retry/backoff and usage counters.
+"""OpenAI-compatible chat client (DeepSeek or Ollama) with a disk cache, retry/backoff and usage counters.
 Cached replies still count toward usage, so reported cost is the logical cost of the run.
 The cache key has no model digest: clear cache/llm after changing an Ollama Modelfile."""
 import hashlib
@@ -16,6 +16,15 @@ MAX_WAIT = 120  # a longer retry-after means a daily limit: stop and resume late
 
 class ProviderExhausted(Exception):
     pass
+
+
+def _cache_hit_tokens(usage):
+    """Prompt tokens served from the provider's prefix cache (DeepSeek or OpenAI-style field)."""
+    hits = getattr(usage, "prompt_cache_hit_tokens", None)
+    if hits is None:
+        details = getattr(usage, "prompt_tokens_details", None)
+        hits = getattr(details, "cached_tokens", 0) if details else 0
+    return hits or 0
 
 
 class LLM:
@@ -69,19 +78,18 @@ class LLM:
                 time.sleep(min(2 ** (attempt + 1), 60))
                 continue
             if not getattr(resp, "choices", None):
-                # Some routers (OpenRouter) answer 200 with an error body and no choices when the upstream model fails.
+                # Some providers answer 200 with an error body and no choices when the upstream model fails.
                 last = f"empty response: {getattr(resp, 'error', None)}"
                 time.sleep(min(2 ** (attempt + 1), 60))
                 continue
             msg = resp.choices[0].message
             calls = [{"id": c.id, "name": c.function.name, "arguments": c.function.arguments} for c in msg.tool_calls or []]
-            details = getattr(resp.usage, "prompt_tokens_details", None)
             return {
                 "content": msg.content,
                 "tool_calls": calls,
                 "model": resp.model,
                 "prompt_tokens": resp.usage.prompt_tokens,
                 "completion_tokens": resp.usage.completion_tokens,
-                "provider_cached_tokens": (getattr(details, "cached_tokens", 0) or 0) if details else 0,
+                "provider_cached_tokens": _cache_hit_tokens(resp.usage),
             }
         raise ProviderExhausted(f"{self.model}: {last}")

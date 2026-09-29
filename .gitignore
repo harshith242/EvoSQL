@@ -7,9 +7,5 @@ __pycache__/
 .venv/
 .pytest_cache/
 *.egg-info/
-runs_groq/
-results_groq/
-runs_nvidia/
-results_nvidia/
-runs_openrouter/
-results_openrouter/
+runs_deepseek/
+results_deepseek/

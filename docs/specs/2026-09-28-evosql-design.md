@@ -39,7 +39,7 @@ Headline result: a learning curve (accuracy vs. questions seen) per arm, plus no
 | Feedback signal       | Correct/incorrect + gold SQL after each answer                                             | Stands in for an analyst correcting the query; stated openly in README              |
 | Knowledge delivery    | All notes rendered into the system prompt                                                  | Simplest; stable prefix; token cost is directly measurable                          |
 | Gate                  | Targeted replay gate (Section 5)                                                           | Per-note decisions, explainable log; ratchet is the same code with regularizers off |
-| Models                | Agent: local Ollama `qwen3.5:9b` (32k context, thinking off). Proposer: Groq `openai/gpt-oss-120b`. Both via OpenAI-compatible API | Free only; Groq's 200K tokens/day cap is too small for the agent's ~5k runs         |
+| Models                | Agent: DeepSeek `deepseek-flash`, thinking off (fallback: local Ollama `qwen3.5:9b`, separate runs). Proposer: `deepseek-flash`, thinking on. OpenAI-compatible API | Free tiers (Groq, OpenRouter, NVIDIA) were too rate limited or unreliable; DeepSeek with prefix caching is ~$0.001 per question |
 | Language / tooling    | Python, `uv`                                                                               |                                                                                     |
 
 
@@ -153,7 +153,7 @@ Outputs: `runs/<arm>/<db>/order<k>.jsonl` and `runs/<arm>/<db>/order<k>.notes.js
 
 ## 8. Models and budget
 
-- **Agent** (most calls) runs locally, so it has no rate limit; **proposer** (only on failures, ~500 calls in total) fits Groq's free 1K requests/day. The models were picked with a 5-question smoke test (gpt-oss-20b: 0/5 and 12 GB of RAM; qwen3.5:9b: 1/5 and 6 GB).
+- **Agent** and **proposer** use DeepSeek `deepseek-flash` (paid, cheap). Prompts put static content first so the provider's prefix cache serves most input tokens. Local Ollama `qwen3.5:9b` remains a manual fallback profile with its own runs and noise rate.
 - Temperature 0 for agent and proposer.
 - Rough volume for one database: ~5k agent runs at ~30 s each, most of them from EvoSQL replay. That is days of machine time, so the runner must be resumable and cache-first.
 - **Staging:** (1) 5-question smoke test; (2) 20 questions, 1 order, all arms; (3) full run. Reduce `replay_k` from 5 to 3 if call volume is too high.

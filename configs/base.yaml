@@ -7,10 +7,20 @@ orders: [0, 1, 2]
 max_steps: 8
 
 # SQL agent profiles. Pick one per run with --agent (default below). Each profile keeps its own runs,
-# noise rate and results, so answers from different agent models never mix.
-agent_profile: local
+# noise rate and results, so answers from different agent models never mix. Ollama is the manual fallback.
+agent_profile: deepseek
 agents:
-  # Local Ollama alias with a 32k context (see ollama/qwen3.5-9b-32k.Modelfile). No rate limits.
+  # DeepSeek API. Thinking off: cheapest and deterministic at temperature 0 (turn on if accuracy is poor).
+  # Prompts are static-first (rules, schema, notes, then question) so DeepSeek's prefix cache hits across calls.
+  deepseek:
+    model: deepseek-flash
+    base_url: https://api.deepseek.com
+    api_key_env: DEEPSEEK_API_KEY
+    options: {extra_body: {thinking: {type: disabled}}}
+    usd_per_million: {cache_hit: 0.003, cache_miss: 0.15, output: 0.60}  # off-peak list prices; peak is 2x
+    runs_dir: runs_deepseek
+    results_dir: results_deepseek
+  # Local Ollama alias with a 32k context (see ollama/qwen3.5-9b-32k.Modelfile). Free, no limits, slow.
   local:
     model: qwen3.5-9b-32k
     base_url: http://localhost:11434/v1
@@ -18,35 +28,11 @@ agents:
     options: {reasoning_effort: none}  # thinking off: ~10x faster
     runs_dir: runs
     results_dir: results
-  # Groq free tier (8K tokens/min, 200K tokens/day): only for small runs of a few questions.
-  groq:
-    model: qwen/qwen3.8-27b
-    base_url: https://api.groq.com/openai/v1
-    api_key_env: GROQ_API_KEY
-    options: {reasoning_effort: none}
-    runs_dir: runs_groq
-    results_dir: results_groq
-  # NVIDIA NIM free tier (~40 requests/min). Ultra scored 2/5 on the smoke test (the 3 misses: 2 gold-SQL bugs, 1 learnable).
-  nvidia:
-    model: nvidia/nemotron-3-ultra-550b-a55b
-    base_url: https://integrate.api.nvidia.com/v1
-    api_key_env: NVIDIA_API_KEY
-    options: {}
-    runs_dir: runs_nvidia
-    results_dir: results_nvidia
-  # OpenRouter free model, pinned (never `openrouter/free`, which switches models per call).
-  # Free tier: ~20 requests/min, 50 requests/day (1,000/day after a one-time $10 credit purchase).
-  openrouter:
-    model: nvidia/nemotron-3-ultra-550b-a55b:free
-    base_url: https://openrouter.ai/api/v1
-    api_key_env: OPENROUTER_API_KEY
-    options: {}
-    runs_dir: runs_openrouter
-    results_dir: results_openrouter
 
-# Proposer: only called after wrong answers, so it fits Groq's free daily limits.
+# Proposer: one call per wrong answer, no tools. Thinking on for a better diagnosis of the mistake.
 proposer:
-  model: openai/gpt-oss-120b
-  base_url: https://api.groq.com/openai/v1
-  api_key_env: GROQ_API_KEY
-  options: {reasoning_effort: medium}
+  model: deepseek-flash
+  base_url: https://api.deepseek.com
+  api_key_env: DEEPSEEK_API_KEY
+  options: {extra_body: {thinking: {type: enabled}}}
+  usd_per_million: {cache_hit: 0.003, cache_miss: 0.15, output: 0.60}

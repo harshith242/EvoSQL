@@ -66,14 +66,27 @@ def tokens(usage):
     return usage.get("prompt_tokens", 0) + usage.get("completion_tokens", 0)
 
 
-def cost(records):
+def usd(usage, prices):
+    """Dollar cost of one usage record; prices are USD per 1M tokens (missing prices = free, e.g. local)."""
+    if not prices:
+        return 0.0
+    hit = usage.get("provider_cached_tokens", 0)
+    miss = usage.get("prompt_tokens", 0) - hit
+    return (hit * prices["cache_hit"] + miss * prices["cache_miss"] + usage.get("completion_tokens", 0) * prices["output"]) / 1e6
+
+
+def cost(records, agent_prices=None, proposer_prices=None):
     answer_tok = sum(tokens(r["answer_usage"]) for r in records)
     learn_tok = sum(tokens(u) for r in records for u in r["learn_usage"])
     calls = sum(r["answer_usage"].get("calls", 0) + sum(u.get("calls", 0) for u in r["learn_usage"]) for r in records)
     n_correct = max(1, sum(r["correct"] for r in records))
     prompt = sum(r["answer_usage"].get("prompt_tokens", 0) for r in records)
     cached = sum(r["answer_usage"].get("provider_cached_tokens", 0) for r in records)
-    return {"answer_tokens_per_q": answer_tok / len(records), "learn_tokens_per_q": learn_tok / len(records),
+    # learn_usage is [agent, proposer] for learning arms (agent only otherwise).
+    spent = sum(usd(r["answer_usage"], agent_prices) for r in records) + sum(
+        usd(u, agent_prices if i == 0 else proposer_prices) for r in records for i, u in enumerate(r["learn_usage"]))
+    return {"usd_per_q": spent / len(records), "usd_per_correct": spent / n_correct,
+            "answer_tokens_per_q": answer_tok / len(records), "learn_tokens_per_q": learn_tok / len(records),
             "tokens_per_correct": (answer_tok + learn_tok) / n_correct, "calls_per_correct": calls / n_correct,
             "prompt_cache_hit": cached / prompt if prompt else 0.0}
 
@@ -106,7 +119,7 @@ def analyze(cfg):
         learning = arm_config(arm, cfg.get("arms_dir", "configs/arms")).get("learning", False)
         seqs[arm] = correctness_by_order(recs, learning, qids_by_order)
         flat = [r for rs in recs.values() for r in rs]
-        costs[arm] = cost(flat)
+        costs[arm] = cost(flat, cfg["agent"].get("usd_per_million"), cfg["proposer"].get("usd_per_million"))
         if learning:
             notes[arm] = recs
             reasons[arm] = Counter(r.get("reason", "") for r in flat if r.get("decision"))
@@ -163,13 +176,14 @@ def analyze(cfg):
     if noise.exists():
         lines += [f"Noise flip rate p = {json.loads(noise.read_text())['p']:.2f} (adding a harmless note).", ""]
     lines += ["| Arm | Orders | Accuracy (all) | Accuracy (final third) | 95% CI | p vs evosql | Tokens/correct "
-              "| Calls/correct | Prompt cache hit |",
-              "|---|---|---|---|---|---|---|---|---|"]
+              "| Calls/correct | Prompt cache hit | $/question | $/correct |",
+              "|---|---|---|---|---|---|---|---|---|---|---|"]
     for arm, acc, tail_acc, lo, hi, n in rows:
         p = f"{pvals[arm]:.3f}" if arm in pvals else "-"
         c = costs[arm]
         lines.append(f"| {arm} | {n} | {acc:.3f} | {tail_acc:.3f} | {lo:.3f}-{hi:.3f} | {p} | "
-                     f"{c['tokens_per_correct']:.0f} | {c['calls_per_correct']:.1f} | {c['prompt_cache_hit']:.0%} |")
+                     f"{c['tokens_per_correct']:.0f} | {c['calls_per_correct']:.1f} | {c['prompt_cache_hit']:.0%} | "
+                     f"{c['usd_per_q']:.4f} | {c['usd_per_correct']:.4f} |")
     for arm, counts in reasons.items():
         lines += ["", f"**{arm} decisions:** " + ", ".join(f"{k}: {v}" for k, v in counts.most_common())]
     if "ratchet" in arms:
