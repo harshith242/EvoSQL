@@ -1,23 +1,28 @@
 # EvoSQL v6: A Text-to-SQL Agent That Builds a Memory of Each Database (Design for Review)
 
 Date: 2026-09-29
-Status: draft for external review, before implementation
+Status: draft for external review, before implementation. Revision 2 incorporates the first review.
 Repo: `evosql/` (v3, v4 and v5 are tagged; this document is self-contained)
 
 ## 1. Goal
 
-A normal Text-to-SQL agent treats every question as if it had never seen the database before. EvoSQL tests a simple idea:
+A normal Text-to-SQL agent treats every question as if it had never seen the database before. EvoSQL tests one precise claim:
 
-> An agent that answers questions about one database, and after each question learns from the correct answer, should build up knowledge of that database (a memory) and answer later questions better than an agent without memory.
+> In an online stream of questions about one database, where the agent receives the correct SQL after each answer, does a per-database memory improve accuracy on later questions compared with the same agent without memory?
+
+This is a claim about online improvement within a database. It is not a claim about broad offline generalization.
 
 The claim is tested honestly:
 - the same agent and the same questions for every arm;
-- memory only from past questions;
-- corrected labels;
-- a paired statistical test;
-- a budget of $2 for the whole run.
+- memory built only from earlier questions;
+- expert-corrected labels;
+- two question orders;
+- paired statistics;
+- a $2 budget for the whole run.
 
-## 2. What earlier versions showed (why v6 changes course)
+## 2. Background
+
+### 2.1 What earlier versions showed
 
 All numbers are on BIRD dev `thrombosis_prediction`, with `deepseek-flash` as the agent (thinking off). The final set has 59 questions.
 
@@ -29,16 +34,44 @@ All numbers are on BIRD dev `thrombosis_prediction`, with `deepseek-flash` as th
 
 Diagnosis, based on per-question inspection:
 
-1. **The labels were too noisy to learn from.** An annotation-error study measured a 52.8% error rate on BIRD Mini-Dev ([arXiv 2601.08778](https://arxiv.org/abs/2601.08778)); we found 26 more gold-SQL bugs in our database. The agent learned wrong "facts" from wrong labels (e.g. counting lab rows as patients, a wrong albumin range). Scoring against wrong labels also hides real gains: even with each question's own hint, only 26 of 59 matched.
-2. **The column docs were the real missing knowledge.** They were available through a tool that the agent almost never called: 5 of 59 questions. Putting them in the prompt (11 → 18) captured most of what learned facts had been adding.
-3. **Too little data for the effect size.** 17 usable failures to learn from, about 4–5 test questions where a learnable convention mattered, and ±2–3 questions of noise.
-4. **Learn once, then freeze.** The design did not match the idea of an agent that keeps learning as it answers.
+1. **The labels were too noisy to learn from.** An annotation-error study measured a 52.8% error rate on BIRD Mini-Dev ([arXiv 2601.08778](https://arxiv.org/abs/2601.08778)); we found 26 more gold-SQL bugs in our database. The agent learned wrong "facts" from wrong labels (e.g. counting lab rows as patients, a wrong albumin range).
+2. **The column docs were the real missing knowledge.** They were only reachable through a tool the agent called on 5 of 59 questions. Putting them in the prompt (11 → 18) absorbed most of what learned facts had been adding.
+3. **Too little data.** v4's gain of +6.8 points was real in size but not significant at n = 59.
+4. **Too many facts injected.** v5 retrieval put about 8.8 facts into each prompt, including irrelevant ones, and its regressions were mostly style flips.
+5. **Learn once, then freeze.** The design did not match the idea of an agent that keeps learning as it answers.
 
-v6 fixes each of these in turn: clean labels, docs in every arm, a streaming memory, and a simple memory baseline to beat.
+### 2.2 Comparison with EvoOntology (arXiv 2609.15779)
+
+EvoOntology evolves a semantic layer (terms, mappings, constraints, evidence) served to a ReAct agent through `browse`/`resolve` tools.
+
+- **Data and setup:** BIRD Mini-Dev (500 questions, 11 databases), split per database into construction and test questions. The ontology is evolved in rounds, with a 70/30 paired validation gate. Scoring is against the official, uncorrected labels.
+- **Result for our model:** `DeepSeek-V4-Flash` goes from **33.1% to 39.4% (+6.3)**.
+- **Their ablations:** removing the validation gate costs the most (−11.2), and tool-layer evolution contributes more than content alone.
+
+Attributing our shortfall against theirs:
+
+| Factor | Conclusion |
+|---|---|
+| Low absolute accuracy | **The model**, not our code: their baseline for the same model is 33.1%, ours 30.5% |
+| No significant gain | **Sample size**: our v4 effect (+6.8) matched theirs (+6.3), but on 59 questions of one database, versus their multi-database test folds |
+| Database choice | thrombosis_prediction is among BIRD's noisiest; noise is concentrated in one database, not averaged over 11 |
+| v5 flat result | Our docs-in-prompt baseline absorbs knowledge that their schema and evidence layers supply |
+| Missing features | We do no tool-layer or schema evolution and no validated multi-round acceptance. v6 adds an online equivalent of their gate (Step 6) |
+
+Sources: [paper](https://arxiv.org/abs/2609.15779), [code (BIRD benchmark)](https://github.com/ruc-datalab/EvoOntology).
+
+v6 changes course accordingly:
+- clean labels;
+- docs in every arm;
+- a streaming memory;
+- very selective retrieval;
+- facts judged by their observed effect on later questions;
+- a simple memory baseline to beat;
+- two orders.
 
 ## 3. Testbed
 
-**Arcwise-Plat** ([repo](https://github.com/uiuc-kang-lab/text_to_sql_benchmarks), `data/arcwise_plat_full_with_diff.json`) is BIRD Mini-Dev with every question reviewed by experts. The SQL, the ambiguous questions and hints, and the schema descriptions are all corrected. It is the cleanest version of BIRD available.
+**Arcwise-Plat** is BIRD Mini-Dev with expert corrections to the SQL, the ambiguous questions and hints, and the schema descriptions ([repo](https://github.com/uiuc-kang-lab/text_to_sql_benchmarks), `data/arcwise_plat_full_with_diff.json`). It is the cleanest BIRD variant available, but not an oracle: the project still has open post-release issue reports.
 
 We use the four largest databases, 221 questions in total:
 
@@ -49,30 +82,41 @@ We use the four largest databases, 221 questions in total:
 | card_games | 52 |
 | european_football_2 | 51 |
 
-- **Databases:** the SQLite files come from the BIRD dev download (to be re-downloaded after confirming URL and size). The column descriptions are Arcwise's corrected `data/schemas/<db>/database_description/*.csv`.
+- **Databases:** SQLite files from the BIRD dev download (re-downloaded after confirming URL and size). Column descriptions come from Arcwise's corrected `data/schemas/<db>/database_description/*.csv`.
+- **Pinning:** the report records:
+  - the Arcwise repository commit;
+  - the SHA-256 of the question file;
+  - the SHA-256 of each SQLite file and description CSV.
+
+  Upstream corrections made after the pinned commit are not applied during the run. They are listed in the report if known.
 - **Score:** execution match against the Arcwise-corrected SQL: the prediction's result set must equal the gold result set.
 - **Hints are never shown to the agent.** In real use, a new question arrives without an annotator's hint.
 
 ## 4. The stream
 
-For each database separately, questions arrive one at a time in a fixed random order (seed 0). All arms see the same order.
+Each database is streamed separately, in **two pre-registered random orders (seeds 0 and 1)**. Order decides which lessons come before which questions, so it is part of the treatment, not noise. The memory is reset at the start of each order.
 
 ```
-for q in stream(db):                        # position 1..N
-    for arm in (none, examples, facts):
-        sql = agent(q, prompt(arm, memory[arm][db]))    # memory holds only earlier questions
-        score(sql, gold(q))
-    reveal gold(q):
-        memory[examples][db].add(q, gold_sql)          # every question
-        if facts arm was wrong on q:
-            memory[facts][db].learn(q, facts_sql, gold_sql)
+for seed in (0, 1):
+    for db in databases:
+        memory = empty
+        for q in shuffled(questions[db], seed):            # position 1..N
+            none_ok  = cached_none_answer(q)                # the none arm does not depend on order
+            ex_sql   = agent(q, examples(memory, q))
+            fx_sql, used = agent(q, facts(memory, q))       # `used` = IDs of the injected facts
+            score all three
+            reveal gold(q):
+                memory.examples.add(q, gold_sql)                          # every question
+                memory.credit(used, fx_ok, none_ok)                       # Step 6
+                if not fx_ok: memory.facts.learn(q, fx_sql, gold_sql)     # Steps 2-5
 ```
 
-Every question is scored **before** the memory learns from it: a prequential, test-then-train evaluation. Every question therefore serves as a test question and then as a lesson.
+- **Test, then train:** every question is scored before the memory learns from it.
+- **The none arm has no memory**, so its answers are the same in both orders. It runs once.
 
 ## 5. Arms
 
-All three arms share one agent, tool loop and prompt skeleton, ordered static-first so that the provider's prefix cache serves most tokens:
+All arms share one agent, tool loop and prompt skeleton. The skeleton is ordered static-first, so the provider's prefix cache serves most tokens:
 
 ```
 rules | schema | value profile + column descriptions | [memory section] | question
@@ -81,139 +125,170 @@ rules | schema | value profile + column descriptions | [memory section] | questi
 | Arm | Memory section |
 |---|---|
 | **none** (baseline) | empty |
-| **examples** (simple memory) | the 3 past questions of this database most similar to q, each with its correct SQL |
-| **facts** (EvoSQL) | up to 8 learned facts relevant to q, plus every "grain" and "relation" fact |
+| **examples** (simple memory) | the 3 most similar earlier questions of this database, each with its correct SQL (every earlier question is stored) |
+| **facts** (EvoSQL) | at most **2** learned facts, and only those that pass a strict relevance test (Step 7); often none |
 
-The **examples** arm is the bar to clear. If simply recalling similar solved questions does as well, distilled facts are not worth the extra machinery.
+The **examples** arm is the practical bar to clear. It learns from every earlier question, while facts learn only from failures. So a facts-vs-examples difference mixes two things: how knowledge is represented, and how much supervision it gets. This is stated as a limitation, not resolved (Section 10).
+
+Every question logs the IDs of the facts or examples that were injected.
 
 ## 6. The facts arm, step by step, and why each step should help
 
 ### Step 1: Column descriptions in the prompt (all arms)
-Each value-profile line ends with the column's description, e.g. `Laboratory.CPK ... | creatinine phosphokinase | Normal range: N < 250`.
-**Why it helps:** v5 showed the docs hold the thresholds and code meanings that questions depend on. In the prompt, the agent uses them. Behind a tool, it almost never looked (11 → 18 correct). Including them in every arm also ensures memory is credited only for knowledge the docs do not already give.
+Each value-profile line ends with the column's description (e.g. `... | creatinine phosphokinase | Normal range: N < 250`).
+**Why it helps:** v5 showed the docs hold the thresholds and code meanings that questions depend on. The agent uses them when they are in the prompt, and almost never fetches them through a tool (11 → 18). Putting them in every arm means memory gets credit only for knowledge the docs do not already give.
 
 ### Step 2: Learn only from failures
-The proposer runs only when the facts arm answered q wrongly.
-**Why it helps:** a failure is direct evidence that some knowledge was missing or wrong. Successes need no lesson. It also bounds cost: about 40–50% of questions, not all of them.
+The proposer runs only when the facts arm answered the question wrongly.
+**Why it helps:** a failure is direct evidence that knowledge was missing or wrong. It also bounds cost to roughly 40–50% of questions.
 
 ### Step 3: Diagnose the misconception
-The proposer (`deepseek-flash`, thinking on) sees:
+The proposer (`deepseek-flash`, thinking on, effort medium) sees:
 - the question;
 - the agent's SQL;
 - the correct SQL;
 - the schema, value profile and column descriptions;
-- the database's current facts.
+- the current facts.
 
-It writes typed facts, one misconception per fact. The types are `mapping` (what a phrase means in the data), `encoding`, `constraint`, `meaning`, `grain` (what a row is and how to count) and `relation` (join path). Each fact comes with 1–5 trigger phrases and an optional evidence query. Its instructions:
+It writes typed facts, one misconception per fact:
+- **Types:** `mapping`, `encoding`, `constraint`, `meaning`, `grain`, `relation`.
+- **Each fact carries its applicability conditions:** 1–5 trigger phrases (`applies_to`), which are also used by retrieval.
+
+Its rules:
 - state the knowledge, never the SQL fix;
 - write only what the docs and profile do not already say;
 - make it general enough to help other questions.
 
-**Why it helps:**
-- Comparing the wrong and the correct SQL isolates the specific gap: a wrong column, a missed filter value, a counting convention.
-- Writing it as a general statement ("a driver's full name is forename plus surname") instead of the answer lets it transfer to later questions about the same concept.
-- The gap-only rule keeps the memory small and non-redundant: in v4, 17 of 35 facts only restated the docs.
+**Why it helps:** comparing the wrong and correct SQL isolates the specific gap. A general statement ("a driver's full name is forename plus surname") can transfer to later questions about the same concept, where a copied answer cannot. The gap-only rule keeps the memory small: in v4, 17 of 35 facts only restated the docs.
 
-### Step 4: Free deterministic checks (no LLM, no cost)
+### Step 4: Free deterministic checks (no LLM)
 A fact is dropped if any of these holds:
 - it contains SQL;
 - it names a column that does not exist;
 - a quoted value is not in the data (question wording in quotes is exempt);
 - its evidence query fails or returns nothing;
-- it only restates a column's documented range;
+- it only restates a column's documented range (unless it flips the documented direction);
 - it leaks the answer: a gold result value, or 5+ words copied from the question.
 
-**Why it helps:** in v3–v5 the wrong or hallucinated facts were the ones that caused regressions. These checks catch invented values, invented columns and memorized answers, deterministically.
+**Why it helps:** in v3–v5 the invented values, invented columns and memorized answers were caught cheaply by these checks.
 
-### Step 5: Verify on the source question
-The failed question is re-answered using only its new facts. The facts are kept only if the answer is now correct; otherwise they are discarded.
+**What they cannot do:** they do not prove a fact is true. An evidence query only shows that the named rows exist. Truth and usefulness are judged by Step 6.
 
-**Why it helps:**
-- It keeps only facts that demonstrably change the agent's behaviour in the right direction. Plausible-sounding facts that do not help are filtered out.
-- In v5 this step backfired, because some "correct" answers were label bugs, so verification rewarded facts that reproduced the bugs. With expert-corrected labels, passing verification now means the fact made the answer right.
-- Cost is one extra agent run per failure.
-
-### Step 6: Deterministic merge
+### Step 5: Deterministic merge
 - Duplicates (same kind, subject and normalised text) are combined, and their source questions are unioned.
 - When a phrase maps to two different columns, only the fact supported by more source questions keeps that phrase. On a tie, neither keeps it.
 - Every conflict is logged.
 
-**Why it helps:** the memory stays consistent as it grows. Two contradictory facts in the prompt would confuse the agent more than neither.
+**Why it helps:** the memory stays consistent as it grows.
 
-### Step 7: Retrieve only relevant facts per question
-- Hybrid search ranks facts against the new question: BM25 over the trigger phrases and text, plus embedding similarity with local `qwen3-embedding:0.6b`, fused with Reciprocal Rank Fusion. A relevance floor applies.
-- The top 8 go into the prompt, plus all grain and relation facts, which apply regardless of wording.
+### Step 6: Judge each fact by its effect on later questions, and prune harmful ones
+This replaces the earlier "verify on the source question" step, which could pass by chance and dropped facts that were useful but not sufficient alone.
+
+- **Credit rule:** whenever a fact is injected for a later question, compare the facts arm with the none arm on that same question:
+  - +1 if facts is right and none is wrong (a fix);
+  - −1 if facts is wrong and none is right (a regression);
+  - 0 otherwise.
+
+  The credit is recorded for every injected fact (at most 2).
+- **Pruning rule (pre-registered):** a fact whose running score reaches **−2** is retired. It is no longer retrieved, but it stays in the log.
+- **Timing:** the none answer and the gold are both known only after the question is scored, so pruning affects only later questions. It is test-then-train, with no look-ahead.
 
 **Why it helps:**
-- Injecting every fact caused "style flips" on unrelated questions in v3.
-- Retrieval shows the agent only what relates to this question, and keeps the prompt small as the memory grows.
-- The grain and relation facts (how rows count, how tables join) are always relevant to aggregation and joins, so they are always included.
+- This is an online version of EvoOntology's validation gate, the component their ablation found most important.
+- A fact is judged on the questions it actually meets later, not on the question it came from. That is a direct measure of transfer.
+- Harmful facts, whether wrong, over-general or distracting, stop being used after a few bad outings.
+
+### Step 7: Retrieve very selectively
+Hybrid search ranks facts against the new question: BM25 over trigger phrases and text, plus embedding similarity (local `qwen3-embedding:0.6b`), fused with Reciprocal Rank Fusion.
+
+A fact is **eligible** only if either holds:
+- one of its trigger phrases matches the question (keyword match on `applies_to`);
+- its embedding similarity is at least 0.6, a stricter threshold than v5's 0.5.
+
+The **top 2** eligible, non-retired facts are injected. No fact type is always included. If nothing is eligible, the memory section is empty.
+
+**Why it helps:**
+- v5 injected about 8.8 facts per question, and its regressions were mostly style flips on questions the facts had nothing to do with.
+- Grain and relation facts matter only for aggregation and join questions, so they now compete like every other fact.
+- A small, precise memory section changes the agent's behaviour only where it should.
 
 ### Step 8: Keep learning
-The memory for a database grows throughout its stream. Later questions draw on everything learned before them.
+Each database's memory grows throughout its stream, and later questions draw on everything learned before them.
 
-**Why it helps:** questions about one database reuse the same concepts: the same tables, codes, naming conventions and join paths. A lesson learned at position 10 can fix positions 30, 45 and 60. The learning curve (Section 7) tests this directly: if memory works, the gap over the baseline should widen over the stream.
+**Why it helps:** questions about one database reuse the same tables, codes, conventions and join paths. A lesson learned at position 10 can fix positions 30, 45 and 60. The learning curve (Section 7) tests this: if memory works, the gap over the baseline widens later in the stream.
 
-### Why facts might beat examples (and when they might not)
+### Why facts might beat examples, and when they might not
 - **Facts can win because:**
-  - a fact transfers to questions that look different on the surface but share a concept;
-  - it carries the reason behind the SQL, not only the SQL;
-  - it is short.
+  - a fact transfers across questions that look different but share a concept;
+  - it carries the reason, not just the SQL;
+  - it is short and pruned by its observed effect.
 - **Examples can win because:**
-  - they are exact and need no distillation, so no proposer errors;
-  - they work very well when later questions are near-duplicates.
-
-The design reports both against the baseline, and against each other.
+  - they need no distillation, so there are no proposer errors;
+  - they see every question, not only failures;
+  - they are strong when later questions are near-duplicates.
 
 ## 7. Evaluation
 
-- **Primary endpoint (fixed before running):** accuracy on the second half of each database's stream (position > N/2, 110 questions in total), facts vs none, paired, with an exact McNemar test. By then the memory has seen at least 25 questions.
+- **Primary endpoint (pre-registered):** accuracy on the **second half of each database's stream** (position > N/2), **facts vs none**. It is pooled over the four databases and both orders, giving about 220 (order, question) pairs, each paired with the none arm's answer to the same question.
+  - **Effect:** the difference in accuracy, with a 95% CI from a bootstrap that resamples questions (clustering the two orders of the same question).
+  - **Test:** a paired sign-flip permutation test at the question level.
+- **Stratified reporting:** the same numbers per database and per order.
 - **Secondary endpoints:**
   - examples vs none;
   - facts vs examples;
-  - whole-stream accuracy;
-  - a learning curve: accuracy per quarter of the stream, per arm;
-  - per-database results.
+  - whole-stream accuracy (this mostly measures the cold start);
+  - a learning curve: accuracy per quarter of the stream, per arm and order.
 - **Also reported:**
-  - cost ($ per correct answer, learning cost included);
-  - latency (p50/p95 of API time per question) and agent turns;
+  - cost ($ per correct answer, learning included);
+  - latency (p50/p95 API time) and agent turns;
+  - injected items per question;
   - memory size over time;
   - facts dropped by each check;
-  - the verification pass rate;
-  - the final facts verbatim.
-- **Honest power statement:** with about 110 paired questions, the test can detect a gain of roughly 8–10 points. Smaller real effects may show as "not significant". The report says so and shows the learning curve and confidence intervals, not only p-values.
+  - retired facts with their credit history;
+  - per-fact fixes and regressions;
+  - the final facts verbatim;
+  - pinned data hashes.
+- **Power:** about 220 clustered pairs can detect a gain of roughly 6–8 points. Smaller real effects may not reach significance. The report says so and shows the CIs and the learning curve alongside the p-value.
+- **If the budget guard stops the run inside order 1:** only the completed databases are reported, with no primary claim.
 
-## 8. Budget ($2 cap, peak prices, enforced by a persisted spend guard)
+## 8. Budget ($2 cap, peak prices, persisted spend guard)
 
 | Item | Estimate |
 |---|---|
-| 3 arms × 221 questions (about $0.0012 per question per arm, prefix-cache heavy) | ~$0.80 |
-| Proposer on ~100 failures of the facts arm (thinking on) | ~$0.45 |
-| Verification: one agent run per failure | ~$0.12 |
-| **Total** | **~$1.4** |
+| none arm, 221 questions, run once | ~$0.27 |
+| examples arm, 2 orders × 221 | ~$0.57 |
+| facts arm, 2 orders × 221 | ~$0.53 |
+| Proposer, ~2 × 90 failures (thinking effort medium) | ~$0.55 |
+| **Total** | **~$1.9** |
 
-All LLM replies are cached on disk. A stopped run resumes where it stopped, and replays cost nothing.
+- **Run order:** order 1 (all arms, all databases) runs before order 2, so a budget stop never leaves order 1 incomplete.
+- **Caching:** all LLM replies are cached, so a stopped run resumes and replays cost nothing.
 
 ## 9. Risks and mitigations
 
 | Risk | Mitigation |
 |---|---|
 | Few failures per database (about 20–30), so few facts | Streaming uses every question; the learning curve shows whether the facts help late in the stream |
-| The proposer writes an over-general or wrong fact | Checks (step 4), verification (step 5) and merge conflicts (step 6); facts listed verbatim in the report for audit |
-| Retrieved facts distract on unrelated questions | Relevance floor and cap of 8; regressions vs the baseline reported per question |
-| Order effects (one fixed order) | Same order for all arms; a second order is run if the budget allows |
+| Wrong or over-general facts | Checks (Step 4), merge (Step 5), and credit-based pruning on later questions (Step 6); all facts and their credit listed in the report |
+| Distraction from injected facts | At most 2 facts, a strict eligibility rule, no always-included types; per-question regressions reported with the injected IDs |
+| Order effects | Two pre-registered orders; results stratified by order |
+| Credit is noisy with 2 facts sharing one outcome | Small cap; a pruning threshold of −2 rather than −1; credit histories reported |
 | The effect is too small to detect | Stated power; CIs and a learning curve alongside the p-value |
+| Label residue in Arcwise-Plat | Pinned data; known open issues listed; per-question outputs published for audit |
 
-## 10. Out of scope
+## 10. Limitations and out of scope
 
-- Using past questions' hints as a learning signal: the feedback is the correct SQL only, by design choice.
-- Right/wrong-only feedback, or no feedback.
-- Other benchmarks and a stronger proposer model.
-- Tool-based fact search (the v4 "tool" mode).
+- **Supervision is confounded between facts and examples:** examples learn from every question, facts only from failures. We do not add a failure-only examples arm (budget).
+- **Out of scope:**
+  - hints of earlier questions as a learning signal (feedback is the correct SQL only);
+  - right/wrong-only feedback, or no feedback;
+  - other benchmarks;
+  - a stronger proposer;
+  - tool-layer or schema evolution;
+  - tool-based fact search.
 
 ## 11. Questions for the reviewer
 
-1. Is second-half accuracy the right primary endpoint for a streaming memory, or should it be whole-stream accuracy?
-2. Should the examples arm also add examples only after failures (matched to the facts arm), or store every question, as designed?
-3. Is keeping or dropping facts by source-question verification too strict, given that one fact may be necessary but not sufficient?
-4. Any concern with a single fixed order per database?
+1. Is the credit rule (a fact scored against the none arm on later questions where it was injected, with retirement at −2) a sound online substitute for a validation gate?
+2. Is a top-2 cap, with keyword-or-cosine ≥ 0.6 eligibility, strict enough, or should eligibility also need a score margin over the next candidate?
+3. Is pooling two orders with question-clustered inference appropriate for the primary endpoint?
