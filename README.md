@@ -6,6 +6,25 @@ A Text2SQL agent that learns **facts about one database** from its own mistakes:
 
 Self-improving agents (harness self-improvement, evolving ontologies and tribal knowledge) are a hot topic, but most published gains are single-run and not budget-matched. EvoSQL asks a narrow question with an objective verifier, SQL execution: *does verified, learned database knowledge help an agent on unseen questions, and does it matter how the knowledge is delivered (all in the prompt, retrieved per question, or searched by the agent as a tool)?* The evaluation separates discovery, the gate and the final test, and reports noise honestly (paired tests, confidence intervals, corrected labels).
 
+## v6: an online memory for each database (current)
+
+Spec: `docs/specs/2026-09-29-evosql-v6-design.md`. The claim tested: *in an online stream of questions about one database, where the agent sees the correct SQL after each answer, does a per-database fact memory improve later questions compared with the same agent without memory?*
+
+- **Data:** Arcwise-Plat, BIRD Mini-Dev with expert-corrected SQL, questions and descriptions. The 4 largest databases, 221 questions, are pinned by commit and SHA-256 hashes.
+- **Arms:** `none` (schema, value profile and corrected column descriptions) and `facts` (the same, plus at most 1–2 learned facts). Hints are never shown.
+- **Stream:** 2 pre-registered orders. For each question: both arms answer, both are scored, then the correct SQL is revealed.
+- **Learning:** when the facts arm fails, a proposer writes one general fact. It must pass free checks: grounded structured values, no SQL, no leaked answer, not already in the docs.
+- **Pre-activation check:** the new fact is tried alone on up to 2 earlier matching questions, and rejected on any regression.
+- **Scoring:** each time a fact is used, it gets +1 or −1 against the none arm on that question. An unproven fact is retired at its first regression; a proven fact at −2; a fact with no effect after 5 uses.
+- **Retrieval:** a whole-phrase trigger match. A generic phrase needs a second cue, and grain/relation facts need the question to mention their part of the schema. Proven facts also have a strict semantic path. Unproven facts are always injected alone.
+- **Report:** per stream (order × database), second-half accuracy facts vs none; a direction count and a stream-level bootstrap; question-level statistics labelled heuristic; an injection-rate check; cost, latency and the facts verbatim.
+
+```bash
+uv run python scripts/get_v6_data.py                       # 4 BIRD DBs + Arcwise-Plat + manifest (downloads ~346 MB once)
+uv run python -m evosql --config configs/v6.yaml stream    # $2 cap, resumable from cache
+uv run python -m evosql --config configs/v6.yaml report    # results_v6/summary.md
+```
+
 ## v5: docs first, learn only the gaps
 
 Spec: `docs/specs/2026-09-29-evosql-v5-design.md`. v4 showed three things:
