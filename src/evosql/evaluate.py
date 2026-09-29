@@ -11,7 +11,7 @@ from evosql.agent import answer, answer_self_consistent
 from evosql.analysis import bootstrap_ci, mcnemar, usd
 from evosql.bird import exec_match, gold_rows, load_questions, open_db
 from evosql.budget import Budget, BudgetExceeded
-from evosql.facts import FactBook, columns
+from evosql.facts import FactBook, _named_columns, columns
 from evosql.llm import ProviderExhausted
 from evosql.split import load_split
 from evosql.stream import make_llm
@@ -111,14 +111,11 @@ def run_test(cfg, arm, agent_llm=None):
     return True
 
 
-def where_columns(sql, names):
-    """Column names used from the first WHERE up to GROUP BY / ORDER BY / LIMIT, i.e. what the question filters on."""
-    m = re.search(r"\bWHERE\b(.*?)(\bGROUP\s+BY\b|\bORDER\s+BY\b|\bLIMIT\b|$)", sql, re.IGNORECASE | re.DOTALL)
-    if not m:
-        return set()
-    body = re.sub(r"'[^']*'", "''", m.group(1))  # string literals are values, not columns
+def sql_columns(sql, names):
+    """Column names a SQL query uses (string literals ignored; longer names first, so "First Date" is not "Date")."""
+    body = re.sub(r"'[^']*'", "''", sql)
     found = set()
-    for c in sorted(names, key=len, reverse=True):  # longest first: "First Date" must not also count as "Date"
+    for c in sorted(names, key=len, reverse=True):
         pattern = rf"(?<![\w-]){re.escape(c)}(?![\w-])"
         if c != "ID" and re.search(pattern, body):
             found.add(c)
@@ -126,10 +123,13 @@ def where_columns(sql, names):
     return found
 
 
-def twins(learn_qs, test_qs, names):
-    """Test questions that filter on a column some learning question also filters on."""
-    learned = set().union(*(where_columns(q.gold_sql, names) for q in learn_qs))
-    return {q.qid for q in test_qs if where_columns(q.gold_sql, names) & learned}
+def relevant(test_qs, book, db):
+    """Test questions whose gold SQL uses a column that some learned fact is about."""
+    names = sorted({c for t in db.tables for c in columns(db, t)})
+    about = set()
+    for f in book.facts:
+        about |= {c for _, c in _named_columns(db, re.sub(r'[`"]', "", f"{f.subject} {f.fact}"))}
+    return {q.qid for q in test_qs if sql_columns(q.gold_sql, names) & about}
 
 
 def analyze_v3(cfg):
@@ -138,8 +138,8 @@ def analyze_v3(cfg):
     split = load_split(out / "split.json")
     by_id = {q.qid: q for q in load_questions(cfg["data_dir"], cfg["db"])}
     db = open_db(cfg["data_dir"], cfg["db"], with_docs=False)
-    names = sorted({c for t in db.tables for c in columns(db, t)})
-    twin = twins([by_id[i] for i in split["learn"]], [by_id[i] for i in split["test"]], names)
+    frozen = FactBook.load(out / KNOWLEDGE_FILE["evosql"]) if (out / KNOWLEDGE_FILE["evosql"]).exists() else FactBook()
+    hit = relevant([by_id[i] for i in split["test"]], frozen, db)
     test_ids = set(split["test"])
     records = {a: [r for r in read_jsonl(out / f"test_{a}.jsonl") if r["qid"] in test_ids] for a in ARMS}
     results = {a: {r["qid"]: r["correct"] for r in recs} for a, recs in records.items()}
@@ -147,8 +147,8 @@ def analyze_v3(cfg):
     learning = learn_usd(cfg)
 
     lines = ["# EvoSQL v3 results", "", f"Learn {len(split['learn'])} / test {len(split['test'])} questions. "
-             f"Test questions with a twin in the learning set: {len(twin)}.", "",
-             "| Arm | Answered | Accuracy | 95% CI | p vs docs | Twin acc | No-twin acc | Test $ | Learn $ | $/correct |",
+             f"Test questions whose gold SQL uses a column the frozen evosql facts are about: {len(hit)}.", "",
+             "| Arm | Answered | Accuracy | 95% CI | p vs docs | Acc: knowledge-relevant | Acc: other | Test $ | Learn $ | $/correct |",
              "|---|---|---|---|---|---|---|---|---|---|"]
     for arm, res_arm in results.items():
         qids = list(res_arm)
@@ -162,7 +162,7 @@ def analyze_v3(cfg):
         per_correct = (spent_learn + spent_test) / max(1, sum(seq))
         answered = f"{len(qids)}" + (" (partial)" if len(qids) < len(test_ids) else "")
         lines.append(f"| {arm} | {answered} | {sum(seq) / len(seq):.3f} | {lo:.2f}-{hi:.2f} | {p} | "
-                     f"{acc_on([q for q in qids if q in twin])} | {acc_on([q for q in qids if q not in twin])} | "
+                     f"{acc_on([q for q in qids if q in hit])} | {acc_on([q for q in qids if q not in hit])} | "
                      f"{spent_test:.4f} | {spent_learn:.4f} | {per_correct:.4f} |")
 
     if records.get("selfcons"):

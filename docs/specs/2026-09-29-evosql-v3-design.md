@@ -102,7 +102,7 @@ All arms answer the same 50 test questions with the same agent and frozen settin
 - Test accuracy per arm, a paired McNemar test against docs, and a bootstrap 95% CI.
 - Cost: learning $ and test $; $ per correct test answer (learning amortized over the 50 test questions).
 - Knowledge: fact count and tokens, facts by kind, checks failed by reason, skips, and accepted/rejected batches.
-- **Twin split:** a test question "has a twin" if its gold SQL filters (in WHERE) on a column that some learning question's gold SQL also filters on. Report test accuracy per arm for twin vs. no-twin questions, to show whether gains come from reusable knowledge or near-repeats.
+- **Knowledge-relevant split:** a test question is "knowledge-relevant" if its gold SQL uses a column that some frozen evosql fact is about (its subject or a `Table.Column` it names). Report test accuracy per arm on relevant vs. other questions, to show whether the learned knowledge applied and helped where it applied. (Replaces a twin split, which marked 40 of 50 test questions as twins because nearly every question filters on common columns.)
 - Framing: BIRD hints stay hidden, and scores use BIRD gold SQL as-is, questionable annotations included. The README states both.
 
 ## 8. Code

@@ -68,7 +68,7 @@ uv run python -m evosql analyze-v3                          # results_v3/summary
 | ungated | every fact that passed the free checks, no gate | 1 |
 | selfcons | none | N (majority of result sets), N matched to evosql's spend incl. learning |
 
-The report shows test accuracy with 95% CIs, McNemar p against docs, test and learning cost, accuracy on test questions that share a filter column with a learning question ("twins") vs not, what was learned, skipped and dropped, and the final facts verbatim.
+The report shows test accuracy with 95% CIs, McNemar p against docs, test and learning cost, accuracy on test questions whose gold SQL uses a column the learned facts are about vs the rest, what was learned, skipped and dropped, and the final facts verbatim.
 
 ## Run (v1/v2 streaming)
 

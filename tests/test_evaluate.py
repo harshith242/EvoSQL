@@ -4,27 +4,31 @@ import sqlite3
 import pytest
 
 from evosql.bird import Question
-from evosql.evaluate import run_test, selfcons_n, twins, where_columns
+from evosql.bird import open_db
+from evosql.evaluate import relevant, run_test, selfcons_n, sql_columns
+from evosql.facts import Fact, FactBook
 from evosql.llm import ProviderExhausted
 
 NAMES = ["ID", "SEX", "UN", "Admission", "Birthday", "CRE", "Date", "First Date", "Diagnosis", "RA"]
 GOLD = "SELECT COUNT(*) FROM Patient WHERE SEX = 'F'"
 
 
-def test_where_columns_finds_filters_not_selected_columns():
-    sql = ("SELECT T1.SEX, T2.UN FROM Patient T1 JOIN Laboratory T2 ON T1.ID = T2.ID "
-           "WHERE T2.UN = 29 AND T1.Admission = '+' ORDER BY T1.Birthday")
-    assert where_columns(sql, NAMES) == {"UN", "Admission"}
-    # A value is not a column, and "First Date" does not also count as "Date".
-    sql = "SELECT SEX FROM Patient WHERE Diagnosis = 'RA' AND `First Date` > '1990-01-01'"
-    assert where_columns(sql, NAMES) == {"Diagnosis", "First Date"}
+def test_sql_columns_ignores_values_and_prefers_longer_names():
+    sql = "SELECT SEX FROM Patient WHERE Diagnosis = 'RA' AND `First Date` > '1990-01-01' AND T2.UN = 29"
+    assert sql_columns(sql, NAMES) == {"SEX", "Diagnosis", "First Date", "UN"}
 
 
-def test_twins_are_test_questions_sharing_a_filter_column_with_learning():
-    learn = [Question(1, "t", "q", "SELECT ID FROM Laboratory WHERE UN = 29", "simple", "")]
-    test = [Question(2, "t", "q", "SELECT SEX FROM Patient T1 JOIN Laboratory T2 WHERE T2.UN > 30", "simple", ""),
-            Question(3, "t", "q", "SELECT SEX FROM Laboratory WHERE CRE >= 1.5", "simple", "")]
-    assert twins(learn, test, NAMES) == {2}
+def test_relevant_marks_test_questions_that_use_a_column_a_fact_is_about(tmp_path):
+    d = tmp_path / "toy"
+    d.mkdir()
+    con = sqlite3.connect(d / "toy.sqlite")
+    con.execute("CREATE TABLE Laboratory (ID INTEGER, UN INTEGER, CRE REAL)")
+    con.close()
+    db = open_db(tmp_path, "toy", with_docs=False)
+    book = FactBook([Fact("f1", "constraint", "Laboratory.UN", "Normal is below 30.")])
+    test = [Question(2, "t", "q", "SELECT ID FROM Laboratory WHERE UN > 30", "simple", ""),
+            Question(3, "t", "q", "SELECT ID FROM Laboratory WHERE CRE >= 1.5", "simple", "")]
+    assert relevant(test, book, db) == {2}
 
 
 class FakeAgent:
