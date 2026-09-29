@@ -3,6 +3,8 @@ from pathlib import Path
 
 import yaml
 
+ARMS = ("docs", "evosql", "ungated", "selfcons")  # test arms, in dependency order (selfcons needs docs and evosql)
+
 
 def load_config(path="configs/base.yaml", agent=None):
     cfg = yaml.safe_load(Path(path).read_text())

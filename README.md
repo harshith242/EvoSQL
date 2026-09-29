@@ -56,7 +56,7 @@ uv run python -m evosql analyze                             # results_v3/summary
 ```
 
 - **Resumable and cheap to rerun:** every LLM reply is cached under `cache/llm/`, so rerunning a command continues where it stopped and replays finished calls for free.
-- **Budget:** a spend guard stops cleanly at `v3.budget_usd` ($1) of real API spend.
+- **Budget:** a spend guard stops cleanly at `protocol.budget_usd` ($1) of real API spend.
 - **Settings:** in `configs/base.yaml` (agent profiles, proposer, split sizes, epochs, batch size, budget).
 
 The report gives, for each arm:

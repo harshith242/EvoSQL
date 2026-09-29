@@ -78,3 +78,12 @@ def test_usd_charges_cache_hits_at_the_cheap_rate_and_local_models_nothing():
     # 0.9M hits * 0.003 + 0.1M misses * 0.15 + 0.1M output * 0.60 = 0.0027 + 0.015 + 0.06
     assert abs(usd(usage, prices) - 0.0777) < 1e-9
     assert usd(usage, None) == 0.0
+
+
+def test_on_spend_reports_real_calls_only(tmp_path):
+    spent = []
+    llm = LLM("m", cache_dir=tmp_path, client=FakeTransport(), on_spend=spent.append,
+              prices={"cache_hit": 0.0, "cache_miss": 1.0, "output": 0.0})
+    llm.chat([{"role": "user", "content": "hi"}])
+    llm.chat([{"role": "user", "content": "hi"}])  # cache hit: no new spend
+    assert spent == [pytest.approx(100 / 1e6)]

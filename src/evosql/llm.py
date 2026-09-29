@@ -1,21 +1,43 @@
-"""OpenAI-compatible chat client (DeepSeek or Ollama) with a disk cache, retry/backoff and usage counters.
-Cached replies still count toward usage, so reported cost is the logical cost of the run.
+"""OpenAI-compatible chat client (DeepSeek or Ollama) with a disk cache, retry/backoff, usage and spend reporting.
+Cached replies still count toward usage (the logical cost of the run) but not toward real spend.
 The cache key has no model digest: clear cache/llm after changing an Ollama Modelfile."""
 import hashlib
 import json
 import os
+import re
 import time
 from pathlib import Path
 
 import openai
 from tqdm import tqdm
 
+from evosql.files import write_atomic
+
 RETRYABLE = (openai.APIConnectionError, openai.APITimeoutError, openai.InternalServerError)
 MAX_WAIT = 120  # a longer retry-after means a daily limit: stop and resume later instead of sleeping
+TOKENS = ("prompt_tokens", "completion_tokens", "provider_cached_tokens")
 
 
 class ProviderExhausted(Exception):
     pass
+
+
+def usd(usage, prices):
+    """Dollar cost of a usage record; prices are USD per 1M tokens (missing prices = free, e.g. local)."""
+    if not prices:
+        return 0.0
+    hit = usage.get("provider_cached_tokens", 0)
+    miss = usage.get("prompt_tokens", 0) - hit
+    return (hit * prices["cache_hit"] + miss * prices["cache_miss"] + usage.get("completion_tokens", 0) * prices["output"]) / 1e6
+
+
+def extract_json(text):
+    """The first {...} object in a reply, or None."""
+    match = re.search(r"\{.*\}", text or "", re.DOTALL)
+    try:
+        return json.loads(match.group(0)) if match else None
+    except json.JSONDecodeError:
+        return None
 
 
 def _cache_hit_tokens(usage):
@@ -28,18 +50,18 @@ def _cache_hit_tokens(usage):
 
 
 class LLM:
-    def __init__(self, model, base_url=None, api_key=None, cache_dir="cache/llm", client=None, max_tries=10, options=None):
+    def __init__(self, model, base_url=None, api_key=None, cache_dir="cache/llm", client=None, max_tries=10,
+                 options=None, prices=None, on_spend=None):
         self.model = model
         self.client = client or openai.OpenAI(base_url=base_url, api_key=api_key, max_retries=0, timeout=600)
         self.cache_dir = Path(cache_dir)
         self.max_tries = max_tries
         self.options = options or {}  # extra request params, e.g. {"reasoning_effort": "low"}
-        self.usage = {"calls": 0, "cached": 0, "prompt_tokens": 0, "completion_tokens": 0, "provider_cached_tokens": 0}
-        self.models_seen = set()  # model ids reported by the provider, to catch silent model swaps
-        self.fresh = {"prompt_tokens": 0, "completion_tokens": 0, "provider_cached_tokens": 0}  # network calls only
+        self.prices, self.on_spend = prices, on_spend  # on_spend(usd) runs after every real (non-cached) call
+        self.usage = {"calls": 0, "cached": 0, **dict.fromkeys(TOKENS, 0)}
 
     def chat(self, messages, tools=None, temperature=0.0, sample=0):
-        """Return {content, tool_calls: [{id, name, arguments}], model, prompt_tokens, completion_tokens, ...}."""
+        """Return {content, reasoning, tool_calls: [{id, name, arguments}], model, and the TOKENS counts}."""
         payload = [self.model, self.options, messages, tools, temperature, sample]
         key = hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
         path = self.cache_dir / key[:2] / f"{key}.json"
@@ -48,17 +70,12 @@ class LLM:
             self.usage["cached"] += 1
         else:
             reply = self._call(messages, tools, temperature)
-            for k in self.fresh:
-                self.fresh[k] += reply.get(k, 0)
-            path.parent.mkdir(parents=True, exist_ok=True)
-            tmp = path.with_suffix(".tmp")
-            tmp.write_text(json.dumps(reply))
-            os.replace(tmp, path)  # atomic, so a kill never leaves a truncated cache file
+            write_atomic(path, json.dumps(reply))
+            if self.on_spend:
+                self.on_spend(usd(reply, self.prices))
         self.usage["calls"] += 1
-        self.usage["prompt_tokens"] += reply["prompt_tokens"]
-        self.usage["completion_tokens"] += reply["completion_tokens"]
-        self.usage["provider_cached_tokens"] += reply.get("provider_cached_tokens", 0)
-        self.models_seen.add(reply["model"])
+        for k in TOKENS:
+            self.usage[k] += reply.get(k, 0)
         return reply
 
     def _call(self, messages, tools, temperature):
@@ -99,17 +116,9 @@ class LLM:
         raise ProviderExhausted(f"{self.model}: {last}")
 
 
-def make_llm(role_cfg, cache_dir):
+def make_llm(role_cfg, cache_dir, on_spend=None):
     """LLM for a config role (agent profile or proposer); a role without api_key_env is a local server."""
     key_env = role_cfg.get("api_key_env")
     api_key = os.environ[key_env] if key_env else "local"
-    return LLM(role_cfg["model"], role_cfg["base_url"], api_key, cache_dir, options=role_cfg.get("options"))
-
-
-def usd(usage, prices):
-    """Dollar cost of a usage record; prices are USD per 1M tokens (missing prices = free, e.g. local)."""
-    if not prices:
-        return 0.0
-    hit = usage.get("provider_cached_tokens", 0)
-    miss = usage.get("prompt_tokens", 0) - hit
-    return (hit * prices["cache_hit"] + miss * prices["cache_miss"] + usage.get("completion_tokens", 0) * prices["output"]) / 1e6
+    return LLM(role_cfg["model"], role_cfg["base_url"], api_key, cache_dir, options=role_cfg.get("options"),
+               prices=role_cfg.get("usd_per_million"), on_spend=on_spend)

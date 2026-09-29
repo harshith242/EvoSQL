@@ -36,7 +36,7 @@ proposer:
   usd_per_million: {cache_hit: 0.003, cache_miss: 0.15, output: 0.60}
 
 # Learn typed facts on n_learn questions, freeze them, test every arm on n_test other questions.
-v3:
+protocol:
   n_learn: 50
   n_test: 50
   seed: 0

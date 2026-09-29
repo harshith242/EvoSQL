@@ -1,11 +1,12 @@
 """BIRD data access: questions, schema, column docs, read-only SQL execution and scoring."""
 import csv
 import json
-import os
 import sqlite3
 import time
 from dataclasses import dataclass
 from pathlib import Path
+
+from evosql.files import write_atomic
 
 
 @dataclass
@@ -15,25 +16,30 @@ class Question:
     question: str
     gold_sql: str
     difficulty: str
-    evidence: str  # BIRD hint; only shown when an arm turns hints on
 
 
 @dataclass
 class Database:
-    db_id: str
     path: Path
     ddl: str
     tables: list
-    docs: dict  # table -> column descriptions; empty when the arm has no docs
+    columns: dict  # table -> column names
+    docs: dict  # table -> BIRD column descriptions ("" when the CSV is missing)
     profile: str = ""  # value profile of every column; empty when the profile is off
 
 
-def open_db(data_dir, db_id, with_docs, with_profile=False):
+def quote(name):
+    """SQLite identifier quoting."""
+    return '"' + name.replace('"', '""') + '"'
+
+
+def open_db(data_dir, db_id, with_profile=False):
     path = db_path(data_dir, db_id)
     tables = table_names(path)
-    docs = {t: table_docs(data_dir, db_id, t) for t in tables} if with_docs else {}
+    columns = {t: [r[1] for r in execute(path, f"PRAGMA table_info({quote(t)})")[0]] for t in tables}
+    docs = {t: table_docs(data_dir, db_id, t) for t in tables}
     profile = value_profile(path, tables) if with_profile else ""
-    return Database(db_id, path, schema_ddl(path), tables, docs, profile)
+    return Database(path, schema_ddl(path), tables, columns, docs, profile)
 
 
 def _row(path, sql):
@@ -44,10 +50,10 @@ def value_profile(path, tables, max_values=20):
     """One line per column, computed from the data: coded values with counts, numeric/date ranges, null share."""
     lines = ["Database value profile (computed from the data):"]
     for table in tables:
-        t = '"' + table.replace('"', '""') + '"'
+        t = quote(table)
         total = _row(path, f"SELECT COUNT(*) FROM {t}")[0]
         for _, name, col_type, *_ in execute(path, f"PRAGMA table_info({t})")[0]:
-            c = '"' + name.replace('"', '""') + '"'
+            c = quote(name)
             nulls, distinct = _row(path, f"SELECT COUNT(*) - COUNT({c}), COUNT(DISTINCT {c}) FROM {t}")
             share = f"{nulls / total:.0%}" if nulls / total >= 0.005 else "<1%"
             head = f"- {table}.{name} {col_type or 'ANY'}" + (f", {share} null" if total and nulls else "")
@@ -75,7 +81,7 @@ def value_profile(path, tables, max_values=20):
 def load_questions(data_dir, db_id):
     items = json.loads((Path(data_dir) / "dev.json").read_text())
     return [
-        Question(q["question_id"], q["db_id"], q["question"], q["SQL"], q["difficulty"], q["evidence"])
+        Question(q["question_id"], q["db_id"], q["question"], q["SQL"], q["difficulty"])
         for q in items
         if q["db_id"] == db_id
     ]
@@ -118,10 +124,7 @@ def gold_rows(path, q, cache_dir="cache/gold", timeout=120.0):
     rows, error = execute(path, q.gold_sql, timeout)
     if error:
         raise RuntimeError(f"gold SQL failed for question {q.qid}: {error}")
-    cache.parent.mkdir(parents=True, exist_ok=True)
-    tmp = cache.with_suffix(".tmp")
-    tmp.write_text(json.dumps(rows))
-    os.replace(tmp, cache)  # atomic, so a kill never leaves a truncated cache file
+    write_atomic(cache, json.dumps(rows))
     return [tuple(r) for r in rows]
 
 

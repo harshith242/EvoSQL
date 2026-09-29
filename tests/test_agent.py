@@ -39,25 +39,23 @@ def db(tmp_path):
     con.executemany("INSERT INTO patient VALUES (?, ?)", [(1, "F"), (2, "M"), (3, "F")])
     con.commit()
     con.close()
-    return open_db(tmp_path, "toy", with_docs=False)
+    return open_db(tmp_path, "toy")
 
 
 def test_tool_result_is_fed_back_then_submit_returns_sql(db):
     llm = FakeLLM({0: [call("run_sql", sql="SELECT COUNT(*) FROM patient"), call("submit", sql="SELECT 3")]})
-    result = answer(llm, db, "How many patients?", FactBook())
-    assert result.sql == "SELECT 3" and result.steps == 2
+    assert answer(llm, db, "How many patients?", FactBook()) == "SELECT 3"
     assert llm.seen[1]["role"] == "tool" and llm.seen[1]["content"] == "3"
 
 
 def test_json_in_text_is_used_when_model_skips_native_tools(db):
     llm = FakeLLM({0: [text('Sure: {"tool": "submit", "args": {"sql": "SELECT id FROM patient"}}')]})
-    assert answer(llm, db, "ids?", FactBook()).sql == "SELECT id FROM patient"
+    assert answer(llm, db, "ids?", FactBook()) == "SELECT id FROM patient"
 
 
 def test_no_submit_within_step_limit_gives_no_sql(db):
     llm = FakeLLM({0: [text("thinking...")] * 3})
-    result = answer(llm, db, "ids?", FactBook(), max_steps=3)
-    assert result.sql is None and result.error
+    assert answer(llm, db, "ids?", FactBook(), max_steps=3) is None
     assert "submit now" in llm.seen[-1]["content"]
 
 
@@ -67,15 +65,13 @@ def test_self_consistency_picks_most_common_result_not_most_common_sql(db):
         1: [call("submit", sql="SELECT id FROM patient WHERE sex = 'M'")],
         2: [call("submit", sql="SELECT id FROM patient WHERE id IN (1, 3)")],
     })
-    result = answer_self_consistent(llm, db, "female ids?", FactBook(), n=3)
-    assert result.sql == "SELECT id FROM patient WHERE sex = 'F'"
+    assert answer_self_consistent(llm, db, "female ids?", FactBook(), n=3) == "SELECT id FROM patient WHERE sex = 'F'"
 
 
 def test_non_dict_tool_arguments_do_not_crash_the_run(db):
     bad = call("submit")
     bad["tool_calls"][0]["arguments"] = "null"
-    result = answer(FakeLLM({0: [bad]}), db, "ids?", FactBook())
-    assert result.sql is None
+    assert answer(FakeLLM({0: [bad]}), db, "ids?", FactBook()) is None
 
 
 def test_thinking_reasoning_is_sent_back_with_the_tool_call(db):

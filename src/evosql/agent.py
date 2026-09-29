@@ -1,11 +1,10 @@
 """Tool-loop Text2SQL agent: inspect tables, profile columns, test queries, then submit one SQL.
 Works with native tool calls or, as a fallback, a JSON object in the reply text."""
 import json
-import re
 from collections import Counter
-from dataclasses import dataclass
 
-from evosql.bird import execute
+from evosql.bird import execute, quote
+from evosql.llm import extract_json
 
 SYSTEM = """You are an expert SQLite analyst. Answer the user's question with ONE SQLite query on the database below.
 Use the tools to inspect tables, profile columns and test queries. When confident, call submit with the final SQL.
@@ -38,17 +37,6 @@ TOOLS = [
 ]
 
 
-@dataclass
-class AgentResult:
-    sql: str
-    steps: int
-    error: str = None
-
-
-def _quote(name):
-    return '"' + name.replace('"', '""') + '"'
-
-
 def _format_rows(rows, error):
     if error:
         return f"ERROR: {error}"
@@ -68,37 +56,30 @@ def run_tool(db, name, args):
     if table not in db.tables:
         return f"ERROR: unknown table {table!r}. Tables: {', '.join(db.tables)}"
     if name == "describe_table":
-        sample = _format_rows(*execute(db.path, f"SELECT * FROM {_quote(table)} LIMIT 3"))
+        sample = _format_rows(*execute(db.path, f"SELECT * FROM {quote(table)} LIMIT 3"))
         docs = db.docs.get(table, "")
         return f"Sample rows:\n{sample}" + (f"\n\nColumn descriptions:\n{docs}" if docs else "")
     column = args.get("column", "")
-    columns = [r[1] for r in execute(db.path, f"PRAGMA table_info({_quote(table)})")[0]]
     # SQLite reads an unknown double-quoted name as a string literal, so check it first.
-    if column not in columns:
-        return f"ERROR: unknown column {column!r} in {table}. Columns: {', '.join(columns)}"
-    t, c = _quote(table), _quote(column)
+    if column not in db.columns[table]:
+        return f"ERROR: unknown column {column!r} in {table}. Columns: {', '.join(db.columns[table])}"
+    t, c = quote(table), quote(column)
     stats = execute(db.path, f"SELECT COUNT(*) - COUNT({c}), COUNT(DISTINCT {c}), MIN({c}), MAX({c}) FROM {t}")
     top = execute(db.path, f"SELECT {c}, COUNT(*) FROM {t} GROUP BY {c} ORDER BY COUNT(*) DESC LIMIT 10")
     return f"nulls | distinct | min | max\n{_format_rows(*stats)}\n\nTop values (value | count):\n{_format_rows(*top)}"
 
 
 def _parse_json_call(content):
-    """Fallback: pull {"tool": ..., "args": {...}} out of plain reply text."""
-    match = re.search(r"\{.*\}", content or "", re.DOTALL)
-    if not match:
-        return None
-    try:
-        obj = json.loads(match.group(0))
-    except json.JSONDecodeError:
-        return None
+    """Fallback for models without native tool calls: {"tool": ..., "args": {...}} in the reply text."""
+    obj = extract_json(content)
     if not isinstance(obj, dict) or "tool" not in obj:
         return None
     args = obj.get("args")
     return {"id": None, "name": obj["tool"], "arguments": json.dumps(args if isinstance(args, dict) else {})}
 
 
-def answer(llm, db, question, knowledge, temperature=0.0, sample=0, max_steps=8, on_step=None):
-    """on_step(step, tool_names) is called for live progress: once while the model thinks, once with its tools."""
+def answer(llm, db, question, knowledge, temperature=0.0, sample=0, max_steps=8):
+    """Run the tool loop; return the submitted SQL, or None if the agent never submits."""
     messages = [
         # Static parts first (rules, schema, value profile), then notes, so the provider's prefix cache hits.
         {"role": "system", "content": SYSTEM.format(ddl=db.ddl, profile=db.profile + "\n\n" if db.profile else "",
@@ -108,8 +89,6 @@ def answer(llm, db, question, knowledge, temperature=0.0, sample=0, max_steps=8,
     for step in range(1, max_steps + 1):
         if step == max_steps:
             messages.append({"role": "user", "content": "Last step: call submit now with your best SQL."})
-        if on_step:
-            on_step(step, [])
         reply = llm.chat(messages, tools=TOOLS, temperature=temperature, sample=sample)
         calls = reply["tool_calls"]
         # With tools, DeepSeek's thinking mode requires every earlier turn's reasoning to be sent back.
@@ -132,8 +111,6 @@ def answer(llm, db, question, knowledge, temperature=0.0, sample=0, max_steps=8,
                 continue
             calls = [fallback]
 
-        if on_step:
-            on_step(step, [c["name"] for c in calls])
         for call in calls:
             try:
                 args = json.loads(call["arguments"] or "{}")
@@ -142,28 +119,26 @@ def answer(llm, db, question, knowledge, temperature=0.0, sample=0, max_steps=8,
             if not isinstance(args, dict):
                 args = {}
             if call["name"] == "submit":
-                return AgentResult(args.get("sql"), step)
+                return args.get("sql")
             result = run_tool(db, call["name"], args)
             if call["id"]:
                 messages.append({"role": "tool", "tool_call_id": call["id"], "content": result})
             else:
                 messages.append({"role": "user", "content": f"Tool result:\n{result}"})
-    return AgentResult(None, max_steps, "no submit within step limit")
+    return None
 
 
 def answer_self_consistent(llm, db, question, knowledge, n, max_steps=8):
     """Sample n answers at temperature 0.7 and return the SQL whose result set is most common."""
     results, votes = [], Counter()
     for i in range(n):
-        r = answer(llm, db, question, knowledge, temperature=0.7, sample=i, max_steps=max_steps)
-        rows, error = execute(db.path, r.sql)
+        sql = answer(llm, db, question, knowledge, temperature=0.7, sample=i, max_steps=max_steps)
+        rows, error = execute(db.path, sql)
         key = None if error else frozenset(rows)
-        results.append((r, key))
+        results.append((sql, key))
         if key is not None:
             votes[key] += 1
-    steps = sum(r.steps for r, _ in results)
     if not votes:
-        return AgentResult(None, steps, "no sample produced a runnable SQL")
+        return None
     best = votes.most_common(1)[0][0]
-    winner = next(r for r, key in results if key == best)
-    return AgentResult(winner.sql, steps)
+    return next(sql for sql, key in results if key == best)

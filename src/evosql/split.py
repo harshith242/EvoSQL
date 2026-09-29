@@ -1,8 +1,11 @@
-"""v3 learning/test split: a difficulty-stratified sample of questions, halved into learn and test."""
+"""Learning/test split: a difficulty-stratified sample of questions, halved into learn and test."""
 import json
 import random
 from collections import defaultdict
 from pathlib import Path
+
+from evosql.bird import load_questions, open_db
+from evosql.files import write_atomic
 
 
 def make_split(questions, n_learn, n_test, seed):
@@ -29,9 +32,13 @@ def make_split(questions, n_learn, n_test, seed):
 
 
 def save_split(path, split):
-    Path(path).parent.mkdir(parents=True, exist_ok=True)
-    Path(path).write_text(json.dumps(split, indent=1))
+    write_atomic(path, json.dumps(split, indent=1))
 
 
-def load_split(path):
-    return json.loads(Path(path).read_text())
+def load_run(cfg):
+    """Everything learn, test and analyze share: (runs folder, split, database, questions by qid)."""
+    out = Path(cfg["runs_dir"])
+    split = json.loads((out / "split.json").read_text())
+    db = open_db(cfg["data_dir"], cfg["db"], with_profile=cfg["agent"].get("value_profile", False))
+    by_id = {q.qid: q for q in load_questions(cfg["data_dir"], cfg["db"])}
+    return out, split, db, by_id

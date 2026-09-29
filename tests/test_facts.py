@@ -3,7 +3,7 @@ import sqlite3
 import pytest
 
 from evosql.bird import open_db
-from evosql.facts import Fact, FactBook, check_fact
+from evosql.facts import Fact, FactBook, check_fact, leaks
 
 
 @pytest.fixture
@@ -15,7 +15,7 @@ def db(tmp_path):
     con.executemany("INSERT INTO Laboratory VALUES (?, ?, ?)", [(1, "negative", 29), (2, "0", 40), (3, "16", 12)])
     con.commit()
     con.close()
-    return open_db(tmp_path, "toy", with_docs=False)
+    return open_db(tmp_path, "toy")
 
 
 def fact(text, subject="Laboratory.RNP", kind="encoding"):
@@ -35,8 +35,7 @@ def test_facts_must_name_real_columns_and_values(db):
 
 def test_fact_leaking_the_answer_is_rejected(db):
     q = "How many patients have a normal anti-ribonuclear protein level?"
-    reason = check_fact(fact("There are 42 such patients."), db, q, "SELECT COUNT(*) FROM Laboratory", [(42,)])
-    assert reason.startswith("leakage")
+    assert leaks("There are 42 such patients.", q, "SELECT COUNT(*) FROM Laboratory", [(42,)])
 
 
 def test_factbook_edits_and_renders_grouped_by_subject():
@@ -61,5 +60,4 @@ def test_apostrophes_and_identifier_quotes_do_not_break_grounding(db):
 
 def test_single_digit_numeric_answer_is_a_leak(db):
     q = "How many lab results show a high urea nitrogen level?"
-    assert check_fact(fact("Exactly 7 results are high.", subject="Laboratory.UN", kind="constraint"),
-                      db, q, "SELECT COUNT(*) FROM Laboratory WHERE UN > 30", [(7,)]).startswith("leakage")
+    assert leaks("Exactly 7 results are high.", q, "SELECT COUNT(*) FROM Laboratory WHERE UN > 30", [(7,)])

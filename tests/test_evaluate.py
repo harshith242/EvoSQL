@@ -26,10 +26,10 @@ def test_relevant_marks_test_questions_that_use_a_column_a_fact_is_about(tmp_pat
     con = sqlite3.connect(d / "toy.sqlite")
     con.execute("CREATE TABLE Laboratory (ID INTEGER, UN INTEGER, CRE REAL)")
     con.close()
-    db = open_db(tmp_path, "toy", with_docs=False)
+    db = open_db(tmp_path, "toy")
     book = FactBook([Fact("f1", "constraint", "Laboratory.UN", "Normal is below 30.")])
-    test = [Question(2, "t", "q", "SELECT ID FROM Laboratory WHERE UN > 30", "simple", ""),
-            Question(3, "t", "q", "SELECT ID FROM Laboratory WHERE CRE >= 1.5", "simple", "")]
+    test = [Question(2, "t", "q", "SELECT ID FROM Laboratory WHERE UN > 30", "simple"),
+            Question(3, "t", "q", "SELECT ID FROM Laboratory WHERE CRE >= 1.5", "simple")]
     assert relevant(test, book, db) == {2}
 
 
@@ -39,7 +39,6 @@ class FakeAgent:
     def __init__(self, crash_at=None):
         self.calls, self.crash_at = 0, crash_at
         self.usage = {"calls": 0, "prompt_tokens": 0, "completion_tokens": 0}
-        self.fresh = {"prompt_tokens": 0, "completion_tokens": 0, "provider_cached_tokens": 0}
 
     def chat(self, messages, tools=None, temperature=0.0, sample=0):
         self.calls += 1
@@ -68,7 +67,7 @@ def cfg(tmp_path, monkeypatch):
     return {"data_dir": str(tmp_path / "data"), "db": "toy", "runs_dir": str(tmp_path / "runs"),
             "cache_dir": str(tmp_path / "cache"), "max_steps": 2,
             "agent": {"usd_per_million": prices}, "proposer": {"usd_per_million": prices},
-            "v3": {"n_test": 3, "budget_usd": 1.0, "selfcons_max_n": 5}}
+            "protocol": {"n_test": 3, "budget_usd": 1.0, "selfcons_max_n": 5}}
 
 
 def test_run_test_resumes_without_duplicates_or_torn_lines(cfg):

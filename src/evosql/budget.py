@@ -1,8 +1,8 @@
-"""Persisted spend guard: counts real (non-cached) API spend across runs and stops before the cap."""
+"""Persisted spend guard: adds up real (non-cached) API spend across runs and stops past the cap."""
 import json
 from pathlib import Path
 
-from evosql.llm import usd
+from evosql.files import write_atomic
 
 
 class BudgetExceeded(Exception):
@@ -12,13 +12,11 @@ class BudgetExceeded(Exception):
 class Budget:
     def __init__(self, path, cap_usd):
         self.path, self.cap = Path(path), cap_usd
-        self.base = json.loads(self.path.read_text())["usd"] if self.path.exists() else 0.0
-        self.total = self.base
+        self.total = json.loads(self.path.read_text())["usd"] if self.path.exists() else 0.0
 
-    def charge(self, llms):
-        """llms: list of (LLM, prices). Persists spend so far; raises only when new spend passes the cap."""
-        before, self.total = self.total, self.base + sum(usd(llm.fresh, prices) for llm, prices in llms)
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        self.path.write_text(json.dumps({"usd": self.total}))
-        if self.total > before and self.total > self.cap:
+    def spend(self, usd):
+        """Pass as an LLM's on_spend: records each real call, raises once the total passes the cap."""
+        self.total += usd
+        write_atomic(self.path, json.dumps({"usd": self.total}))
+        if self.total > self.cap:
             raise BudgetExceeded(f"spent ${self.total:.3f} of ${self.cap:.2f}")

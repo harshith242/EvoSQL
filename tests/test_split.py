@@ -3,7 +3,7 @@ from collections import Counter
 from evosql.bird import Question
 from evosql.split import make_split
 
-QUESTIONS = [Question(i, "toy", f"q{i}", "SELECT 1", d, "")
+QUESTIONS = [Question(i, "toy", f"q{i}", "SELECT 1", d)
              for i, d in enumerate(["simple"] * 90 + ["moderate"] * 50 + ["challenging"] * 23)]
 
 
