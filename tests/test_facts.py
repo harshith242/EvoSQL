@@ -59,6 +59,11 @@ def test_merge_unites_duplicates_and_resolves_mapping_conflicts(db):
     # A tie drops both.
     merged, conflicts = merge([rnp, fact(un.fact, un.subject, "mapping", ["urea"], qids=[5], id="f2")], db)
     assert merged == [] and conflicts[0]["kept"] is None
+    # A shared generic phrase is taken from both facts; the facts themselves survive on their specific phrases.
+    rnp = fact("Normal Laboratory.RNP is 'negative'.", kind="mapping", applies_to=["normal RNP", "normal"], id="f1")
+    un = fact("Normal Laboratory.UN is below 30.", "Laboratory.UN", "mapping", ["normal urea", "Normal"], id="f2")
+    merged, conflicts = merge([rnp, un], db)
+    assert [f.applies_to for f in merged] == [["normal RNP"], ["normal urea"]] and conflicts[0]["phrase"] == "normal"
 
 
 def test_apostrophes_and_identifier_quotes_do_not_break_grounding(db):

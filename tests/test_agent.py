@@ -3,7 +3,7 @@ import sqlite3
 
 import pytest
 
-from evosql.agent import answer
+from evosql.agent import SYSTEM, TOOLS, answer
 from evosql.bird import open_db
 from evosql.delivery import AllFacts, NoKnowledge, SearchTool
 from evosql.facts import Fact, FactBook
@@ -23,9 +23,10 @@ class FakeLLM:
 
     def __init__(self, scripts):
         self.scripts = {k: list(v) for k, v in scripts.items()}
-        self.seen, self.history = [], []
+        self.seen, self.history, self.tools = [], [], []
 
     def chat(self, messages, tools=None, temperature=0.0, sample=0):
+        self.tools.append(tools)
         self.seen.append(messages[-1])
         self.history.append([dict(m) for m in messages])
         return self.scripts[sample].pop(0)
@@ -98,3 +99,10 @@ def test_search_knowledge_is_answered_by_the_delivery_and_counts_as_a_turn(db):
     assert llm.seen[2]["content"] == "no matching knowledge"
     assert tool.used == {"facts_in_prompt": 0, "search_calls": 2, "facts_returned": 1}
     assert "search_knowledge tool for: patient.sex" in llm.history[0][0]["content"]
+
+
+def test_docs_mode_sends_exactly_the_v3_prompt_and_tools_so_cached_replies_are_reused(db):
+    llm = FakeLLM({0: [call("submit", sql="SELECT 1")]})
+    answer(llm, db, "q?", NoKnowledge())
+    assert llm.history[0][0]["content"] == SYSTEM.format(ddl=db.ddl, profile="", notes="")
+    assert llm.tools[0] == TOOLS

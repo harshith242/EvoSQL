@@ -58,12 +58,12 @@ A fact is dropped, with the reason logged, if any of these fail:
 2. the fact text contains no SQL (same rule as v3);
 3. it is grounded: every `Table.Column` it names exists, and every quoted value occurs in a named column (v3 rule);
 4. if there is a probe, it is a single SELECT that runs read-only within 30 s and returns at least one row;
-5. no leakage against any question in its batch: a gold-result value, or a 5-word run copied into the fact text or `applies_to`.
+5. no leakage against any question in its batch: a gold-result value, or a 5-word run copied into the subject, fact text or `applies_to`.
 
 ### Deterministic merge
 
 - Duplicates (same kind, normalized subject and fact text) are merged, with their `source_qids` unioned.
-- Conflicting mappings (the same normalized `applies_to` phrase mapped to different `Table.Column` targets): the fact with more source questions is kept; on a tie, both are dropped. Every conflict is logged.
+- Conflicting mappings (the same normalized `applies_to` phrase mapped to different `Table.Column` targets): only the fact with more source questions keeps that phrase; on a tie, no fact keeps it. A fact left with no phrases is dropped, so a shared generic phrase such as "normal" never removes specific facts. Every conflict is logged.
 
 ## 5. Discovery (no gating)
 

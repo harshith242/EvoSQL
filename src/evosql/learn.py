@@ -53,23 +53,26 @@ def propose_facts(llm, db, batch, facts):
     knowledge = "\n".join(f"- [{f.kind}] {f.subject}: {f.fact}" for f in facts) or "(empty)"
     data = extract_json(llm.chat([{"role": "user", "content": PROPOSER.format(
         ddl=db.ddl, profile=db.profile, knowledge=knowledge, batch=items)}])["content"])
-    out = []
+    out, qids = [], [q.qid for q, _ in batch]
     for d in data.get("facts") or [] if isinstance(data, dict) else []:
         if not (isinstance(d, dict) and all(isinstance(d.get(k), str) and d[k] for k in ("kind", "subject", "fact"))):
             continue
-        phrases = [p for p in d.get("applies_to") or [] if isinstance(p, str)][:5]
-        probe = d["probe"] if isinstance(d.get("probe"), str) and d["probe"].strip().lower() != "null" else None
-        out.append(Fact("", d["kind"], d["subject"], d["fact"], phrases, probe, [d.get("qid")]))
+        phrases = d.get("applies_to") if isinstance(d.get("applies_to"), list) else []
+        phrases = [p.strip() for p in phrases if isinstance(p, str) and p.strip()][:5]
+        probe = d.get("probe") if isinstance(d.get("probe"), str) else ""
+        probe = None if probe.strip().lower() in ("", "null", "none") else probe
+        qid = next((i for i in qids if str(i) == str(d.get("qid"))), qids[0])  # a missing or odd qid falls back
+        out.append(Fact("", d["kind"], d["subject"], d["fact"], phrases, probe, [qid]))
     return out
 
 
 def check(fact, batch, db, gold):
-    """Free checks, then leakage against every question in the batch (the proposer saw all of their gold SQL)."""
+    """Free checks, then leakage in anything the agent sees, against every question in the batch (all their gold SQL was shown)."""
     reason = check_fact(fact, db)
     if reason:
         return reason
     for q in batch:
-        for text in [fact.fact, *fact.applies_to]:
+        for text in [fact.subject, fact.fact, *fact.applies_to]:
             if leak := leaks(text, q.question, q.gold_sql, gold[q.qid]):
                 return f"leakage: {leak}"
     return None

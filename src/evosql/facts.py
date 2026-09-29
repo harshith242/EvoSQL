@@ -132,8 +132,8 @@ def _norm(text):
 
 
 def merge(facts, db):
-    """Unite duplicates (same kind, subject and text); when one phrase maps to different columns, keep the mapping with
-    more source questions and drop the others (all on a tie). Returns (facts, conflicts)."""
+    """Unite duplicates (same kind, subject and text); when one phrase maps to different columns, only the mapping with
+    more source questions keeps the phrase (none on a tie); a fact left without phrases is dropped. Returns (facts, conflicts)."""
     unique = {}
     for f in facts:
         key = (f.kind, _norm(f.subject), _norm(f.fact))
@@ -153,7 +153,9 @@ def merge(facts, db):
         most = max(len(f.source_qids) for f in group)
         top = [f for f in group if len(f.source_qids) == most]
         winner = top[0] if len({targets[f.id] for f in top}) == 1 else None
-        losers = [f for f in group if winner is None or targets[f.id] != targets[winner.id]]
-        kept = [f for f in kept if f not in losers]
+        for f in group:
+            if winner is None or targets[f.id] != targets[winner.id]:
+                f.applies_to = [p for p in f.applies_to if _norm(p) != phrase]
+        kept = [f for f in kept if f.applies_to]
         conflicts.append({"phrase": phrase, "facts": [f.id for f in group], "kept": winner and winner.id})
     return kept, conflicts

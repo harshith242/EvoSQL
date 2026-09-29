@@ -1,10 +1,11 @@
+import json
 import sqlite3
 
 import pytest
 
 from evosql.bird import Question, open_db
 from evosql.facts import Fact
-from evosql.learn import discover_facts
+from evosql.learn import discover_facts, propose_facts
 
 
 @pytest.fixture
@@ -42,3 +43,23 @@ def test_discovery_skips_wrong_labels_drops_bad_facts_and_merges(db):
     reasons = [d["reason"] for d in logs[1]["dropped"]]
     assert reasons == ["unknown column", "leakage: contains answer value '11'"]
     assert len(facts) == 1 and facts[0].source_qids == [2, 4] and conflicts == []
+
+
+class ReplyLLM:
+    def __init__(self, reply):
+        self.reply = reply
+
+    def chat(self, messages, tools=None):
+        return {"content": json.dumps(self.reply)}
+
+
+def test_proposer_reply_is_normalized_so_good_facts_survive_sloppy_fields(db):
+    batch = [(q(4, "Which women?"), "SELECT 1"), (q(7, "Men?"), None)]
+    reply = {"facts": [
+        {"qid": "7", "kind": "encoding", "subject": "Patient.SEX", "fact": "Men are 'M'.", "applies_to": ["men", " "], "probe": "none"},
+        {"kind": "encoding", "subject": "Patient.SEX", "fact": "Women are 'F'.", "applies_to": "women", "probe": "SELECT 1"},
+        {"qid": 4, "kind": "encoding", "subject": "Patient.SEX"},
+    ]}
+    men, women = propose_facts(ReplyLLM(reply), db, batch, [])
+    assert (men.source_qids, men.applies_to, men.probe) == ([7], ["men"], None)
+    assert (women.source_qids, women.applies_to, women.probe) == ([4], [], "SELECT 1")  # dropped later: no phrase

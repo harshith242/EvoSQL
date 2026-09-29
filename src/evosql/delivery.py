@@ -56,7 +56,8 @@ class SearchTool(NoKnowledge):
     def call(self, name, args):
         if name != "search_knowledge":
             return None
-        hits = self.index.search(str(args.get("query", "")), self.k)
+        query = str(args.get("query") or "").strip()
+        hits = self.index.search(query, self.k) if query else []
         self.used["search_calls"] += 1
         self.used["facts_returned"] += len(hits)
         if not hits:

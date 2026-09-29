@@ -33,7 +33,10 @@ def corrected(data_dir, db_id):
     path = Path(data_dir) / FILE
     if not path.exists():
         raise SystemExit(f"{path} is missing: run `python -m evosql labels` first")
-    return {int(x["question_id"]): x["SQL"] for x in json.loads(path.read_text()) if x["db_id"] == db_id}
+    fixes = {int(x["question_id"]): x["SQL"] for x in json.loads(path.read_text()) if x["db_id"] == db_id}
+    if not fixes:
+        raise SystemExit(f"{path} has no labels for {db_id}: check its format")
+    return fixes
 
 
 def corrected_gold(db, q, fixes):
