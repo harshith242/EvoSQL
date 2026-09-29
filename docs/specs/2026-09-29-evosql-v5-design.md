@@ -1,7 +1,7 @@
 # EvoSQL v5 — Docs First, Learn Only the Gaps (Design Spec)
 
 Date: 2026-09-29
-Status: approved direction; discovery runs only if the docs baseline leaves room (§3)
+Status: approved. Step 1 result: docs 18, hints 26 on the final set (gap 8 ≥ 4), so discovery runs.
 Builds on v4 (tag `v4`, spec `2026-09-29-evosql-v4-design.md`).
 
 ## 1. Why v5
@@ -44,6 +44,10 @@ Step 1 runs `docs` and `hints` on the final set with column docs. Let gap = hint
   - what question phrases mean;
   - row grain and join paths.
 - Discovery questions whose corrected gold (study plus our fixes) differs from the official gold are skipped, as in v4, now with our fixes included.
+
+**Proposer examples.** The made-up-shop examples add the two conventions that step 1 showed the docs miss (§3 result: gap 8, about 4–5 learnable):
+- boundary inclusivity: "an abnormal Orders.Discount includes the boundary: at most 5 or at least 30, not strictly below or above";
+- exact vs partial value match: "a status named in a question matches Orders.Status exactly ('S'), never as a substring".
 
 **New free check, "already in docs":** a `constraint` or `encoding` fact is dropped when every number and quoted value it states already appears in the docs line of a column it names.
 
