@@ -3,7 +3,8 @@ from pathlib import Path
 
 import yaml
 
-MODES = ("docs", "all", "retrieve", "tool")  # knowledge delivery modes (test arms)
+MODES = ("docs", "all", "retrieve", "tool", "hints")  # delivery modes; hints = docs plus BIRD hints (diagnostic only)
+NO_FACTS = ("docs", "hints")
 SETS = ("discovery", "gate", "final")
 
 

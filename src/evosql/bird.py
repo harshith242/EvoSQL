@@ -87,6 +87,12 @@ def load_questions(data_dir, db_id):
     ]
 
 
+def load_hints(data_dir, db_id):
+    """{question text: BIRD's hand-written hint}; only the diagnostic hints mode shows them."""
+    items = json.loads((Path(data_dir) / "dev.json").read_text())
+    return {q["question"]: q["evidence"] for q in items if q["db_id"] == db_id}
+
+
 def db_path(data_dir, db_id):
     return Path(data_dir) / db_id / f"{db_id}.sqlite"
 

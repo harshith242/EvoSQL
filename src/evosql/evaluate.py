@@ -10,9 +10,9 @@ from scipy.stats import binomtest
 from tqdm import tqdm
 
 from evosql.agent import answer
-from evosql.bird import exec_match, gold_rows
+from evosql.bird import exec_match, gold_rows, load_hints
 from evosql.budget import Budget, BudgetExceeded
-from evosql.config import MODES
+from evosql.config import MODES, NO_FACTS
 from evosql.delivery import make_delivery
 from evosql.facts import FactBook
 from evosql.files import append_jsonl, read_jsonl, write_atomic
@@ -38,7 +38,7 @@ def bootstrap_ci(values, iters=2000, seed=0):
 
 
 def mode_book(out, mode):
-    if mode == "docs":
+    if mode in NO_FACTS:
         return FactBook()
     path = Path(out) / "knowledge.json"
     if not path.exists():
@@ -49,7 +49,7 @@ def mode_book(out, mode):
 def setup_digest(book, mode, cfg):
     """Id of what a mode's answers depend on: no facts (docs), the facts, plus the search settings (retrieve, tool)."""
     if mode not in ("retrieve", "tool"):
-        return (FactBook() if mode == "docs" else book).digest()
+        return (FactBook() if mode in NO_FACTS else book).digest()
     return hashlib.sha256((book.digest() + json.dumps(cfg["search"], sort_keys=True)).encode()).hexdigest()[:12]
 
 
@@ -57,7 +57,7 @@ def run_mode(cfg, mode, set_name, agent_llm=None, knowledge=None):
     """Answer every question of a set with one delivery mode; resumes by skipping logged questions."""
     out, parts, db, by_id = load_run(cfg)
     book = mode_book(out, mode)
-    knowledge = knowledge or make_delivery(mode, book, cfg["search"])
+    knowledge = knowledge or make_delivery(mode, book, cfg["search"], load_hints(cfg["data_dir"], cfg["db"]))
     fixes = corrected(cfg["data_dir"], cfg["db"])
     setup = setup_digest(book, mode, cfg)
     log_path = out / f"{set_name}_{mode}.jsonl"
@@ -159,7 +159,7 @@ def mode_row(mode, res, docs, cfg, learn_usd):
         p_c = mcnemar(ok_c, [docs[q]["correct_corrected"] for q in qids])
         vs_docs = f"+{fixes}/-{regressions}, p={p:.3f}; corrected +{fixes_c}/-{regressions_c}, p={p_c:.3f}"
     test_usd = sum(usd(r["usage"], cfg["agent"].get("usd_per_million")) for r in res.values())
-    spent = test_usd + (learn_usd if mode != "docs" else 0.0)
+    spent = test_usd + (learn_usd if mode not in NO_FACTS else 0.0)
     latency = [r["usage"].get("latency_s", 0.0) for r in res.values()]
     use = f"{np.mean([r['facts_in_prompt'] for r in res.values()]):.1f} in prompt"
     if mode == "tool":
@@ -182,7 +182,7 @@ def analyze(cfg):
     for mode, res in results.items():
         # The gate chose the headline with one knowledge setup; the final answers must come from that same setup.
         current = setup_digest(book, mode, cfg)
-        if {r["knowledge"] for r in res.values()} | ({gated["setups"][mode]} if gated else set()) != {current}:
+        if {r["knowledge"] for r in res.values()} | ({gated["setups"].get(mode, current)} if gated else set()) != {current}:
             raise SystemExit(f"final {mode} answers, gate.json and knowledge.json do not share one knowledge setup")
     learn_usd, docs = discovery_usd(cfg), results["docs"]
     n = len(parts["final"])

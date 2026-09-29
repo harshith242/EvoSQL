@@ -18,6 +18,15 @@ class NoKnowledge:
         return None
 
 
+class Hints(NoKnowledge):
+    def __init__(self, hints):
+        self.hints = hints
+
+    def prompt(self, question):
+        self.used = {"facts_in_prompt": 0}
+        return f"Hint for this question: {self.hints[question]}" if self.hints.get(question, "").strip() else ""
+
+
 class AllFacts(NoKnowledge):
     def __init__(self, book):
         self.book = book
@@ -65,9 +74,11 @@ class SearchTool(NoKnowledge):
         return "\n".join(f"- [{f.kind}] {f.subject}: {f.fact} (match: {how})" for f, how in hits)
 
 
-def make_delivery(mode, book, search_cfg):
+def make_delivery(mode, book, search_cfg, hints=None):
     if mode == "docs":
         return NoKnowledge()
+    if mode == "hints":
+        return Hints(hints)
     if mode == "all":
         return AllFacts(book)
     s = search_cfg

@@ -112,7 +112,7 @@ def test_analyze_reports_the_gate_headline_against_docs_on_the_final_set(cfg):
     # Test $3 each; all adds the $3 discovery: $6 / 3 correct. Latency per question 1, 2, 3 s: p50 2.0, p95 2.9.
     assert "| all | 3/3 = 1.000 |" in summary and "+3/-0, p=0.250; corrected +2/-1" in summary
     assert "| 3.0000 | 2.0000 | 2.0 / 2.9 |" in summary and "| docs | 0/3 = 0.000 |" in summary
-    assert "Not reported (incomplete final runs): retrieve: 0/3 answered; tool: 0/3 answered." in summary
+    assert "Not reported (incomplete final runs): retrieve: 0/3 answered; tool: 0/3 answered; hints: 0/3 answered." in summary
     assert "Dropped by checks: {'leakage': 1}" in summary and "'women' kept f1" in summary
     FactBook([]).save(f"{runs}/knowledge.json")  # knowledge changed after the gate
     with pytest.raises(SystemExit):

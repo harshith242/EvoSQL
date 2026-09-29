@@ -5,7 +5,7 @@ import pytest
 
 from evosql.agent import SYSTEM, TOOLS, answer
 from evosql.bird import open_db
-from evosql.delivery import AllFacts, NoKnowledge, SearchTool
+from evosql.delivery import AllFacts, Hints, NoKnowledge, SearchTool
 from evosql.facts import Fact, FactBook
 
 
@@ -106,3 +106,12 @@ def test_docs_mode_sends_exactly_the_v3_prompt_and_tools_so_cached_replies_are_r
     answer(llm, db, "q?", NoKnowledge())
     assert llm.history[0][0]["content"] == SYSTEM.format(ddl=db.ddl, profile="", notes="")
     assert llm.tools[0] == TOOLS
+
+
+def test_hints_mode_adds_only_this_questions_hint_after_the_static_prompt(db):
+    llm = FakeLLM({0: [call("submit", sql="SELECT 1")], 1: [call("submit", sql="SELECT 1")]})
+    hints = Hints({"q?": "female refers to sex = 'F'", "other?": "unrelated"})
+    answer(llm, db, "q?", hints)
+    assert llm.history[0][0]["content"] == SYSTEM.format(ddl=db.ddl, profile="", notes="Hint for this question: female refers to sex = 'F'")
+    answer(llm, db, "no hint?", Hints({"no hint?": " "}), sample=1)
+    assert llm.history[1][0]["content"] == SYSTEM.format(ddl=db.ddl, profile="", notes="")
