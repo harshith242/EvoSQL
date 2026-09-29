@@ -36,6 +36,7 @@ class LLM:
         self.options = options or {}  # extra request params, e.g. {"reasoning_effort": "low"}
         self.usage = {"calls": 0, "cached": 0, "prompt_tokens": 0, "completion_tokens": 0, "provider_cached_tokens": 0}
         self.models_seen = set()  # model ids reported by the provider, to catch silent model swaps
+        self.fresh = {"prompt_tokens": 0, "completion_tokens": 0, "provider_cached_tokens": 0}  # network calls only
 
     def chat(self, messages, tools=None, temperature=0.0, sample=0):
         """Return {content, tool_calls: [{id, name, arguments}], model, prompt_tokens, completion_tokens, ...}."""
@@ -47,6 +48,8 @@ class LLM:
             self.usage["cached"] += 1
         else:
             reply = self._call(messages, tools, temperature)
+            for k in self.fresh:
+                self.fresh[k] += reply.get(k, 0)
             path.parent.mkdir(parents=True, exist_ok=True)
             tmp = path.with_suffix(".tmp")
             tmp.write_text(json.dumps(reply))
