@@ -62,3 +62,11 @@ def test_per_minute_limit_is_waited_out_but_daily_limit_stops_the_run(tmp_path, 
     with pytest.raises(ProviderExhausted):
         LLM("m", cache_dir=tmp_path, client=transport).chat([{"role": "user", "content": "b"}])
     assert slept == [3.0]
+
+
+def test_response_without_choices_is_retried_then_stops_cleanly(tmp_path, monkeypatch):
+    monkeypatch.setattr("evosql.llm.time.sleep", lambda s: None)
+    transport = FakeTransport()
+    transport.chat.completions.create = lambda **kw: SimpleNamespace(choices=None, error={"message": "upstream failed"})
+    with pytest.raises(ProviderExhausted, match="empty response"):
+        LLM("m", cache_dir=tmp_path, client=transport, max_tries=3).chat([{"role": "user", "content": "c"}])

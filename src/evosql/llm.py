@@ -68,6 +68,11 @@ class LLM:
                 last = e
                 time.sleep(min(2 ** (attempt + 1), 60))
                 continue
+            if not getattr(resp, "choices", None):
+                # Some routers (OpenRouter) answer 200 with an error body and no choices when the upstream model fails.
+                last = f"empty response: {getattr(resp, 'error', None)}"
+                time.sleep(min(2 ** (attempt + 1), 60))
+                continue
             msg = resp.choices[0].message
             calls = [{"id": c.id, "name": c.function.name, "arguments": c.function.arguments} for c in msg.tool_calls or []]
             details = getattr(resp.usage, "prompt_tokens_details", None)
