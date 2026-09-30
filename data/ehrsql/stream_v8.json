@@ -1,0 +1,1073 @@
+[
+ {
+  "qid": 1,
+  "id": "ed396de025aef41a12776f3d",
+  "db_id": "mimic_iv",
+  "template": "What are_verb the top [n_rank] frequent diagnoses that patients were diagnosed [time_filter_within] after having received a {procedure_name} procedure [time_filter_global1]?",
+  "question": "What were the top three frequent diagnoses that patients received during the same month after undergoing the resection of vessel with replacement, thoracic vessels procedure in 2100?",
+  "query": "SELECT d_icd_diagnoses.long_title FROM d_icd_diagnoses WHERE d_icd_diagnoses.icd_code IN ( SELECT T3.icd_code FROM ( SELECT T2.icd_code, DENSE_RANK() OVER ( ORDER BY COUNT(*) DESC ) AS C1 FROM ( SELECT admissions.subject_id, procedures_icd.charttime FROM procedures_icd JOIN admissions ON procedures_icd.hadm_id = admissions.hadm_id WHERE procedures_icd.icd_code = ( SELECT d_icd_procedures.icd_code FROM d_icd_procedures WHERE d_icd_procedures.long_title = 'resection of vessel with replacement, thoracic vessels' ) AND strftime('%Y',procedures_icd.charttime) = '2100' ) AS T1 JOIN ( SELECT admissions.subject_id, diagnoses_icd.icd_code, diagnoses_icd.charttime FROM diagnoses_icd JOIN admissions ON diagnoses_icd.hadm_id = admissions.hadm_id WHERE strftime('%Y',diagnoses_icd.charttime) = '2100' ) AS T2 ON T1.subject_id = T2.subject_id WHERE T1.charttime < T2.charttime AND datetime(T1.charttime,'start of month') = datetime(T2.charttime,'start of month') GROUP BY T2.icd_code ) AS T3 WHERE T3.C1 <= 3 )",
+  "gold_sql": "SELECT d_icd_diagnoses.long_title FROM d_icd_diagnoses WHERE d_icd_diagnoses.icd_code IN ( SELECT T3.icd_code FROM ( SELECT T2.icd_code, DENSE_RANK() OVER ( ORDER BY COUNT(*) DESC ) AS C1 FROM ( SELECT admissions.subject_id, procedures_icd.charttime FROM procedures_icd JOIN admissions ON procedures_icd.hadm_id = admissions.hadm_id WHERE procedures_icd.icd_code = ( SELECT d_icd_procedures.icd_code FROM d_icd_procedures WHERE d_icd_procedures.long_title = 'resection of vessel with replacement, thoracic vessels' ) AND strftime('%Y',procedures_icd.charttime) = '2100' ) AS T1 JOIN ( SELECT admissions.subject_id, diagnoses_icd.icd_code, diagnoses_icd.charttime FROM diagnoses_icd JOIN admissions ON diagnoses_icd.hadm_id = admissions.hadm_id WHERE strftime('%Y',diagnoses_icd.charttime) = '2100' ) AS T2 ON T1.subject_id = T2.subject_id WHERE T1.charttime < T2.charttime AND datetime(T1.charttime,'start of month') = datetime(T2.charttime,'start of month') GROUP BY T2.icd_code ) AS T3 WHERE T3.C1 <= 3 )"
+ },
+ {
+  "qid": 2,
+  "id": "6fdd01eeff3d0426c273f13a",
+  "db_id": "mimic_iv",
+  "template": "What are_verb the top [n_rank] frequent diagnoses that patients were diagnosed [time_filter_within] after having received a {procedure_name} procedure [time_filter_global1]?",
+  "question": "What are the top four frequent diagnoses that patients were diagnosed with since 2100 after having received a performance of cardiac output, continuous procedure within 2 months?",
+  "query": "SELECT d_icd_diagnoses.long_title FROM d_icd_diagnoses WHERE d_icd_diagnoses.icd_code IN ( SELECT T3.icd_code FROM ( SELECT T2.icd_code, DENSE_RANK() OVER ( ORDER BY COUNT(*) DESC ) AS C1 FROM ( SELECT admissions.subject_id, procedures_icd.charttime FROM procedures_icd JOIN admissions ON procedures_icd.hadm_id = admissions.hadm_id WHERE procedures_icd.icd_code = ( SELECT d_icd_procedures.icd_code FROM d_icd_procedures WHERE d_icd_procedures.long_title = 'performance of cardiac output, continuous' ) AND strftime('%Y',procedures_icd.charttime) >= '2100' ) AS T1 JOIN ( SELECT admissions.subject_id, diagnoses_icd.icd_code, diagnoses_icd.charttime FROM diagnoses_icd JOIN admissions ON diagnoses_icd.hadm_id = admissions.hadm_id WHERE strftime('%Y',diagnoses_icd.charttime) >= '2100' ) AS T2 ON T1.subject_id = T2.subject_id WHERE T1.charttime < T2.charttime AND datetime(T2.charttime) BETWEEN datetime(T1.charttime) AND datetime(T1.charttime,'+2 month') GROUP BY T2.icd_code ) AS T3 WHERE T3.C1 <= 4 )",
+  "gold_sql": "SELECT d_icd_diagnoses.long_title FROM d_icd_diagnoses WHERE d_icd_diagnoses.icd_code IN ( SELECT T3.icd_code FROM ( SELECT T2.icd_code, DENSE_RANK() OVER ( ORDER BY COUNT(*) DESC ) AS C1 FROM ( SELECT admissions.subject_id, procedures_icd.charttime FROM procedures_icd JOIN admissions ON procedures_icd.hadm_id = admissions.hadm_id WHERE procedures_icd.icd_code = ( SELECT d_icd_procedures.icd_code FROM d_icd_procedures WHERE d_icd_procedures.long_title = 'performance of cardiac output, continuous' ) AND strftime('%Y',procedures_icd.charttime) >= '2100' ) AS T1 JOIN ( SELECT admissions.subject_id, diagnoses_icd.icd_code, diagnoses_icd.charttime FROM diagnoses_icd JOIN admissions ON diagnoses_icd.hadm_id = admissions.hadm_id WHERE strftime('%Y',diagnoses_icd.charttime) >= '2100' ) AS T2 ON T1.subject_id = T2.subject_id WHERE T1.charttime < T2.charttime AND datetime(T2.charttime) BETWEEN datetime(T1.charttime) AND datetime(T1.charttime,'+2 month') GROUP BY T2.icd_code ) AS T3 WHERE T3.C1 <= 4 )"
+ },
+ {
+  "qid": 3,
+  "id": "47c10150fc2a7ef2316ffcd9",
+  "db_id": "mimic_iv",
+  "template": "What are_verb the top [n_rank] frequent diagnoses that patients were diagnosed [time_filter_within] after having received a {procedure_name} procedure [time_filter_global1]?",
+  "question": "Give me the top three most frequent diagnoses that patients were given within 2 months after receiving laparoscopic lysis of peritoneal adhesions since 1 year ago.",
+  "query": "SELECT d_icd_diagnoses.long_title FROM d_icd_diagnoses WHERE d_icd_diagnoses.icd_code IN ( SELECT T3.icd_code FROM ( SELECT T2.icd_code, DENSE_RANK() OVER ( ORDER BY COUNT(*) DESC ) AS C1 FROM ( SELECT admissions.subject_id, procedures_icd.charttime FROM procedures_icd JOIN admissions ON procedures_icd.hadm_id = admissions.hadm_id WHERE procedures_icd.icd_code = ( SELECT d_icd_procedures.icd_code FROM d_icd_procedures WHERE d_icd_procedures.long_title = 'laparoscopic lysis of peritoneal adhesions' ) AND datetime(procedures_icd.charttime) >= datetime(current_time,'-1 year') ) AS T1 JOIN ( SELECT admissions.subject_id, diagnoses_icd.icd_code, diagnoses_icd.charttime FROM diagnoses_icd JOIN admissions ON diagnoses_icd.hadm_id = admissions.hadm_id WHERE datetime(diagnoses_icd.charttime) >= datetime(current_time,'-1 year') ) AS T2 ON T1.subject_id = T2.subject_id WHERE T1.charttime < T2.charttime AND datetime(T2.charttime) BETWEEN datetime(T1.charttime) AND datetime(T1.charttime,'+2 month') GROUP BY T2.icd_code ) AS T3 WHERE T3.C1 <= 3 )",
+  "gold_sql": "SELECT d_icd_diagnoses.long_title FROM d_icd_diagnoses WHERE d_icd_diagnoses.icd_code IN ( SELECT T3.icd_code FROM ( SELECT T2.icd_code, DENSE_RANK() OVER ( ORDER BY COUNT(*) DESC ) AS C1 FROM ( SELECT admissions.subject_id, procedures_icd.charttime FROM procedures_icd JOIN admissions ON procedures_icd.hadm_id = admissions.hadm_id WHERE procedures_icd.icd_code = ( SELECT d_icd_procedures.icd_code FROM d_icd_procedures WHERE d_icd_procedures.long_title = 'laparoscopic lysis of peritoneal adhesions' ) AND datetime(procedures_icd.charttime) >= datetime('2100-12-31 23:59:00','-1 year') ) AS T1 JOIN ( SELECT admissions.subject_id, diagnoses_icd.icd_code, diagnoses_icd.charttime FROM diagnoses_icd JOIN admissions ON diagnoses_icd.hadm_id = admissions.hadm_id WHERE datetime(diagnoses_icd.charttime) >= datetime('2100-12-31 23:59:00','-1 year') ) AS T2 ON T1.subject_id = T2.subject_id WHERE T1.charttime < T2.charttime AND datetime(T2.charttime) BETWEEN datetime(T1.charttime) AND datetime(T1.charttime,'+2 month') GROUP BY T2.icd_code ) AS T3 WHERE T3.C1 <= 3 )"
+ },
+ {
+  "qid": 4,
+  "id": "db3c11ffd16f4f7b363b7a95",
+  "db_id": "mimic_iv",
+  "template": "What are_verb the top [n_rank] frequent diagnoses that patients were diagnosed [time_filter_within] after having received a {procedure_name} procedure [time_filter_global1]?",
+  "question": "List the four most common diagnoses that were given to patients during the same month after receiving hemodialysis during this year.",
+  "query": "SELECT d_icd_diagnoses.long_title FROM d_icd_diagnoses WHERE d_icd_diagnoses.icd_code IN ( SELECT T3.icd_code FROM ( SELECT T2.icd_code, DENSE_RANK() OVER ( ORDER BY COUNT(*) DESC ) AS C1 FROM ( SELECT admissions.subject_id, procedures_icd.charttime FROM procedures_icd JOIN admissions ON procedures_icd.hadm_id = admissions.hadm_id WHERE procedures_icd.icd_code = ( SELECT d_icd_procedures.icd_code FROM d_icd_procedures WHERE d_icd_procedures.long_title = 'hemodialysis' ) AND datetime(procedures_icd.charttime,'start of year') = datetime(current_time,'start of year','-0 year') ) AS T1 JOIN ( SELECT admissions.subject_id, diagnoses_icd.icd_code, diagnoses_icd.charttime FROM diagnoses_icd JOIN admissions ON diagnoses_icd.hadm_id = admissions.hadm_id WHERE datetime(diagnoses_icd.charttime,'start of year') = datetime(current_time,'start of year','-0 year') ) AS T2 ON T1.subject_id = T2.subject_id WHERE T1.charttime < T2.charttime AND datetime(T1.charttime,'start of month') = datetime(T2.charttime,'start of month') GROUP BY T2.icd_code ) AS T3 WHERE T3.C1 <= 4 )",
+  "gold_sql": "SELECT d_icd_diagnoses.long_title FROM d_icd_diagnoses WHERE d_icd_diagnoses.icd_code IN ( SELECT T3.icd_code FROM ( SELECT T2.icd_code, DENSE_RANK() OVER ( ORDER BY COUNT(*) DESC ) AS C1 FROM ( SELECT admissions.subject_id, procedures_icd.charttime FROM procedures_icd JOIN admissions ON procedures_icd.hadm_id = admissions.hadm_id WHERE procedures_icd.icd_code = ( SELECT d_icd_procedures.icd_code FROM d_icd_procedures WHERE d_icd_procedures.long_title = 'hemodialysis' ) AND datetime(procedures_icd.charttime,'start of year') = datetime('2100-12-31 23:59:00','start of year','-0 year') ) AS T1 JOIN ( SELECT admissions.subject_id, diagnoses_icd.icd_code, diagnoses_icd.charttime FROM diagnoses_icd JOIN admissions ON diagnoses_icd.hadm_id = admissions.hadm_id WHERE datetime(diagnoses_icd.charttime,'start of year') = datetime('2100-12-31 23:59:00','start of year','-0 year') ) AS T2 ON T1.subject_id = T2.subject_id WHERE T1.charttime < T2.charttime AND datetime(T1.charttime,'start of month') = datetime(T2.charttime,'start of month') GROUP BY T2.icd_code ) AS T3 WHERE T3.C1 <= 4 )"
+ },
+ {
+  "qid": 5,
+  "id": "2a9d69b2f33ebef60868e9bd",
+  "db_id": "mimic_iv",
+  "template": "What are_verb the top [n_rank] frequent diagnoses that patients were diagnosed [time_filter_within] after having received a {procedure_name} procedure [time_filter_global1]?",
+  "question": "What were the three most frequent diagnoses that patients were given after receiving extirpation of matter from left lower lobe bronchus, via natural or artificial opening endoscopic within 2 months?",
+  "query": "SELECT d_icd_diagnoses.long_title FROM d_icd_diagnoses WHERE d_icd_diagnoses.icd_code IN ( SELECT T3.icd_code FROM ( SELECT T2.icd_code, DENSE_RANK() OVER ( ORDER BY COUNT(*) DESC ) AS C1 FROM ( SELECT admissions.subject_id, procedures_icd.charttime FROM procedures_icd JOIN admissions ON procedures_icd.hadm_id = admissions.hadm_id WHERE procedures_icd.icd_code = ( SELECT d_icd_procedures.icd_code FROM d_icd_procedures WHERE d_icd_procedures.long_title = 'extirpation of matter from left lower lobe bronchus, via natural or artificial opening endoscopic' ) ) AS T1 JOIN ( SELECT admissions.subject_id, diagnoses_icd.icd_code, diagnoses_icd.charttime FROM diagnoses_icd JOIN admissions ON diagnoses_icd.hadm_id = admissions.hadm_id ) AS T2 ON T1.subject_id = T2.subject_id WHERE T1.charttime < T2.charttime AND datetime(T2.charttime) BETWEEN datetime(T1.charttime) AND datetime(T1.charttime,'+2 month') GROUP BY T2.icd_code ) AS T3 WHERE T3.C1 <= 3 )",
+  "gold_sql": "SELECT d_icd_diagnoses.long_title FROM d_icd_diagnoses WHERE d_icd_diagnoses.icd_code IN ( SELECT T3.icd_code FROM ( SELECT T2.icd_code, DENSE_RANK() OVER ( ORDER BY COUNT(*) DESC ) AS C1 FROM ( SELECT admissions.subject_id, procedures_icd.charttime FROM procedures_icd JOIN admissions ON procedures_icd.hadm_id = admissions.hadm_id WHERE procedures_icd.icd_code = ( SELECT d_icd_procedures.icd_code FROM d_icd_procedures WHERE d_icd_procedures.long_title = 'extirpation of matter from left lower lobe bronchus, via natural or artificial opening endoscopic' ) ) AS T1 JOIN ( SELECT admissions.subject_id, diagnoses_icd.icd_code, diagnoses_icd.charttime FROM diagnoses_icd JOIN admissions ON diagnoses_icd.hadm_id = admissions.hadm_id ) AS T2 ON T1.subject_id = T2.subject_id WHERE T1.charttime < T2.charttime AND datetime(T2.charttime) BETWEEN datetime(T1.charttime) AND datetime(T1.charttime,'+2 month') GROUP BY T2.icd_code ) AS T3 WHERE T3.C1 <= 3 )"
+ },
+ {
+  "qid": 6,
+  "id": "cc3d7bf75c6a91650fa5a25b",
+  "db_id": "mimic_iv",
+  "template": "What are_verb the top [n_rank] frequent diagnoses that patients were diagnosed [time_filter_within] after having received a {procedure_name} procedure [time_filter_global1]?",
+  "question": "What are the four most common diagnoses for patients that had previously received laparoscopic partial cholecystectomy within 2 months?",
+  "query": "SELECT d_icd_diagnoses.long_title FROM d_icd_diagnoses WHERE d_icd_diagnoses.icd_code IN ( SELECT T3.icd_code FROM ( SELECT T2.icd_code, DENSE_RANK() OVER ( ORDER BY COUNT(*) DESC ) AS C1 FROM ( SELECT admissions.subject_id, procedures_icd.charttime FROM procedures_icd JOIN admissions ON procedures_icd.hadm_id = admissions.hadm_id WHERE procedures_icd.icd_code = ( SELECT d_icd_procedures.icd_code FROM d_icd_procedures WHERE d_icd_procedures.long_title = 'laparoscopic partial cholecystectomy' ) ) AS T1 JOIN ( SELECT admissions.subject_id, diagnoses_icd.icd_code, diagnoses_icd.charttime FROM diagnoses_icd JOIN admissions ON diagnoses_icd.hadm_id = admissions.hadm_id ) AS T2 ON T1.subject_id = T2.subject_id WHERE T1.charttime < T2.charttime AND datetime(T2.charttime) BETWEEN datetime(T1.charttime) AND datetime(T1.charttime,'+2 month') GROUP BY T2.icd_code ) AS T3 WHERE T3.C1 <= 4 )",
+  "gold_sql": "SELECT d_icd_diagnoses.long_title FROM d_icd_diagnoses WHERE d_icd_diagnoses.icd_code IN ( SELECT T3.icd_code FROM ( SELECT T2.icd_code, DENSE_RANK() OVER ( ORDER BY COUNT(*) DESC ) AS C1 FROM ( SELECT admissions.subject_id, procedures_icd.charttime FROM procedures_icd JOIN admissions ON procedures_icd.hadm_id = admissions.hadm_id WHERE procedures_icd.icd_code = ( SELECT d_icd_procedures.icd_code FROM d_icd_procedures WHERE d_icd_procedures.long_title = 'laparoscopic partial cholecystectomy' ) ) AS T1 JOIN ( SELECT admissions.subject_id, diagnoses_icd.icd_code, diagnoses_icd.charttime FROM diagnoses_icd JOIN admissions ON diagnoses_icd.hadm_id = admissions.hadm_id ) AS T2 ON T1.subject_id = T2.subject_id WHERE T1.charttime < T2.charttime AND datetime(T2.charttime) BETWEEN datetime(T1.charttime) AND datetime(T1.charttime,'+2 month') GROUP BY T2.icd_code ) AS T3 WHERE T3.C1 <= 4 )"
+ },
+ {
+  "qid": 7,
+  "id": "cd0f6d12276b6dd053848329",
+  "db_id": "mimic_iv",
+  "template": "What are_verb the top [n_rank] frequent diagnoses that patients were diagnosed [time_filter_within] after having received a {procedure_name} procedure [time_filter_global1]?",
+  "question": "What are the five most frequently given diagnoses for the patients who had previously received laparoscopic partial cholecystectomy within 2 months, since 1 year ago?",
+  "query": "SELECT d_icd_diagnoses.long_title FROM d_icd_diagnoses WHERE d_icd_diagnoses.icd_code IN ( SELECT T3.icd_code FROM ( SELECT T2.icd_code, DENSE_RANK() OVER ( ORDER BY COUNT(*) DESC ) AS C1 FROM ( SELECT admissions.subject_id, procedures_icd.charttime FROM procedures_icd JOIN admissions ON procedures_icd.hadm_id = admissions.hadm_id WHERE procedures_icd.icd_code = ( SELECT d_icd_procedures.icd_code FROM d_icd_procedures WHERE d_icd_procedures.long_title = 'laparoscopic partial cholecystectomy' ) AND datetime(procedures_icd.charttime) >= datetime(current_time,'-1 year') ) AS T1 JOIN ( SELECT admissions.subject_id, diagnoses_icd.icd_code, diagnoses_icd.charttime FROM diagnoses_icd JOIN admissions ON diagnoses_icd.hadm_id = admissions.hadm_id WHERE datetime(diagnoses_icd.charttime) >= datetime(current_time,'-1 year') ) AS T2 ON T1.subject_id = T2.subject_id WHERE T1.charttime < T2.charttime AND datetime(T2.charttime) BETWEEN datetime(T1.charttime) AND datetime(T1.charttime,'+2 month') GROUP BY T2.icd_code ) AS T3 WHERE T3.C1 <= 5 )",
+  "gold_sql": "SELECT d_icd_diagnoses.long_title FROM d_icd_diagnoses WHERE d_icd_diagnoses.icd_code IN ( SELECT T3.icd_code FROM ( SELECT T2.icd_code, DENSE_RANK() OVER ( ORDER BY COUNT(*) DESC ) AS C1 FROM ( SELECT admissions.subject_id, procedures_icd.charttime FROM procedures_icd JOIN admissions ON procedures_icd.hadm_id = admissions.hadm_id WHERE procedures_icd.icd_code = ( SELECT d_icd_procedures.icd_code FROM d_icd_procedures WHERE d_icd_procedures.long_title = 'laparoscopic partial cholecystectomy' ) AND datetime(procedures_icd.charttime) >= datetime('2100-12-31 23:59:00','-1 year') ) AS T1 JOIN ( SELECT admissions.subject_id, diagnoses_icd.icd_code, diagnoses_icd.charttime FROM diagnoses_icd JOIN admissions ON diagnoses_icd.hadm_id = admissions.hadm_id WHERE datetime(diagnoses_icd.charttime) >= datetime('2100-12-31 23:59:00','-1 year') ) AS T2 ON T1.subject_id = T2.subject_id WHERE T1.charttime < T2.charttime AND datetime(T2.charttime) BETWEEN datetime(T1.charttime) AND datetime(T1.charttime,'+2 month') GROUP BY T2.icd_code ) AS T3 WHERE T3.C1 <= 5 )"
+ },
+ {
+  "qid": 8,
+  "id": "8a0c7a7faca024a1eb4dd993",
+  "db_id": "mimic_iv",
+  "template": "List the [unit_average] [agg_function] {vital_name} of patient {patient_id} [time_filter_global1].",
+  "question": "What is the daily value of respiratory rate for patient 10010471 since 14 days ago? If multiple respiratory rates are measured daily, take the maximum.",
+  "query": "SELECT MAX(chartevents.valuenum) FROM chartevents WHERE chartevents.stay_id IN ( SELECT icustays.stay_id FROM icustays WHERE icustays.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10010471 ) ) AND chartevents.itemid IN ( SELECT d_items.itemid FROM d_items WHERE d_items.label = 'respiratory rate' AND d_items.linksto = 'chartevents' ) AND datetime(chartevents.charttime) >= datetime(current_time,'-14 day') GROUP BY strftime('%Y-%m-%d',chartevents.charttime)",
+  "gold_sql": "SELECT MAX(chartevents.valuenum) FROM chartevents WHERE chartevents.stay_id IN ( SELECT icustays.stay_id FROM icustays WHERE icustays.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10010471 ) ) AND chartevents.itemid IN ( SELECT d_items.itemid FROM d_items WHERE d_items.label = 'respiratory rate' AND d_items.linksto = 'chartevents' ) AND datetime(chartevents.charttime) >= datetime('2100-12-31 23:59:00','-14 day') GROUP BY strftime('%Y-%m-%d',chartevents.charttime)"
+ },
+ {
+  "qid": 9,
+  "id": "2783cbb5eccb2b4d0c78a1e0",
+  "db_id": "mimic_iv",
+  "template": "List the [unit_average] [agg_function] {vital_name} of patient {patient_id} [time_filter_global1].",
+  "question": "Show me patient 10003046's daily systolic blood pressure. If multiple systolic blood pressures are measured daily, take the maximum.",
+  "query": "SELECT MAX(chartevents.valuenum) FROM chartevents WHERE chartevents.stay_id IN ( SELECT icustays.stay_id FROM icustays WHERE icustays.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10003046 ) ) AND chartevents.itemid IN ( SELECT d_items.itemid FROM d_items WHERE d_items.label = 'arterial blood pressure systolic' AND d_items.linksto = 'chartevents' ) GROUP BY strftime('%Y-%m-%d',chartevents.charttime)",
+  "gold_sql": "SELECT MAX(chartevents.valuenum) FROM chartevents WHERE chartevents.stay_id IN ( SELECT icustays.stay_id FROM icustays WHERE icustays.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10003046 ) ) AND chartevents.itemid IN ( SELECT d_items.itemid FROM d_items WHERE d_items.label = 'arterial blood pressure systolic' AND d_items.linksto = 'chartevents' ) GROUP BY strftime('%Y-%m-%d',chartevents.charttime)"
+ },
+ {
+  "qid": 10,
+  "id": "dca7f0863bc05ed189b1b292",
+  "db_id": "mimic_iv",
+  "template": "List the [unit_average] [agg_function] {vital_name} of patient {patient_id} [time_filter_global1].",
+  "question": "Can you give me patient 10039831's monthly systolic blood pressure since 02/25/2100? If multiple systolic blood pressures are measured monthly, take the maximum.",
+  "query": "SELECT MAX(chartevents.valuenum) FROM chartevents WHERE chartevents.stay_id IN ( SELECT icustays.stay_id FROM icustays WHERE icustays.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10039831 ) ) AND chartevents.itemid IN ( SELECT d_items.itemid FROM d_items WHERE d_items.label = 'arterial blood pressure systolic' AND d_items.linksto = 'chartevents' ) AND strftime('%Y-%m-%d',chartevents.charttime) >= '2100-02-25' GROUP BY strftime('%Y-%m',chartevents.charttime)",
+  "gold_sql": "SELECT MAX(chartevents.valuenum) FROM chartevents WHERE chartevents.stay_id IN ( SELECT icustays.stay_id FROM icustays WHERE icustays.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10039831 ) ) AND chartevents.itemid IN ( SELECT d_items.itemid FROM d_items WHERE d_items.label = 'arterial blood pressure systolic' AND d_items.linksto = 'chartevents' ) AND strftime('%Y-%m-%d',chartevents.charttime) >= '2100-02-25' GROUP BY strftime('%Y-%m',chartevents.charttime)"
+ },
+ {
+  "qid": 11,
+  "id": "e1d0b53beabc24ec45e07b2d",
+  "db_id": "mimic_iv",
+  "template": "List the [unit_average] [agg_function] {vital_name} of patient {patient_id} [time_filter_global1].",
+  "question": "What is the monthly respiratory rate for patient 10038999 in the first hospital encounter? If multiple respiratory rates are measured monthly, take the average.",
+  "query": "SELECT AVG(chartevents.valuenum) FROM chartevents WHERE chartevents.stay_id IN ( SELECT icustays.stay_id FROM icustays WHERE icustays.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10038999 AND admissions.dischtime IS NOT NULL ORDER BY admissions.admittime ASC LIMIT 1 ) ) AND chartevents.itemid IN ( SELECT d_items.itemid FROM d_items WHERE d_items.label = 'respiratory rate' AND d_items.linksto = 'chartevents' ) GROUP BY strftime('%Y-%m',chartevents.charttime)",
+  "gold_sql": "SELECT AVG(chartevents.valuenum) FROM chartevents WHERE chartevents.stay_id IN ( SELECT icustays.stay_id FROM icustays WHERE icustays.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10038999 AND admissions.dischtime IS NOT NULL ORDER BY admissions.admittime ASC LIMIT 1 ) ) AND chartevents.itemid IN ( SELECT d_items.itemid FROM d_items WHERE d_items.label = 'respiratory rate' AND d_items.linksto = 'chartevents' ) GROUP BY strftime('%Y-%m',chartevents.charttime)"
+ },
+ {
+  "qid": 12,
+  "id": "f5f18cb5c4dd940a95ec5360",
+  "db_id": "mimic_iv",
+  "template": "List the [unit_average] [agg_function] {vital_name} of patient {patient_id} [time_filter_global1].",
+  "question": "What is the daily value of the body temperature for patient 10011398 on their last ICU visit? If multiple body temperatures are measured daily, take the maximum.",
+  "query": "SELECT MAX(chartevents.valuenum) FROM chartevents WHERE chartevents.stay_id IN ( SELECT icustays.stay_id FROM icustays WHERE icustays.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10011398 ) AND icustays.outtime IS NOT NULL ORDER BY icustays.intime DESC LIMIT 1 ) AND chartevents.itemid IN ( SELECT d_items.itemid FROM d_items WHERE d_items.label = 'temperature celsius' AND d_items.linksto = 'chartevents' ) GROUP BY strftime('%Y-%m-%d',chartevents.charttime)",
+  "gold_sql": "SELECT MAX(chartevents.valuenum) FROM chartevents WHERE chartevents.stay_id IN ( SELECT icustays.stay_id FROM icustays WHERE icustays.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10011398 ) AND icustays.outtime IS NOT NULL ORDER BY icustays.intime DESC LIMIT 1 ) AND chartevents.itemid IN ( SELECT d_items.itemid FROM d_items WHERE d_items.label = 'temperature celsius' AND d_items.linksto = 'chartevents' ) GROUP BY strftime('%Y-%m-%d',chartevents.charttime)"
+ },
+ {
+  "qid": 13,
+  "id": "0d7f97f7f014369165ccb406",
+  "db_id": "mimic_iv",
+  "template": "List the [unit_average] [agg_function] {vital_name} of patient {patient_id} [time_filter_global1].",
+  "question": "Show me patient 10005817's daily diastolic blood pressure since 14 months ago? If multiple diastolic blood pressures are measured daily, take the maximum.",
+  "query": "SELECT MAX(chartevents.valuenum) FROM chartevents WHERE chartevents.stay_id IN ( SELECT icustays.stay_id FROM icustays WHERE icustays.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10005817 ) ) AND chartevents.itemid IN ( SELECT d_items.itemid FROM d_items WHERE d_items.label = 'arterial blood pressure diastolic' AND d_items.linksto = 'chartevents' ) AND datetime(chartevents.charttime) >= datetime(current_time,'-14 month') GROUP BY strftime('%Y-%m-%d',chartevents.charttime)",
+  "gold_sql": "SELECT MAX(chartevents.valuenum) FROM chartevents WHERE chartevents.stay_id IN ( SELECT icustays.stay_id FROM icustays WHERE icustays.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10005817 ) ) AND chartevents.itemid IN ( SELECT d_items.itemid FROM d_items WHERE d_items.label = 'arterial blood pressure diastolic' AND d_items.linksto = 'chartevents' ) AND datetime(chartevents.charttime) >= datetime('2100-12-31 23:59:00','-14 month') GROUP BY strftime('%Y-%m-%d',chartevents.charttime)"
+ },
+ {
+  "qid": 14,
+  "id": "2c5b0c8baa3288cd5ae25871",
+  "db_id": "mimic_iv",
+  "template": "List the [unit_average] [agg_function] {vital_name} of patient {patient_id} [time_filter_global1].",
+  "question": "Can you give me patient 10019385's daily systolic blood pressure on the last ICU visit? If multiple systolic blood pressures are measured daily, take the average.",
+  "query": "SELECT AVG(chartevents.valuenum) FROM chartevents WHERE chartevents.stay_id IN ( SELECT icustays.stay_id FROM icustays WHERE icustays.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10019385 ) AND icustays.outtime IS NOT NULL ORDER BY icustays.intime DESC LIMIT 1 ) AND chartevents.itemid IN ( SELECT d_items.itemid FROM d_items WHERE d_items.label = 'arterial blood pressure systolic' AND d_items.linksto = 'chartevents' ) GROUP BY strftime('%Y-%m-%d',chartevents.charttime)",
+  "gold_sql": "SELECT AVG(chartevents.valuenum) FROM chartevents WHERE chartevents.stay_id IN ( SELECT icustays.stay_id FROM icustays WHERE icustays.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10019385 ) AND icustays.outtime IS NOT NULL ORDER BY icustays.intime DESC LIMIT 1 ) AND chartevents.itemid IN ( SELECT d_items.itemid FROM d_items WHERE d_items.label = 'arterial blood pressure systolic' AND d_items.linksto = 'chartevents' ) GROUP BY strftime('%Y-%m-%d',chartevents.charttime)"
+ },
+ {
+  "qid": 15,
+  "id": "184fc5e11e0bfc9be1a0263c",
+  "db_id": "mimic_iv",
+  "template": "What was the total volume of output that patient {patient_id} had [time_filter_global1]?",
+  "question": "What were the overall outputs from patient 10020944 on 03/15/this year?",
+  "query": "SELECT SUM(outputevents.value) FROM outputevents WHERE outputevents.stay_id IN ( SELECT icustays.stay_id FROM icustays WHERE icustays.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10020944 ) ) AND datetime(outputevents.charttime,'start of year') = datetime(current_time,'start of year','-0 year') AND strftime('%m-%d',outputevents.charttime) = '03-15'",
+  "gold_sql": "SELECT SUM(outputevents.value) FROM outputevents WHERE outputevents.stay_id IN ( SELECT icustays.stay_id FROM icustays WHERE icustays.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10020944 ) ) AND datetime(outputevents.charttime,'start of year') = datetime('2100-12-31 23:59:00','start of year','-0 year') AND strftime('%m-%d',outputevents.charttime) = '03-15'"
+ },
+ {
+  "qid": 16,
+  "id": "9f044b75ba284f6e96d21088",
+  "db_id": "mimic_iv",
+  "template": "What was the total volume of output that patient {patient_id} had [time_filter_global1]?",
+  "question": "Display the total output that patient 10010471 had since 04/11/2100.",
+  "query": "SELECT SUM(outputevents.value) FROM outputevents WHERE outputevents.stay_id IN ( SELECT icustays.stay_id FROM icustays WHERE icustays.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10010471 ) ) AND strftime('%Y-%m-%d',outputevents.charttime) >= '2100-04-11'",
+  "gold_sql": "SELECT SUM(outputevents.value) FROM outputevents WHERE outputevents.stay_id IN ( SELECT icustays.stay_id FROM icustays WHERE icustays.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10010471 ) ) AND strftime('%Y-%m-%d',outputevents.charttime) >= '2100-04-11'"
+ },
+ {
+  "qid": 17,
+  "id": "06d531ccb4fb7b80b892121f",
+  "db_id": "mimic_iv",
+  "template": "What was the total volume of output that patient {patient_id} had [time_filter_global1]?",
+  "question": "Calculate patient 10023239's total output volume on 06/29/this year.",
+  "query": "SELECT SUM(outputevents.value) FROM outputevents WHERE outputevents.stay_id IN ( SELECT icustays.stay_id FROM icustays WHERE icustays.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10023239 ) ) AND datetime(outputevents.charttime,'start of year') = datetime(current_time,'start of year','-0 year') AND strftime('%m-%d',outputevents.charttime) = '06-29'",
+  "gold_sql": "SELECT SUM(outputevents.value) FROM outputevents WHERE outputevents.stay_id IN ( SELECT icustays.stay_id FROM icustays WHERE icustays.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10023239 ) ) AND datetime(outputevents.charttime,'start of year') = datetime('2100-12-31 23:59:00','start of year','-0 year') AND strftime('%m-%d',outputevents.charttime) = '06-29'"
+ },
+ {
+  "qid": 18,
+  "id": "67c2dbeaea4791e0feb0a69b",
+  "db_id": "mimic_iv",
+  "template": "What was the total volume of output that patient {patient_id} had [time_filter_global1]?",
+  "question": "Gather the total output since 10/05/2100 for patient 10007058.",
+  "query": "SELECT SUM(outputevents.value) FROM outputevents WHERE outputevents.stay_id IN ( SELECT icustays.stay_id FROM icustays WHERE icustays.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10007058 ) ) AND strftime('%Y-%m-%d',outputevents.charttime) >= '2100-10-05'",
+  "gold_sql": "SELECT SUM(outputevents.value) FROM outputevents WHERE outputevents.stay_id IN ( SELECT icustays.stay_id FROM icustays WHERE icustays.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10007058 ) ) AND strftime('%Y-%m-%d',outputevents.charttime) >= '2100-10-05'"
+ },
+ {
+  "qid": 19,
+  "id": "b71409d570252fbb7bc7ecd0",
+  "db_id": "mimic_iv",
+  "template": "What was the total volume of output that patient {patient_id} had [time_filter_global1]?",
+  "question": "Could you report the total amount of output that patient 10007058 had since 03/20/2100?",
+  "query": "SELECT SUM(outputevents.value) FROM outputevents WHERE outputevents.stay_id IN ( SELECT icustays.stay_id FROM icustays WHERE icustays.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10007058 ) ) AND strftime('%Y-%m-%d',outputevents.charttime) >= '2100-03-20'",
+  "gold_sql": "SELECT SUM(outputevents.value) FROM outputevents WHERE outputevents.stay_id IN ( SELECT icustays.stay_id FROM icustays WHERE icustays.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10007058 ) ) AND strftime('%Y-%m-%d',outputevents.charttime) >= '2100-03-20'"
+ },
+ {
+  "qid": 20,
+  "id": "9cb9aa60b28077c70929769c",
+  "db_id": "mimic_iv",
+  "template": "What was the total volume of output that patient {patient_id} had [time_filter_global1]?",
+  "question": "Can you find the total amount of output of patient 10018501 in the last ICU visit?",
+  "query": "SELECT SUM(outputevents.value) FROM outputevents WHERE outputevents.stay_id IN ( SELECT icustays.stay_id FROM icustays WHERE icustays.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10018501 ) AND icustays.outtime IS NOT NULL ORDER BY icustays.intime DESC LIMIT 1 )",
+  "gold_sql": "SELECT SUM(outputevents.value) FROM outputevents WHERE outputevents.stay_id IN ( SELECT icustays.stay_id FROM icustays WHERE icustays.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10018501 ) AND icustays.outtime IS NOT NULL ORDER BY icustays.intime DESC LIMIT 1 )"
+ },
+ {
+  "qid": 21,
+  "id": "8cf47ff1a1ec5cf642c7ff41",
+  "db_id": "mimic_iv",
+  "template": "What was the total volume of output that patient {patient_id} had [time_filter_global1]?",
+  "question": "Tell me the total amount of patient 10020740's output on 04/06/2100.",
+  "query": "SELECT SUM(outputevents.value) FROM outputevents WHERE outputevents.stay_id IN ( SELECT icustays.stay_id FROM icustays WHERE icustays.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10020740 ) ) AND strftime('%Y-%m-%d',outputevents.charttime) = '2100-04-06'",
+  "gold_sql": "SELECT SUM(outputevents.value) FROM outputevents WHERE outputevents.stay_id IN ( SELECT icustays.stay_id FROM icustays WHERE icustays.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10020740 ) ) AND strftime('%Y-%m-%d',outputevents.charttime) = '2100-04-06'"
+ },
+ {
+  "qid": 22,
+  "id": "eed5de84751262898d675c22",
+  "db_id": "mimic_iv",
+  "template": "What is the change in the {vital_name} of patient {patient_id} from the [time_filter_exact2] value measured [time_filter_global2] compared to the [time_filter_exact1] value measured [time_filter_global1]?",
+  "question": "How much does the SpO2 change in patient 10037975 last measured on the first ICU visit compared to the second to last value measured on the first ICU visit?",
+  "query": "SELECT ( SELECT chartevents.valuenum FROM chartevents WHERE chartevents.stay_id IN ( SELECT icustays.stay_id FROM icustays WHERE icustays.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10037975 ) AND icustays.outtime IS NOT NULL ORDER BY icustays.intime ASC LIMIT 1 ) AND chartevents.itemid IN ( SELECT d_items.itemid FROM d_items WHERE d_items.label = 'o2 saturation pulseoxymetry' AND d_items.linksto = 'chartevents' ) AND chartevents.charttime = ( SELECT DISTINCT chartevents.charttime FROM chartevents WHERE chartevents.stay_id IN ( SELECT icustays.stay_id FROM icustays WHERE icustays.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10037975 ) AND icustays.outtime IS NOT NULL ORDER BY icustays.intime ASC LIMIT 1 ) AND chartevents.itemid IN ( SELECT d_items.itemid FROM d_items WHERE d_items.label = 'o2 saturation pulseoxymetry' AND d_items.linksto = 'chartevents' ) ORDER BY chartevents.charttime DESC LIMIT 1 ) ) - ( SELECT chartevents.valuenum FROM chartevents WHERE chartevents.stay_id IN ( SELECT icustays.stay_id FROM icustays WHERE icustays.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10037975 ) AND icustays.outtime IS NOT NULL ORDER BY icustays.intime ASC LIMIT 1 ) AND chartevents.itemid IN ( SELECT d_items.itemid FROM d_items WHERE d_items.label = 'o2 saturation pulseoxymetry' AND d_items.linksto = 'chartevents' ) AND chartevents.charttime = ( SELECT DISTINCT chartevents.charttime FROM chartevents WHERE chartevents.stay_id IN ( SELECT icustays.stay_id FROM icustays WHERE icustays.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10037975 ) AND icustays.outtime IS NOT NULL ORDER BY icustays.intime ASC LIMIT 1 ) AND chartevents.itemid IN ( SELECT d_items.itemid FROM d_items WHERE d_items.label = 'o2 saturation pulseoxymetry' AND d_items.linksto = 'chartevents' ) ORDER BY chartevents.charttime DESC LIMIT 1 OFFSET 1 ) )",
+  "gold_sql": "SELECT ( SELECT chartevents.valuenum FROM chartevents WHERE chartevents.stay_id IN ( SELECT icustays.stay_id FROM icustays WHERE icustays.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10037975 ) AND icustays.outtime IS NOT NULL ORDER BY icustays.intime ASC LIMIT 1 ) AND chartevents.itemid IN ( SELECT d_items.itemid FROM d_items WHERE d_items.label = 'o2 saturation pulseoxymetry' AND d_items.linksto = 'chartevents' ) AND chartevents.charttime = ( SELECT DISTINCT chartevents.charttime FROM chartevents WHERE chartevents.stay_id IN ( SELECT icustays.stay_id FROM icustays WHERE icustays.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10037975 ) AND icustays.outtime IS NOT NULL ORDER BY icustays.intime ASC LIMIT 1 ) AND chartevents.itemid IN ( SELECT d_items.itemid FROM d_items WHERE d_items.label = 'o2 saturation pulseoxymetry' AND d_items.linksto = 'chartevents' ) ORDER BY chartevents.charttime DESC LIMIT 1 ) ) - ( SELECT chartevents.valuenum FROM chartevents WHERE chartevents.stay_id IN ( SELECT icustays.stay_id FROM icustays WHERE icustays.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10037975 ) AND icustays.outtime IS NOT NULL ORDER BY icustays.intime ASC LIMIT 1 ) AND chartevents.itemid IN ( SELECT d_items.itemid FROM d_items WHERE d_items.label = 'o2 saturation pulseoxymetry' AND d_items.linksto = 'chartevents' ) AND chartevents.charttime = ( SELECT DISTINCT chartevents.charttime FROM chartevents WHERE chartevents.stay_id IN ( SELECT icustays.stay_id FROM icustays WHERE icustays.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10037975 ) AND icustays.outtime IS NOT NULL ORDER BY icustays.intime ASC LIMIT 1 ) AND chartevents.itemid IN ( SELECT d_items.itemid FROM d_items WHERE d_items.label = 'o2 saturation pulseoxymetry' AND d_items.linksto = 'chartevents' ) ORDER BY chartevents.charttime DESC LIMIT 1 OFFSET 1 ) )"
+ },
+ {
+  "qid": 23,
+  "id": "6b3760b9b37e0bb8f9e647f8",
+  "db_id": "mimic_iv",
+  "template": "What is the change in the {vital_name} of patient {patient_id} from the [time_filter_exact2] value measured [time_filter_global2] compared to the [time_filter_exact1] value measured [time_filter_global1]?",
+  "question": "How much does the heart rate of patient 10014729 change last measured on the first ICU visit compared to the first value measured on the first ICU visit?",
+  "query": "SELECT ( SELECT chartevents.valuenum FROM chartevents WHERE chartevents.stay_id IN ( SELECT icustays.stay_id FROM icustays WHERE icustays.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10014729 ) AND icustays.outtime IS NOT NULL ORDER BY icustays.intime ASC LIMIT 1 ) AND chartevents.itemid IN ( SELECT d_items.itemid FROM d_items WHERE d_items.label = 'heart rate' AND d_items.linksto = 'chartevents' ) AND chartevents.charttime = ( SELECT DISTINCT chartevents.charttime FROM chartevents WHERE chartevents.stay_id IN ( SELECT icustays.stay_id FROM icustays WHERE icustays.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10014729 ) AND icustays.outtime IS NOT NULL ORDER BY icustays.intime ASC LIMIT 1 ) AND chartevents.itemid IN ( SELECT d_items.itemid FROM d_items WHERE d_items.label = 'heart rate' AND d_items.linksto = 'chartevents' ) ORDER BY chartevents.charttime DESC LIMIT 1 ) ) - ( SELECT chartevents.valuenum FROM chartevents WHERE chartevents.stay_id IN ( SELECT icustays.stay_id FROM icustays WHERE icustays.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10014729 ) AND icustays.outtime IS NOT NULL ORDER BY icustays.intime ASC LIMIT 1 ) AND chartevents.itemid IN ( SELECT d_items.itemid FROM d_items WHERE d_items.label = 'heart rate' AND d_items.linksto = 'chartevents' ) AND chartevents.charttime = ( SELECT DISTINCT chartevents.charttime FROM chartevents WHERE chartevents.stay_id IN ( SELECT icustays.stay_id FROM icustays WHERE icustays.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10014729 ) AND icustays.outtime IS NOT NULL ORDER BY icustays.intime ASC LIMIT 1 ) AND chartevents.itemid IN ( SELECT d_items.itemid FROM d_items WHERE d_items.label = 'heart rate' AND d_items.linksto = 'chartevents' ) ORDER BY chartevents.charttime ASC LIMIT 1 ) )",
+  "gold_sql": "SELECT ( SELECT chartevents.valuenum FROM chartevents WHERE chartevents.stay_id IN ( SELECT icustays.stay_id FROM icustays WHERE icustays.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10014729 ) AND icustays.outtime IS NOT NULL ORDER BY icustays.intime ASC LIMIT 1 ) AND chartevents.itemid IN ( SELECT d_items.itemid FROM d_items WHERE d_items.label = 'heart rate' AND d_items.linksto = 'chartevents' ) AND chartevents.charttime = ( SELECT DISTINCT chartevents.charttime FROM chartevents WHERE chartevents.stay_id IN ( SELECT icustays.stay_id FROM icustays WHERE icustays.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10014729 ) AND icustays.outtime IS NOT NULL ORDER BY icustays.intime ASC LIMIT 1 ) AND chartevents.itemid IN ( SELECT d_items.itemid FROM d_items WHERE d_items.label = 'heart rate' AND d_items.linksto = 'chartevents' ) ORDER BY chartevents.charttime DESC LIMIT 1 ) ) - ( SELECT chartevents.valuenum FROM chartevents WHERE chartevents.stay_id IN ( SELECT icustays.stay_id FROM icustays WHERE icustays.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10014729 ) AND icustays.outtime IS NOT NULL ORDER BY icustays.intime ASC LIMIT 1 ) AND chartevents.itemid IN ( SELECT d_items.itemid FROM d_items WHERE d_items.label = 'heart rate' AND d_items.linksto = 'chartevents' ) AND chartevents.charttime = ( SELECT DISTINCT chartevents.charttime FROM chartevents WHERE chartevents.stay_id IN ( SELECT icustays.stay_id FROM icustays WHERE icustays.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10014729 ) AND icustays.outtime IS NOT NULL ORDER BY icustays.intime ASC LIMIT 1 ) AND chartevents.itemid IN ( SELECT d_items.itemid FROM d_items WHERE d_items.label = 'heart rate' AND d_items.linksto = 'chartevents' ) ORDER BY chartevents.charttime ASC LIMIT 1 ) )"
+ },
+ {
+  "qid": 24,
+  "id": "a2438ede03e572f4af4fcd58",
+  "db_id": "mimic_iv",
+  "template": "What is the change in the {vital_name} of patient {patient_id} from the [time_filter_exact2] value measured [time_filter_global2] compared to the [time_filter_exact1] value measured [time_filter_global1]?",
+  "question": "Tell me the change in the heart rate of patient 10010471 last measured on the first ICU visit compared to the value first measured on the first ICU visit?",
+  "query": "SELECT ( SELECT chartevents.valuenum FROM chartevents WHERE chartevents.stay_id IN ( SELECT icustays.stay_id FROM icustays WHERE icustays.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10010471 ) AND icustays.outtime IS NOT NULL ORDER BY icustays.intime ASC LIMIT 1 ) AND chartevents.itemid IN ( SELECT d_items.itemid FROM d_items WHERE d_items.label = 'heart rate' AND d_items.linksto = 'chartevents' ) AND chartevents.charttime = ( SELECT DISTINCT chartevents.charttime FROM chartevents WHERE chartevents.stay_id IN ( SELECT icustays.stay_id FROM icustays WHERE icustays.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10010471 ) AND icustays.outtime IS NOT NULL ORDER BY icustays.intime ASC LIMIT 1 ) AND chartevents.itemid IN ( SELECT d_items.itemid FROM d_items WHERE d_items.label = 'heart rate' AND d_items.linksto = 'chartevents' ) ORDER BY chartevents.charttime DESC LIMIT 1 ) ) - ( SELECT chartevents.valuenum FROM chartevents WHERE chartevents.stay_id IN ( SELECT icustays.stay_id FROM icustays WHERE icustays.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10010471 ) AND icustays.outtime IS NOT NULL ORDER BY icustays.intime ASC LIMIT 1 ) AND chartevents.itemid IN ( SELECT d_items.itemid FROM d_items WHERE d_items.label = 'heart rate' AND d_items.linksto = 'chartevents' ) AND chartevents.charttime = ( SELECT DISTINCT chartevents.charttime FROM chartevents WHERE chartevents.stay_id IN ( SELECT icustays.stay_id FROM icustays WHERE icustays.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10010471 ) AND icustays.outtime IS NOT NULL ORDER BY icustays.intime ASC LIMIT 1 ) AND chartevents.itemid IN ( SELECT d_items.itemid FROM d_items WHERE d_items.label = 'heart rate' AND d_items.linksto = 'chartevents' ) ORDER BY chartevents.charttime ASC LIMIT 1 ) )",
+  "gold_sql": "SELECT ( SELECT chartevents.valuenum FROM chartevents WHERE chartevents.stay_id IN ( SELECT icustays.stay_id FROM icustays WHERE icustays.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10010471 ) AND icustays.outtime IS NOT NULL ORDER BY icustays.intime ASC LIMIT 1 ) AND chartevents.itemid IN ( SELECT d_items.itemid FROM d_items WHERE d_items.label = 'heart rate' AND d_items.linksto = 'chartevents' ) AND chartevents.charttime = ( SELECT DISTINCT chartevents.charttime FROM chartevents WHERE chartevents.stay_id IN ( SELECT icustays.stay_id FROM icustays WHERE icustays.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10010471 ) AND icustays.outtime IS NOT NULL ORDER BY icustays.intime ASC LIMIT 1 ) AND chartevents.itemid IN ( SELECT d_items.itemid FROM d_items WHERE d_items.label = 'heart rate' AND d_items.linksto = 'chartevents' ) ORDER BY chartevents.charttime DESC LIMIT 1 ) ) - ( SELECT chartevents.valuenum FROM chartevents WHERE chartevents.stay_id IN ( SELECT icustays.stay_id FROM icustays WHERE icustays.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10010471 ) AND icustays.outtime IS NOT NULL ORDER BY icustays.intime ASC LIMIT 1 ) AND chartevents.itemid IN ( SELECT d_items.itemid FROM d_items WHERE d_items.label = 'heart rate' AND d_items.linksto = 'chartevents' ) AND chartevents.charttime = ( SELECT DISTINCT chartevents.charttime FROM chartevents WHERE chartevents.stay_id IN ( SELECT icustays.stay_id FROM icustays WHERE icustays.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10010471 ) AND icustays.outtime IS NOT NULL ORDER BY icustays.intime ASC LIMIT 1 ) AND chartevents.itemid IN ( SELECT d_items.itemid FROM d_items WHERE d_items.label = 'heart rate' AND d_items.linksto = 'chartevents' ) ORDER BY chartevents.charttime ASC LIMIT 1 ) )"
+ },
+ {
+  "qid": 25,
+  "id": "941095e5c2a9df6746e4a383",
+  "db_id": "mimic_iv",
+  "template": "What is the change in the {vital_name} of patient {patient_id} from the [time_filter_exact2] value measured [time_filter_global2] compared to the [time_filter_exact1] value measured [time_filter_global1]?",
+  "question": "What is the difference in patient 10001725's SpO2 last measured on the first ICU visit compared to the second to last value measured on the first ICU visit?",
+  "query": "SELECT ( SELECT chartevents.valuenum FROM chartevents WHERE chartevents.stay_id IN ( SELECT icustays.stay_id FROM icustays WHERE icustays.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10001725 ) AND icustays.outtime IS NOT NULL ORDER BY icustays.intime ASC LIMIT 1 ) AND chartevents.itemid IN ( SELECT d_items.itemid FROM d_items WHERE d_items.label = 'o2 saturation pulseoxymetry' AND d_items.linksto = 'chartevents' ) AND chartevents.charttime = ( SELECT DISTINCT chartevents.charttime FROM chartevents WHERE chartevents.stay_id IN ( SELECT icustays.stay_id FROM icustays WHERE icustays.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10001725 ) AND icustays.outtime IS NOT NULL ORDER BY icustays.intime ASC LIMIT 1 ) AND chartevents.itemid IN ( SELECT d_items.itemid FROM d_items WHERE d_items.label = 'o2 saturation pulseoxymetry' AND d_items.linksto = 'chartevents' ) ORDER BY chartevents.charttime DESC LIMIT 1 ) ) - ( SELECT chartevents.valuenum FROM chartevents WHERE chartevents.stay_id IN ( SELECT icustays.stay_id FROM icustays WHERE icustays.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10001725 ) AND icustays.outtime IS NOT NULL ORDER BY icustays.intime ASC LIMIT 1 ) AND chartevents.itemid IN ( SELECT d_items.itemid FROM d_items WHERE d_items.label = 'o2 saturation pulseoxymetry' AND d_items.linksto = 'chartevents' ) AND chartevents.charttime = ( SELECT DISTINCT chartevents.charttime FROM chartevents WHERE chartevents.stay_id IN ( SELECT icustays.stay_id FROM icustays WHERE icustays.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10001725 ) AND icustays.outtime IS NOT NULL ORDER BY icustays.intime ASC LIMIT 1 ) AND chartevents.itemid IN ( SELECT d_items.itemid FROM d_items WHERE d_items.label = 'o2 saturation pulseoxymetry' AND d_items.linksto = 'chartevents' ) ORDER BY chartevents.charttime DESC LIMIT 1 OFFSET 1 ) )",
+  "gold_sql": "SELECT ( SELECT chartevents.valuenum FROM chartevents WHERE chartevents.stay_id IN ( SELECT icustays.stay_id FROM icustays WHERE icustays.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10001725 ) AND icustays.outtime IS NOT NULL ORDER BY icustays.intime ASC LIMIT 1 ) AND chartevents.itemid IN ( SELECT d_items.itemid FROM d_items WHERE d_items.label = 'o2 saturation pulseoxymetry' AND d_items.linksto = 'chartevents' ) AND chartevents.charttime = ( SELECT DISTINCT chartevents.charttime FROM chartevents WHERE chartevents.stay_id IN ( SELECT icustays.stay_id FROM icustays WHERE icustays.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10001725 ) AND icustays.outtime IS NOT NULL ORDER BY icustays.intime ASC LIMIT 1 ) AND chartevents.itemid IN ( SELECT d_items.itemid FROM d_items WHERE d_items.label = 'o2 saturation pulseoxymetry' AND d_items.linksto = 'chartevents' ) ORDER BY chartevents.charttime DESC LIMIT 1 ) ) - ( SELECT chartevents.valuenum FROM chartevents WHERE chartevents.stay_id IN ( SELECT icustays.stay_id FROM icustays WHERE icustays.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10001725 ) AND icustays.outtime IS NOT NULL ORDER BY icustays.intime ASC LIMIT 1 ) AND chartevents.itemid IN ( SELECT d_items.itemid FROM d_items WHERE d_items.label = 'o2 saturation pulseoxymetry' AND d_items.linksto = 'chartevents' ) AND chartevents.charttime = ( SELECT DISTINCT chartevents.charttime FROM chartevents WHERE chartevents.stay_id IN ( SELECT icustays.stay_id FROM icustays WHERE icustays.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10001725 ) AND icustays.outtime IS NOT NULL ORDER BY icustays.intime ASC LIMIT 1 ) AND chartevents.itemid IN ( SELECT d_items.itemid FROM d_items WHERE d_items.label = 'o2 saturation pulseoxymetry' AND d_items.linksto = 'chartevents' ) ORDER BY chartevents.charttime DESC LIMIT 1 OFFSET 1 ) )"
+ },
+ {
+  "qid": 26,
+  "id": "b5ddccb2652019203e02c96e",
+  "db_id": "mimic_iv",
+  "template": "What is the change in the {vital_name} of patient {patient_id} from the [time_filter_exact2] value measured [time_filter_global2] compared to the [time_filter_exact1] value measured [time_filter_global1]?",
+  "question": "How much does the systolic blood pressure change in patient 10003046 last measured on the last ICU visit compared to the first value measured on the last ICU visit?",
+  "query": "SELECT ( SELECT chartevents.valuenum FROM chartevents WHERE chartevents.stay_id IN ( SELECT icustays.stay_id FROM icustays WHERE icustays.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10003046 ) AND icustays.outtime IS NOT NULL ORDER BY icustays.intime DESC LIMIT 1 ) AND chartevents.itemid IN ( SELECT d_items.itemid FROM d_items WHERE d_items.label = 'arterial blood pressure systolic' AND d_items.linksto = 'chartevents' ) AND chartevents.charttime = ( SELECT DISTINCT chartevents.charttime FROM chartevents WHERE chartevents.stay_id IN ( SELECT icustays.stay_id FROM icustays WHERE icustays.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10003046 ) AND icustays.outtime IS NOT NULL ORDER BY icustays.intime DESC LIMIT 1 ) AND chartevents.itemid IN ( SELECT d_items.itemid FROM d_items WHERE d_items.label = 'arterial blood pressure systolic' AND d_items.linksto = 'chartevents' ) ORDER BY chartevents.charttime DESC LIMIT 1 ) ) - ( SELECT chartevents.valuenum FROM chartevents WHERE chartevents.stay_id IN ( SELECT icustays.stay_id FROM icustays WHERE icustays.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10003046 ) AND icustays.outtime IS NOT NULL ORDER BY icustays.intime DESC LIMIT 1 ) AND chartevents.itemid IN ( SELECT d_items.itemid FROM d_items WHERE d_items.label = 'arterial blood pressure systolic' AND d_items.linksto = 'chartevents' ) AND chartevents.charttime = ( SELECT DISTINCT chartevents.charttime FROM chartevents WHERE chartevents.stay_id IN ( SELECT icustays.stay_id FROM icustays WHERE icustays.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10003046 ) AND icustays.outtime IS NOT NULL ORDER BY icustays.intime DESC LIMIT 1 ) AND chartevents.itemid IN ( SELECT d_items.itemid FROM d_items WHERE d_items.label = 'arterial blood pressure systolic' AND d_items.linksto = 'chartevents' ) ORDER BY chartevents.charttime ASC LIMIT 1 ) )",
+  "gold_sql": "SELECT ( SELECT chartevents.valuenum FROM chartevents WHERE chartevents.stay_id IN ( SELECT icustays.stay_id FROM icustays WHERE icustays.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10003046 ) AND icustays.outtime IS NOT NULL ORDER BY icustays.intime DESC LIMIT 1 ) AND chartevents.itemid IN ( SELECT d_items.itemid FROM d_items WHERE d_items.label = 'arterial blood pressure systolic' AND d_items.linksto = 'chartevents' ) AND chartevents.charttime = ( SELECT DISTINCT chartevents.charttime FROM chartevents WHERE chartevents.stay_id IN ( SELECT icustays.stay_id FROM icustays WHERE icustays.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10003046 ) AND icustays.outtime IS NOT NULL ORDER BY icustays.intime DESC LIMIT 1 ) AND chartevents.itemid IN ( SELECT d_items.itemid FROM d_items WHERE d_items.label = 'arterial blood pressure systolic' AND d_items.linksto = 'chartevents' ) ORDER BY chartevents.charttime DESC LIMIT 1 ) ) - ( SELECT chartevents.valuenum FROM chartevents WHERE chartevents.stay_id IN ( SELECT icustays.stay_id FROM icustays WHERE icustays.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10003046 ) AND icustays.outtime IS NOT NULL ORDER BY icustays.intime DESC LIMIT 1 ) AND chartevents.itemid IN ( SELECT d_items.itemid FROM d_items WHERE d_items.label = 'arterial blood pressure systolic' AND d_items.linksto = 'chartevents' ) AND chartevents.charttime = ( SELECT DISTINCT chartevents.charttime FROM chartevents WHERE chartevents.stay_id IN ( SELECT icustays.stay_id FROM icustays WHERE icustays.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10003046 ) AND icustays.outtime IS NOT NULL ORDER BY icustays.intime DESC LIMIT 1 ) AND chartevents.itemid IN ( SELECT d_items.itemid FROM d_items WHERE d_items.label = 'arterial blood pressure systolic' AND d_items.linksto = 'chartevents' ) ORDER BY chartevents.charttime ASC LIMIT 1 ) )"
+ },
+ {
+  "qid": 27,
+  "id": "9ea8c0016a33c461c3a77f56",
+  "db_id": "mimic_iv",
+  "template": "What is the change in the {vital_name} of patient {patient_id} from the [time_filter_exact2] value measured [time_filter_global2] compared to the [time_filter_exact1] value measured [time_filter_global1]?",
+  "question": "How much does the systolic blood pressure of patient 10037975 change second measured on the first ICU visit compared to the first value measured on the first ICU visit?",
+  "query": "SELECT ( SELECT chartevents.valuenum FROM chartevents WHERE chartevents.stay_id IN ( SELECT icustays.stay_id FROM icustays WHERE icustays.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10037975 ) AND icustays.outtime IS NOT NULL ORDER BY icustays.intime ASC LIMIT 1 ) AND chartevents.itemid IN ( SELECT d_items.itemid FROM d_items WHERE d_items.label = 'arterial blood pressure systolic' AND d_items.linksto = 'chartevents' ) AND chartevents.charttime = ( SELECT DISTINCT chartevents.charttime FROM chartevents WHERE chartevents.stay_id IN ( SELECT icustays.stay_id FROM icustays WHERE icustays.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10037975 ) AND icustays.outtime IS NOT NULL ORDER BY icustays.intime ASC LIMIT 1 ) AND chartevents.itemid IN ( SELECT d_items.itemid FROM d_items WHERE d_items.label = 'arterial blood pressure systolic' AND d_items.linksto = 'chartevents' ) ORDER BY chartevents.charttime ASC LIMIT 1 OFFSET 1 ) ) - ( SELECT chartevents.valuenum FROM chartevents WHERE chartevents.stay_id IN ( SELECT icustays.stay_id FROM icustays WHERE icustays.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10037975 ) AND icustays.outtime IS NOT NULL ORDER BY icustays.intime ASC LIMIT 1 ) AND chartevents.itemid IN ( SELECT d_items.itemid FROM d_items WHERE d_items.label = 'arterial blood pressure systolic' AND d_items.linksto = 'chartevents' ) AND chartevents.charttime = ( SELECT DISTINCT chartevents.charttime FROM chartevents WHERE chartevents.stay_id IN ( SELECT icustays.stay_id FROM icustays WHERE icustays.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10037975 ) AND icustays.outtime IS NOT NULL ORDER BY icustays.intime ASC LIMIT 1 ) AND chartevents.itemid IN ( SELECT d_items.itemid FROM d_items WHERE d_items.label = 'arterial blood pressure systolic' AND d_items.linksto = 'chartevents' ) ORDER BY chartevents.charttime ASC LIMIT 1 ) )",
+  "gold_sql": "SELECT ( SELECT chartevents.valuenum FROM chartevents WHERE chartevents.stay_id IN ( SELECT icustays.stay_id FROM icustays WHERE icustays.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10037975 ) AND icustays.outtime IS NOT NULL ORDER BY icustays.intime ASC LIMIT 1 ) AND chartevents.itemid IN ( SELECT d_items.itemid FROM d_items WHERE d_items.label = 'arterial blood pressure systolic' AND d_items.linksto = 'chartevents' ) AND chartevents.charttime = ( SELECT DISTINCT chartevents.charttime FROM chartevents WHERE chartevents.stay_id IN ( SELECT icustays.stay_id FROM icustays WHERE icustays.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10037975 ) AND icustays.outtime IS NOT NULL ORDER BY icustays.intime ASC LIMIT 1 ) AND chartevents.itemid IN ( SELECT d_items.itemid FROM d_items WHERE d_items.label = 'arterial blood pressure systolic' AND d_items.linksto = 'chartevents' ) ORDER BY chartevents.charttime ASC LIMIT 1 OFFSET 1 ) ) - ( SELECT chartevents.valuenum FROM chartevents WHERE chartevents.stay_id IN ( SELECT icustays.stay_id FROM icustays WHERE icustays.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10037975 ) AND icustays.outtime IS NOT NULL ORDER BY icustays.intime ASC LIMIT 1 ) AND chartevents.itemid IN ( SELECT d_items.itemid FROM d_items WHERE d_items.label = 'arterial blood pressure systolic' AND d_items.linksto = 'chartevents' ) AND chartevents.charttime = ( SELECT DISTINCT chartevents.charttime FROM chartevents WHERE chartevents.stay_id IN ( SELECT icustays.stay_id FROM icustays WHERE icustays.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10037975 ) AND icustays.outtime IS NOT NULL ORDER BY icustays.intime ASC LIMIT 1 ) AND chartevents.itemid IN ( SELECT d_items.itemid FROM d_items WHERE d_items.label = 'arterial blood pressure systolic' AND d_items.linksto = 'chartevents' ) ORDER BY chartevents.charttime ASC LIMIT 1 ) )"
+ },
+ {
+  "qid": 28,
+  "id": "5ae9eba9c11262b3bc8961b7",
+  "db_id": "mimic_iv",
+  "template": "What is the change in the {vital_name} of patient {patient_id} from the [time_filter_exact2] value measured [time_filter_global2] compared to the [time_filter_exact1] value measured [time_filter_global1]?",
+  "question": "Tell me the change in the systolic blood pressure of patient 10020187 last measured on the last ICU visit compared to the value second to last measured on the last ICU visit?",
+  "query": "SELECT ( SELECT chartevents.valuenum FROM chartevents WHERE chartevents.stay_id IN ( SELECT icustays.stay_id FROM icustays WHERE icustays.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10020187 ) AND icustays.outtime IS NOT NULL ORDER BY icustays.intime DESC LIMIT 1 ) AND chartevents.itemid IN ( SELECT d_items.itemid FROM d_items WHERE d_items.label = 'arterial blood pressure systolic' AND d_items.linksto = 'chartevents' ) AND chartevents.charttime = ( SELECT DISTINCT chartevents.charttime FROM chartevents WHERE chartevents.stay_id IN ( SELECT icustays.stay_id FROM icustays WHERE icustays.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10020187 ) AND icustays.outtime IS NOT NULL ORDER BY icustays.intime DESC LIMIT 1 ) AND chartevents.itemid IN ( SELECT d_items.itemid FROM d_items WHERE d_items.label = 'arterial blood pressure systolic' AND d_items.linksto = 'chartevents' ) ORDER BY chartevents.charttime DESC LIMIT 1 ) ) - ( SELECT chartevents.valuenum FROM chartevents WHERE chartevents.stay_id IN ( SELECT icustays.stay_id FROM icustays WHERE icustays.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10020187 ) AND icustays.outtime IS NOT NULL ORDER BY icustays.intime DESC LIMIT 1 ) AND chartevents.itemid IN ( SELECT d_items.itemid FROM d_items WHERE d_items.label = 'arterial blood pressure systolic' AND d_items.linksto = 'chartevents' ) AND chartevents.charttime = ( SELECT DISTINCT chartevents.charttime FROM chartevents WHERE chartevents.stay_id IN ( SELECT icustays.stay_id FROM icustays WHERE icustays.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10020187 ) AND icustays.outtime IS NOT NULL ORDER BY icustays.intime DESC LIMIT 1 ) AND chartevents.itemid IN ( SELECT d_items.itemid FROM d_items WHERE d_items.label = 'arterial blood pressure systolic' AND d_items.linksto = 'chartevents' ) ORDER BY chartevents.charttime DESC LIMIT 1 OFFSET 1 ) )",
+  "gold_sql": "SELECT ( SELECT chartevents.valuenum FROM chartevents WHERE chartevents.stay_id IN ( SELECT icustays.stay_id FROM icustays WHERE icustays.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10020187 ) AND icustays.outtime IS NOT NULL ORDER BY icustays.intime DESC LIMIT 1 ) AND chartevents.itemid IN ( SELECT d_items.itemid FROM d_items WHERE d_items.label = 'arterial blood pressure systolic' AND d_items.linksto = 'chartevents' ) AND chartevents.charttime = ( SELECT DISTINCT chartevents.charttime FROM chartevents WHERE chartevents.stay_id IN ( SELECT icustays.stay_id FROM icustays WHERE icustays.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10020187 ) AND icustays.outtime IS NOT NULL ORDER BY icustays.intime DESC LIMIT 1 ) AND chartevents.itemid IN ( SELECT d_items.itemid FROM d_items WHERE d_items.label = 'arterial blood pressure systolic' AND d_items.linksto = 'chartevents' ) ORDER BY chartevents.charttime DESC LIMIT 1 ) ) - ( SELECT chartevents.valuenum FROM chartevents WHERE chartevents.stay_id IN ( SELECT icustays.stay_id FROM icustays WHERE icustays.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10020187 ) AND icustays.outtime IS NOT NULL ORDER BY icustays.intime DESC LIMIT 1 ) AND chartevents.itemid IN ( SELECT d_items.itemid FROM d_items WHERE d_items.label = 'arterial blood pressure systolic' AND d_items.linksto = 'chartevents' ) AND chartevents.charttime = ( SELECT DISTINCT chartevents.charttime FROM chartevents WHERE chartevents.stay_id IN ( SELECT icustays.stay_id FROM icustays WHERE icustays.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10020187 ) AND icustays.outtime IS NOT NULL ORDER BY icustays.intime DESC LIMIT 1 ) AND chartevents.itemid IN ( SELECT d_items.itemid FROM d_items WHERE d_items.label = 'arterial blood pressure systolic' AND d_items.linksto = 'chartevents' ) ORDER BY chartevents.charttime DESC LIMIT 1 OFFSET 1 ) )"
+ },
+ {
+  "qid": 29,
+  "id": "2b3268beab056ff505b05347",
+  "db_id": "mimic_iv",
+  "template": "Has_verb patient {patient_id} received any lab test [time_filter_global1]?",
+  "question": "Has patient 10029291 undergone a laboratory test since 01/2100?",
+  "query": "SELECT COUNT(*)>0 FROM labevents WHERE labevents.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10029291 ) AND strftime('%Y-%m',labevents.charttime) >= '2100-01'",
+  "gold_sql": "SELECT COUNT(*)>0 FROM labevents WHERE labevents.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10029291 ) AND strftime('%Y-%m',labevents.charttime) >= '2100-01'"
+ },
+ {
+  "qid": 30,
+  "id": "d2926f4a0d345771d9cecb6a",
+  "db_id": "mimic_iv",
+  "template": "Has_verb patient {patient_id} received any lab test [time_filter_global1]?",
+  "question": "Has patient 10031757 received lab tests since 15 months ago?",
+  "query": "SELECT COUNT(*)>0 FROM labevents WHERE labevents.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10031757 ) AND datetime(labevents.charttime) >= datetime(current_time,'-15 month')",
+  "gold_sql": "SELECT COUNT(*)>0 FROM labevents WHERE labevents.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10031757 ) AND datetime(labevents.charttime) >= datetime('2100-12-31 23:59:00','-15 month')"
+ },
+ {
+  "qid": 31,
+  "id": "d9f1d82756382ceba0364eb7",
+  "db_id": "mimic_iv",
+  "template": "Has_verb patient {patient_id} received any lab test [time_filter_global1]?",
+  "question": "Has patient 10020786 undergone any lab test this year?",
+  "query": "SELECT COUNT(*)>0 FROM labevents WHERE labevents.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10020786 ) AND datetime(labevents.charttime,'start of year') = datetime(current_time,'start of year','-0 year')",
+  "gold_sql": "SELECT COUNT(*)>0 FROM labevents WHERE labevents.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10020786 ) AND datetime(labevents.charttime,'start of year') = datetime('2100-12-31 23:59:00','start of year','-0 year')"
+ },
+ {
+  "qid": 32,
+  "id": "9957eec4f3658a2214f701c9",
+  "db_id": "mimic_iv",
+  "template": "Has_verb patient {patient_id} received any lab test [time_filter_global1]?",
+  "question": "Was a lab test performed on patient 10007795 in 08/2100?",
+  "query": "SELECT COUNT(*)>0 FROM labevents WHERE labevents.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10007795 ) AND strftime('%Y-%m',labevents.charttime) = '2100-08'",
+  "gold_sql": "SELECT COUNT(*)>0 FROM labevents WHERE labevents.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10007795 ) AND strftime('%Y-%m',labevents.charttime) = '2100-08'"
+ },
+ {
+  "qid": 33,
+  "id": "82c55832a756019258539f9d",
+  "db_id": "mimic_iv",
+  "template": "Has_verb patient {patient_id} received any lab test [time_filter_global1]?",
+  "question": "Has patient 10018423 undergone a laboratory test since 01/2100?",
+  "query": "SELECT COUNT(*)>0 FROM labevents WHERE labevents.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10018423 ) AND strftime('%Y-%m',labevents.charttime) >= '2100-01'",
+  "gold_sql": "SELECT COUNT(*)>0 FROM labevents WHERE labevents.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10018423 ) AND strftime('%Y-%m',labevents.charttime) >= '2100-01'"
+ },
+ {
+  "qid": 34,
+  "id": "1a8e264083c39ca2b5c9bc74",
+  "db_id": "mimic_iv",
+  "template": "Has_verb patient {patient_id} received any lab test [time_filter_global1]?",
+  "question": "Has patient 10018423 received lab tests since 1 year ago?",
+  "query": "SELECT COUNT(*)>0 FROM labevents WHERE labevents.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10018423 ) AND datetime(labevents.charttime) >= datetime(current_time,'-1 year')",
+  "gold_sql": "SELECT COUNT(*)>0 FROM labevents WHERE labevents.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10018423 ) AND datetime(labevents.charttime) >= datetime('2100-12-31 23:59:00','-1 year')"
+ },
+ {
+  "qid": 35,
+  "id": "be808f9b9ff6628170faba78",
+  "db_id": "mimic_iv",
+  "template": "Has_verb patient {patient_id} received any lab test [time_filter_global1]?",
+  "question": "Has patient 10019172 undergone any lab test in 11/this year?",
+  "query": "SELECT COUNT(*)>0 FROM labevents WHERE labevents.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10019172 ) AND datetime(labevents.charttime,'start of year') = datetime(current_time,'start of year','-0 year') AND strftime('%m',labevents.charttime) = '11'",
+  "gold_sql": "SELECT COUNT(*)>0 FROM labevents WHERE labevents.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10019172 ) AND datetime(labevents.charttime,'start of year') = datetime('2100-12-31 23:59:00','start of year','-0 year') AND strftime('%m',labevents.charttime) = '11'"
+ },
+ {
+  "qid": 36,
+  "id": "5bfb3ee348b0af2b550eb5fd",
+  "db_id": "mimic_iv",
+  "template": "Count the number of patients who were prescribed {drug_name} [time_filter_within] after having received a {procedure_name} procedure [time_filter_global1].",
+  "question": "How many patients since 2100 were ketorolac prescribed during the same hospital encounter after undergoing central venous catheter placement with guidance treatment?",
+  "query": "SELECT COUNT( DISTINCT T1.subject_id ) FROM ( SELECT admissions.subject_id, procedures_icd.charttime, admissions.hadm_id FROM procedures_icd JOIN admissions ON procedures_icd.hadm_id = admissions.hadm_id WHERE procedures_icd.icd_code = ( SELECT d_icd_procedures.icd_code FROM d_icd_procedures WHERE d_icd_procedures.long_title = 'central venous catheter placement with guidance' ) AND strftime('%Y',procedures_icd.charttime) >= '2100' ) AS T1 JOIN ( SELECT admissions.subject_id, prescriptions.starttime, admissions.hadm_id FROM prescriptions JOIN admissions ON prescriptions.hadm_id = admissions.hadm_id WHERE prescriptions.drug = 'ketorolac' AND strftime('%Y',prescriptions.starttime) >= '2100' ) AS T2 ON T1.subject_id = T2.subject_id WHERE T1.charttime < T2.starttime AND T1.hadm_id = T2.hadm_id",
+  "gold_sql": "SELECT COUNT( DISTINCT T1.subject_id ) FROM ( SELECT admissions.subject_id, procedures_icd.charttime, admissions.hadm_id FROM procedures_icd JOIN admissions ON procedures_icd.hadm_id = admissions.hadm_id WHERE procedures_icd.icd_code = ( SELECT d_icd_procedures.icd_code FROM d_icd_procedures WHERE d_icd_procedures.long_title = 'central venous catheter placement with guidance' ) AND strftime('%Y',procedures_icd.charttime) >= '2100' ) AS T1 JOIN ( SELECT admissions.subject_id, prescriptions.starttime, admissions.hadm_id FROM prescriptions JOIN admissions ON prescriptions.hadm_id = admissions.hadm_id WHERE prescriptions.drug = 'ketorolac' AND strftime('%Y',prescriptions.starttime) >= '2100' ) AS T2 ON T1.subject_id = T2.subject_id WHERE T1.charttime < T2.starttime AND T1.hadm_id = T2.hadm_id"
+ },
+ {
+  "qid": 37,
+  "id": "77afb1ef1604c879a7c457e5",
+  "db_id": "mimic_iv",
+  "template": "Count the number of patients who were prescribed {drug_name} [time_filter_within] after having received a {procedure_name} procedure [time_filter_global1].",
+  "question": "Calculate the number of patients who were given spironolactone prescription within the same hospital visit following their percutaneous abdominal drainage in the previous year.",
+  "query": "SELECT COUNT( DISTINCT T1.subject_id ) FROM ( SELECT admissions.subject_id, procedures_icd.charttime, admissions.hadm_id FROM procedures_icd JOIN admissions ON procedures_icd.hadm_id = admissions.hadm_id WHERE procedures_icd.icd_code = ( SELECT d_icd_procedures.icd_code FROM d_icd_procedures WHERE d_icd_procedures.long_title = 'percutaneous abdominal drainage' ) AND datetime(procedures_icd.charttime,'start of year') = datetime(current_time,'start of year','-1 year') ) AS T1 JOIN ( SELECT admissions.subject_id, prescriptions.starttime, admissions.hadm_id FROM prescriptions JOIN admissions ON prescriptions.hadm_id = admissions.hadm_id WHERE prescriptions.drug = 'spironolactone' AND datetime(prescriptions.starttime,'start of year') = datetime(current_time,'start of year','-1 year') ) AS T2 ON T1.subject_id = T2.subject_id WHERE T1.charttime < T2.starttime AND T1.hadm_id = T2.hadm_id",
+  "gold_sql": "SELECT COUNT( DISTINCT T1.subject_id ) FROM ( SELECT admissions.subject_id, procedures_icd.charttime, admissions.hadm_id FROM procedures_icd JOIN admissions ON procedures_icd.hadm_id = admissions.hadm_id WHERE procedures_icd.icd_code = ( SELECT d_icd_procedures.icd_code FROM d_icd_procedures WHERE d_icd_procedures.long_title = 'percutaneous abdominal drainage' ) AND datetime(procedures_icd.charttime,'start of year') = datetime('2100-12-31 23:59:00','start of year','-1 year') ) AS T1 JOIN ( SELECT admissions.subject_id, prescriptions.starttime, admissions.hadm_id FROM prescriptions JOIN admissions ON prescriptions.hadm_id = admissions.hadm_id WHERE prescriptions.drug = 'spironolactone' AND datetime(prescriptions.starttime,'start of year') = datetime('2100-12-31 23:59:00','start of year','-1 year') ) AS T2 ON T1.subject_id = T2.subject_id WHERE T1.charttime < T2.starttime AND T1.hadm_id = T2.hadm_id"
+ },
+ {
+  "qid": 38,
+  "id": "b155b30fab3d7945e185f841",
+  "db_id": "mimic_iv",
+  "template": "Count the number of patients who were prescribed {drug_name} [time_filter_within] after having received a {procedure_name} procedure [time_filter_global1].",
+  "question": "Since 2100, how many patients were given glucose gel within the same month after receiving a change feeding device in lower intestinal tract, external approach procedure?",
+  "query": "SELECT COUNT( DISTINCT T1.subject_id ) FROM ( SELECT admissions.subject_id, procedures_icd.charttime FROM procedures_icd JOIN admissions ON procedures_icd.hadm_id = admissions.hadm_id WHERE procedures_icd.icd_code = ( SELECT d_icd_procedures.icd_code FROM d_icd_procedures WHERE d_icd_procedures.long_title = 'change feeding device in lower intestinal tract, external approach' ) AND strftime('%Y',procedures_icd.charttime) >= '2100' ) AS T1 JOIN ( SELECT admissions.subject_id, prescriptions.starttime FROM prescriptions JOIN admissions ON prescriptions.hadm_id = admissions.hadm_id WHERE prescriptions.drug = 'glucose gel' AND strftime('%Y',prescriptions.starttime) >= '2100' ) AS T2 ON T1.subject_id = T2.subject_id WHERE T1.charttime < T2.starttime AND datetime(T1.charttime,'start of month') = datetime(T2.starttime,'start of month')",
+  "gold_sql": "SELECT COUNT( DISTINCT T1.subject_id ) FROM ( SELECT admissions.subject_id, procedures_icd.charttime FROM procedures_icd JOIN admissions ON procedures_icd.hadm_id = admissions.hadm_id WHERE procedures_icd.icd_code = ( SELECT d_icd_procedures.icd_code FROM d_icd_procedures WHERE d_icd_procedures.long_title = 'change feeding device in lower intestinal tract, external approach' ) AND strftime('%Y',procedures_icd.charttime) >= '2100' ) AS T1 JOIN ( SELECT admissions.subject_id, prescriptions.starttime FROM prescriptions JOIN admissions ON prescriptions.hadm_id = admissions.hadm_id WHERE prescriptions.drug = 'glucose gel' AND strftime('%Y',prescriptions.starttime) >= '2100' ) AS T2 ON T1.subject_id = T2.subject_id WHERE T1.charttime < T2.starttime AND datetime(T1.charttime,'start of month') = datetime(T2.starttime,'start of month')"
+ },
+ {
+  "qid": 39,
+  "id": "cdc0b49b39728980763c9830",
+  "db_id": "mimic_iv",
+  "template": "Count the number of patients who were prescribed {drug_name} [time_filter_within] after having received a {procedure_name} procedure [time_filter_global1].",
+  "question": "How many patients during this year were ketorolac prescribed during the same month after undergoing performance of cardiac output, continuous treatment?",
+  "query": "SELECT COUNT( DISTINCT T1.subject_id ) FROM ( SELECT admissions.subject_id, procedures_icd.charttime FROM procedures_icd JOIN admissions ON procedures_icd.hadm_id = admissions.hadm_id WHERE procedures_icd.icd_code = ( SELECT d_icd_procedures.icd_code FROM d_icd_procedures WHERE d_icd_procedures.long_title = 'performance of cardiac output, continuous' ) AND datetime(procedures_icd.charttime,'start of year') = datetime(current_time,'start of year','-0 year') ) AS T1 JOIN ( SELECT admissions.subject_id, prescriptions.starttime FROM prescriptions JOIN admissions ON prescriptions.hadm_id = admissions.hadm_id WHERE prescriptions.drug = 'ketorolac' AND datetime(prescriptions.starttime,'start of year') = datetime(current_time,'start of year','-0 year') ) AS T2 ON T1.subject_id = T2.subject_id WHERE T1.charttime < T2.starttime AND datetime(T1.charttime,'start of month') = datetime(T2.starttime,'start of month')",
+  "gold_sql": "SELECT COUNT( DISTINCT T1.subject_id ) FROM ( SELECT admissions.subject_id, procedures_icd.charttime FROM procedures_icd JOIN admissions ON procedures_icd.hadm_id = admissions.hadm_id WHERE procedures_icd.icd_code = ( SELECT d_icd_procedures.icd_code FROM d_icd_procedures WHERE d_icd_procedures.long_title = 'performance of cardiac output, continuous' ) AND datetime(procedures_icd.charttime,'start of year') = datetime('2100-12-31 23:59:00','start of year','-0 year') ) AS T1 JOIN ( SELECT admissions.subject_id, prescriptions.starttime FROM prescriptions JOIN admissions ON prescriptions.hadm_id = admissions.hadm_id WHERE prescriptions.drug = 'ketorolac' AND datetime(prescriptions.starttime,'start of year') = datetime('2100-12-31 23:59:00','start of year','-0 year') ) AS T2 ON T1.subject_id = T2.subject_id WHERE T1.charttime < T2.starttime AND datetime(T1.charttime,'start of month') = datetime(T2.starttime,'start of month')"
+ },
+ {
+  "qid": 40,
+  "id": "545884471d7fc70a0f8b1fce",
+  "db_id": "mimic_iv",
+  "template": "Count the number of patients who were prescribed {drug_name} [time_filter_within] after having received a {procedure_name} procedure [time_filter_global1].",
+  "question": "Calculate the number of patients who were given acetaminophen prescription within 2 months following their drainage of pancreatic cyst by catheter.",
+  "query": "SELECT COUNT( DISTINCT T1.subject_id ) FROM ( SELECT admissions.subject_id, procedures_icd.charttime FROM procedures_icd JOIN admissions ON procedures_icd.hadm_id = admissions.hadm_id WHERE procedures_icd.icd_code = ( SELECT d_icd_procedures.icd_code FROM d_icd_procedures WHERE d_icd_procedures.long_title = 'drainage of pancreatic cyst by catheter' ) ) AS T1 JOIN ( SELECT admissions.subject_id, prescriptions.starttime FROM prescriptions JOIN admissions ON prescriptions.hadm_id = admissions.hadm_id WHERE prescriptions.drug = 'acetaminophen' ) AS T2 ON T1.subject_id = T2.subject_id WHERE T1.charttime < T2.starttime AND datetime(T2.starttime) BETWEEN datetime(T1.charttime) AND datetime(T1.charttime,'+2 month')",
+  "gold_sql": "SELECT COUNT( DISTINCT T1.subject_id ) FROM ( SELECT admissions.subject_id, procedures_icd.charttime FROM procedures_icd JOIN admissions ON procedures_icd.hadm_id = admissions.hadm_id WHERE procedures_icd.icd_code = ( SELECT d_icd_procedures.icd_code FROM d_icd_procedures WHERE d_icd_procedures.long_title = 'drainage of pancreatic cyst by catheter' ) ) AS T1 JOIN ( SELECT admissions.subject_id, prescriptions.starttime FROM prescriptions JOIN admissions ON prescriptions.hadm_id = admissions.hadm_id WHERE prescriptions.drug = 'acetaminophen' ) AS T2 ON T1.subject_id = T2.subject_id WHERE T1.charttime < T2.starttime AND datetime(T2.starttime) BETWEEN datetime(T1.charttime) AND datetime(T1.charttime,'+2 month')"
+ },
+ {
+  "qid": 41,
+  "id": "8fdc820d61c609ac4f0bed57",
+  "db_id": "mimic_iv",
+  "template": "Count the number of patients who were prescribed {drug_name} [time_filter_within] after having received a {procedure_name} procedure [time_filter_global1].",
+  "question": "In 2100, how many patients were given 0.9% sodium chloride (mini bag plus) in the same month after receiving a other endoscopy of small intestine procedure?",
+  "query": "SELECT COUNT( DISTINCT T1.subject_id ) FROM ( SELECT admissions.subject_id, procedures_icd.charttime FROM procedures_icd JOIN admissions ON procedures_icd.hadm_id = admissions.hadm_id WHERE procedures_icd.icd_code = ( SELECT d_icd_procedures.icd_code FROM d_icd_procedures WHERE d_icd_procedures.long_title = 'other endoscopy of small intestine' ) AND strftime('%Y',procedures_icd.charttime) = '2100' ) AS T1 JOIN ( SELECT admissions.subject_id, prescriptions.starttime FROM prescriptions JOIN admissions ON prescriptions.hadm_id = admissions.hadm_id WHERE prescriptions.drug = '0.9% sodium chloride (mini bag plus)' AND strftime('%Y',prescriptions.starttime) = '2100' ) AS T2 ON T1.subject_id = T2.subject_id WHERE T1.charttime < T2.starttime AND datetime(T1.charttime,'start of month') = datetime(T2.starttime,'start of month')",
+  "gold_sql": "SELECT COUNT( DISTINCT T1.subject_id ) FROM ( SELECT admissions.subject_id, procedures_icd.charttime FROM procedures_icd JOIN admissions ON procedures_icd.hadm_id = admissions.hadm_id WHERE procedures_icd.icd_code = ( SELECT d_icd_procedures.icd_code FROM d_icd_procedures WHERE d_icd_procedures.long_title = 'other endoscopy of small intestine' ) AND strftime('%Y',procedures_icd.charttime) = '2100' ) AS T1 JOIN ( SELECT admissions.subject_id, prescriptions.starttime FROM prescriptions JOIN admissions ON prescriptions.hadm_id = admissions.hadm_id WHERE prescriptions.drug = '0.9% sodium chloride (mini bag plus)' AND strftime('%Y',prescriptions.starttime) = '2100' ) AS T2 ON T1.subject_id = T2.subject_id WHERE T1.charttime < T2.starttime AND datetime(T1.charttime,'start of month') = datetime(T2.starttime,'start of month')"
+ },
+ {
+  "qid": 42,
+  "id": "ef78694fed50bccd3e8eed2e",
+  "db_id": "mimic_iv",
+  "template": "Count the number of patients who were prescribed {drug_name} [time_filter_within] after having received a {procedure_name} procedure [time_filter_global1].",
+  "question": "How many patients in 2100 were lidocaine 5% patch prescribed during the same month after undergoing restriction of left internal carotid artery with intraluminal device, percutaneous approach treatment?",
+  "query": "SELECT COUNT( DISTINCT T1.subject_id ) FROM ( SELECT admissions.subject_id, procedures_icd.charttime FROM procedures_icd JOIN admissions ON procedures_icd.hadm_id = admissions.hadm_id WHERE procedures_icd.icd_code = ( SELECT d_icd_procedures.icd_code FROM d_icd_procedures WHERE d_icd_procedures.long_title = 'restriction of left internal carotid artery with intraluminal device, percutaneous approach' ) AND strftime('%Y',procedures_icd.charttime) = '2100' ) AS T1 JOIN ( SELECT admissions.subject_id, prescriptions.starttime FROM prescriptions JOIN admissions ON prescriptions.hadm_id = admissions.hadm_id WHERE prescriptions.drug = 'lidocaine 5% patch' AND strftime('%Y',prescriptions.starttime) = '2100' ) AS T2 ON T1.subject_id = T2.subject_id WHERE T1.charttime < T2.starttime AND datetime(T1.charttime,'start of month') = datetime(T2.starttime,'start of month')",
+  "gold_sql": "SELECT COUNT( DISTINCT T1.subject_id ) FROM ( SELECT admissions.subject_id, procedures_icd.charttime FROM procedures_icd JOIN admissions ON procedures_icd.hadm_id = admissions.hadm_id WHERE procedures_icd.icd_code = ( SELECT d_icd_procedures.icd_code FROM d_icd_procedures WHERE d_icd_procedures.long_title = 'restriction of left internal carotid artery with intraluminal device, percutaneous approach' ) AND strftime('%Y',procedures_icd.charttime) = '2100' ) AS T1 JOIN ( SELECT admissions.subject_id, prescriptions.starttime FROM prescriptions JOIN admissions ON prescriptions.hadm_id = admissions.hadm_id WHERE prescriptions.drug = 'lidocaine 5% patch' AND strftime('%Y',prescriptions.starttime) = '2100' ) AS T2 ON T1.subject_id = T2.subject_id WHERE T1.charttime < T2.starttime AND datetime(T1.charttime,'start of month') = datetime(T2.starttime,'start of month')"
+ },
+ {
+  "qid": 43,
+  "id": "70826ed4c727196227cb1ef9",
+  "db_id": "mimic_iv",
+  "template": "What are_verb the top [n_rank] frequent lab tests that patients had [time_filter_within] after having received a {procedure_name} procedure [time_filter_global1]?",
+  "question": "For patients who were given thoracoscopic decortication of lung, what are the top five most common lab tests that followed afterwards during the same month?",
+  "query": "SELECT d_labitems.label FROM d_labitems WHERE d_labitems.itemid IN ( SELECT T3.itemid FROM ( SELECT T2.itemid, DENSE_RANK() OVER ( ORDER BY COUNT(*) DESC ) AS C1 FROM ( SELECT admissions.subject_id, procedures_icd.charttime FROM procedures_icd JOIN admissions ON procedures_icd.hadm_id = admissions.hadm_id WHERE procedures_icd.icd_code = ( SELECT d_icd_procedures.icd_code FROM d_icd_procedures WHERE d_icd_procedures.long_title = 'thoracoscopic decortication of lung' ) ) AS T1 JOIN ( SELECT admissions.subject_id, labevents.itemid, labevents.charttime FROM labevents JOIN admissions ON labevents.hadm_id = admissions.hadm_id ) AS T2 ON T1.subject_id = T2.subject_id WHERE T1.charttime < T2.charttime AND datetime(T1.charttime,'start of month') = datetime(T2.charttime,'start of month') GROUP BY T2.itemid ) AS T3 WHERE T3.C1 <= 5 )",
+  "gold_sql": "SELECT d_labitems.label FROM d_labitems WHERE d_labitems.itemid IN ( SELECT T3.itemid FROM ( SELECT T2.itemid, DENSE_RANK() OVER ( ORDER BY COUNT(*) DESC ) AS C1 FROM ( SELECT admissions.subject_id, procedures_icd.charttime FROM procedures_icd JOIN admissions ON procedures_icd.hadm_id = admissions.hadm_id WHERE procedures_icd.icd_code = ( SELECT d_icd_procedures.icd_code FROM d_icd_procedures WHERE d_icd_procedures.long_title = 'thoracoscopic decortication of lung' ) ) AS T1 JOIN ( SELECT admissions.subject_id, labevents.itemid, labevents.charttime FROM labevents JOIN admissions ON labevents.hadm_id = admissions.hadm_id ) AS T2 ON T1.subject_id = T2.subject_id WHERE T1.charttime < T2.charttime AND datetime(T1.charttime,'start of month') = datetime(T2.charttime,'start of month') GROUP BY T2.itemid ) AS T3 WHERE T3.C1 <= 5 )"
+ },
+ {
+  "qid": 44,
+  "id": "5a615775859c42b0cfc588b1",
+  "db_id": "mimic_iv",
+  "template": "What are_verb the top [n_rank] frequent lab tests that patients had [time_filter_within] after having received a {procedure_name} procedure [time_filter_global1]?",
+  "question": "Get me the top five most frequent lab tests that patients had in the same month after receiving ultrasonography of superior vena cava, guidance in 2100.",
+  "query": "SELECT d_labitems.label FROM d_labitems WHERE d_labitems.itemid IN ( SELECT T3.itemid FROM ( SELECT T2.itemid, DENSE_RANK() OVER ( ORDER BY COUNT(*) DESC ) AS C1 FROM ( SELECT admissions.subject_id, procedures_icd.charttime FROM procedures_icd JOIN admissions ON procedures_icd.hadm_id = admissions.hadm_id WHERE procedures_icd.icd_code = ( SELECT d_icd_procedures.icd_code FROM d_icd_procedures WHERE d_icd_procedures.long_title = 'ultrasonography of superior vena cava, guidance' ) AND strftime('%Y',procedures_icd.charttime) = '2100' ) AS T1 JOIN ( SELECT admissions.subject_id, labevents.itemid, labevents.charttime FROM labevents JOIN admissions ON labevents.hadm_id = admissions.hadm_id WHERE strftime('%Y',labevents.charttime) = '2100' ) AS T2 ON T1.subject_id = T2.subject_id WHERE T1.charttime < T2.charttime AND datetime(T1.charttime,'start of month') = datetime(T2.charttime,'start of month') GROUP BY T2.itemid ) AS T3 WHERE T3.C1 <= 5 )",
+  "gold_sql": "SELECT d_labitems.label FROM d_labitems WHERE d_labitems.itemid IN ( SELECT T3.itemid FROM ( SELECT T2.itemid, DENSE_RANK() OVER ( ORDER BY COUNT(*) DESC ) AS C1 FROM ( SELECT admissions.subject_id, procedures_icd.charttime FROM procedures_icd JOIN admissions ON procedures_icd.hadm_id = admissions.hadm_id WHERE procedures_icd.icd_code = ( SELECT d_icd_procedures.icd_code FROM d_icd_procedures WHERE d_icd_procedures.long_title = 'ultrasonography of superior vena cava, guidance' ) AND strftime('%Y',procedures_icd.charttime) = '2100' ) AS T1 JOIN ( SELECT admissions.subject_id, labevents.itemid, labevents.charttime FROM labevents JOIN admissions ON labevents.hadm_id = admissions.hadm_id WHERE strftime('%Y',labevents.charttime) = '2100' ) AS T2 ON T1.subject_id = T2.subject_id WHERE T1.charttime < T2.charttime AND datetime(T1.charttime,'start of month') = datetime(T2.charttime,'start of month') GROUP BY T2.itemid ) AS T3 WHERE T3.C1 <= 5 )"
+ },
+ {
+  "qid": 45,
+  "id": "96dabd861de92e31433a8552",
+  "db_id": "mimic_iv",
+  "template": "What are_verb the top [n_rank] frequent lab tests that patients had [time_filter_within] after having received a {procedure_name} procedure [time_filter_global1]?",
+  "question": "Can you provide the top five most frequent lab tests that within the same month took place after patients had alcohol detoxification in 2100?",
+  "query": "SELECT d_labitems.label FROM d_labitems WHERE d_labitems.itemid IN ( SELECT T3.itemid FROM ( SELECT T2.itemid, DENSE_RANK() OVER ( ORDER BY COUNT(*) DESC ) AS C1 FROM ( SELECT admissions.subject_id, procedures_icd.charttime FROM procedures_icd JOIN admissions ON procedures_icd.hadm_id = admissions.hadm_id WHERE procedures_icd.icd_code = ( SELECT d_icd_procedures.icd_code FROM d_icd_procedures WHERE d_icd_procedures.long_title = 'alcohol detoxification' ) AND strftime('%Y',procedures_icd.charttime) = '2100' ) AS T1 JOIN ( SELECT admissions.subject_id, labevents.itemid, labevents.charttime FROM labevents JOIN admissions ON labevents.hadm_id = admissions.hadm_id WHERE strftime('%Y',labevents.charttime) = '2100' ) AS T2 ON T1.subject_id = T2.subject_id WHERE T1.charttime < T2.charttime AND datetime(T1.charttime,'start of month') = datetime(T2.charttime,'start of month') GROUP BY T2.itemid ) AS T3 WHERE T3.C1 <= 5 )",
+  "gold_sql": "SELECT d_labitems.label FROM d_labitems WHERE d_labitems.itemid IN ( SELECT T3.itemid FROM ( SELECT T2.itemid, DENSE_RANK() OVER ( ORDER BY COUNT(*) DESC ) AS C1 FROM ( SELECT admissions.subject_id, procedures_icd.charttime FROM procedures_icd JOIN admissions ON procedures_icd.hadm_id = admissions.hadm_id WHERE procedures_icd.icd_code = ( SELECT d_icd_procedures.icd_code FROM d_icd_procedures WHERE d_icd_procedures.long_title = 'alcohol detoxification' ) AND strftime('%Y',procedures_icd.charttime) = '2100' ) AS T1 JOIN ( SELECT admissions.subject_id, labevents.itemid, labevents.charttime FROM labevents JOIN admissions ON labevents.hadm_id = admissions.hadm_id WHERE strftime('%Y',labevents.charttime) = '2100' ) AS T2 ON T1.subject_id = T2.subject_id WHERE T1.charttime < T2.charttime AND datetime(T1.charttime,'start of month') = datetime(T2.charttime,'start of month') GROUP BY T2.itemid ) AS T3 WHERE T3.C1 <= 5 )"
+ },
+ {
+  "qid": 46,
+  "id": "03a6a876fbcd2443f7f28749",
+  "db_id": "mimic_iv",
+  "template": "What are_verb the top [n_rank] frequent lab tests that patients had [time_filter_within] after having received a {procedure_name} procedure [time_filter_global1]?",
+  "question": "What were the four most commonly conducted lab tests during the same month for patients who had a other skin graft to other sites procedure during this year?",
+  "query": "SELECT d_labitems.label FROM d_labitems WHERE d_labitems.itemid IN ( SELECT T3.itemid FROM ( SELECT T2.itemid, DENSE_RANK() OVER ( ORDER BY COUNT(*) DESC ) AS C1 FROM ( SELECT admissions.subject_id, procedures_icd.charttime FROM procedures_icd JOIN admissions ON procedures_icd.hadm_id = admissions.hadm_id WHERE procedures_icd.icd_code = ( SELECT d_icd_procedures.icd_code FROM d_icd_procedures WHERE d_icd_procedures.long_title = 'other skin graft to other sites' ) AND datetime(procedures_icd.charttime,'start of year') = datetime(current_time,'start of year','-0 year') ) AS T1 JOIN ( SELECT admissions.subject_id, labevents.itemid, labevents.charttime FROM labevents JOIN admissions ON labevents.hadm_id = admissions.hadm_id WHERE datetime(labevents.charttime,'start of year') = datetime(current_time,'start of year','-0 year') ) AS T2 ON T1.subject_id = T2.subject_id WHERE T1.charttime < T2.charttime AND datetime(T1.charttime,'start of month') = datetime(T2.charttime,'start of month') GROUP BY T2.itemid ) AS T3 WHERE T3.C1 <= 4 )",
+  "gold_sql": "SELECT d_labitems.label FROM d_labitems WHERE d_labitems.itemid IN ( SELECT T3.itemid FROM ( SELECT T2.itemid, DENSE_RANK() OVER ( ORDER BY COUNT(*) DESC ) AS C1 FROM ( SELECT admissions.subject_id, procedures_icd.charttime FROM procedures_icd JOIN admissions ON procedures_icd.hadm_id = admissions.hadm_id WHERE procedures_icd.icd_code = ( SELECT d_icd_procedures.icd_code FROM d_icd_procedures WHERE d_icd_procedures.long_title = 'other skin graft to other sites' ) AND datetime(procedures_icd.charttime,'start of year') = datetime('2100-12-31 23:59:00','start of year','-0 year') ) AS T1 JOIN ( SELECT admissions.subject_id, labevents.itemid, labevents.charttime FROM labevents JOIN admissions ON labevents.hadm_id = admissions.hadm_id WHERE datetime(labevents.charttime,'start of year') = datetime('2100-12-31 23:59:00','start of year','-0 year') ) AS T2 ON T1.subject_id = T2.subject_id WHERE T1.charttime < T2.charttime AND datetime(T1.charttime,'start of month') = datetime(T2.charttime,'start of month') GROUP BY T2.itemid ) AS T3 WHERE T3.C1 <= 4 )"
+ },
+ {
+  "qid": 47,
+  "id": "7af6e600c77232304b81e62d",
+  "db_id": "mimic_iv",
+  "template": "What are_verb the top [n_rank] frequent lab tests that patients had [time_filter_within] after having received a {procedure_name} procedure [time_filter_global1]?",
+  "question": "What are the three most frequent lab tests that patients had during the same hospital visit after receiving occlusion of right vertebral artery with intraluminal device, percutaneous approach since 1 year ago?",
+  "query": "SELECT d_labitems.label FROM d_labitems WHERE d_labitems.itemid IN ( SELECT T3.itemid FROM ( SELECT T2.itemid, DENSE_RANK() OVER ( ORDER BY COUNT(*) DESC ) AS C1 FROM ( SELECT admissions.subject_id, procedures_icd.charttime, admissions.hadm_id FROM procedures_icd JOIN admissions ON procedures_icd.hadm_id = admissions.hadm_id WHERE procedures_icd.icd_code = ( SELECT d_icd_procedures.icd_code FROM d_icd_procedures WHERE d_icd_procedures.long_title = 'occlusion of right vertebral artery with intraluminal device, percutaneous approach' ) AND datetime(procedures_icd.charttime) >= datetime(current_time,'-1 year') ) AS T1 JOIN ( SELECT admissions.subject_id, labevents.itemid, labevents.charttime, admissions.hadm_id FROM labevents JOIN admissions ON labevents.hadm_id = admissions.hadm_id WHERE datetime(labevents.charttime) >= datetime(current_time,'-1 year') ) AS T2 ON T1.subject_id = T2.subject_id WHERE T1.charttime < T2.charttime AND T1.hadm_id = T2.hadm_id GROUP BY T2.itemid ) AS T3 WHERE T3.C1 <= 3 )",
+  "gold_sql": "SELECT d_labitems.label FROM d_labitems WHERE d_labitems.itemid IN ( SELECT T3.itemid FROM ( SELECT T2.itemid, DENSE_RANK() OVER ( ORDER BY COUNT(*) DESC ) AS C1 FROM ( SELECT admissions.subject_id, procedures_icd.charttime, admissions.hadm_id FROM procedures_icd JOIN admissions ON procedures_icd.hadm_id = admissions.hadm_id WHERE procedures_icd.icd_code = ( SELECT d_icd_procedures.icd_code FROM d_icd_procedures WHERE d_icd_procedures.long_title = 'occlusion of right vertebral artery with intraluminal device, percutaneous approach' ) AND datetime(procedures_icd.charttime) >= datetime('2100-12-31 23:59:00','-1 year') ) AS T1 JOIN ( SELECT admissions.subject_id, labevents.itemid, labevents.charttime, admissions.hadm_id FROM labevents JOIN admissions ON labevents.hadm_id = admissions.hadm_id WHERE datetime(labevents.charttime) >= datetime('2100-12-31 23:59:00','-1 year') ) AS T2 ON T1.subject_id = T2.subject_id WHERE T1.charttime < T2.charttime AND T1.hadm_id = T2.hadm_id GROUP BY T2.itemid ) AS T3 WHERE T3.C1 <= 3 )"
+ },
+ {
+  "qid": 48,
+  "id": "91b9ca43bd8f11ad31a158c7",
+  "db_id": "mimic_iv",
+  "template": "What are_verb the top [n_rank] frequent lab tests that patients had [time_filter_within] after having received a {procedure_name} procedure [time_filter_global1]?",
+  "question": "What were the top four most common lab tests that followed in the same hospital visit for patients who were given laryngoscopy and other tracheoscopy during this year?",
+  "query": "SELECT d_labitems.label FROM d_labitems WHERE d_labitems.itemid IN ( SELECT T3.itemid FROM ( SELECT T2.itemid, DENSE_RANK() OVER ( ORDER BY COUNT(*) DESC ) AS C1 FROM ( SELECT admissions.subject_id, procedures_icd.charttime, admissions.hadm_id FROM procedures_icd JOIN admissions ON procedures_icd.hadm_id = admissions.hadm_id WHERE procedures_icd.icd_code = ( SELECT d_icd_procedures.icd_code FROM d_icd_procedures WHERE d_icd_procedures.long_title = 'laryngoscopy and other tracheoscopy' ) AND datetime(procedures_icd.charttime,'start of year') = datetime(current_time,'start of year','-0 year') ) AS T1 JOIN ( SELECT admissions.subject_id, labevents.itemid, labevents.charttime, admissions.hadm_id FROM labevents JOIN admissions ON labevents.hadm_id = admissions.hadm_id WHERE datetime(labevents.charttime,'start of year') = datetime(current_time,'start of year','-0 year') ) AS T2 ON T1.subject_id = T2.subject_id WHERE T1.charttime < T2.charttime AND T1.hadm_id = T2.hadm_id GROUP BY T2.itemid ) AS T3 WHERE T3.C1 <= 4 )",
+  "gold_sql": "SELECT d_labitems.label FROM d_labitems WHERE d_labitems.itemid IN ( SELECT T3.itemid FROM ( SELECT T2.itemid, DENSE_RANK() OVER ( ORDER BY COUNT(*) DESC ) AS C1 FROM ( SELECT admissions.subject_id, procedures_icd.charttime, admissions.hadm_id FROM procedures_icd JOIN admissions ON procedures_icd.hadm_id = admissions.hadm_id WHERE procedures_icd.icd_code = ( SELECT d_icd_procedures.icd_code FROM d_icd_procedures WHERE d_icd_procedures.long_title = 'laryngoscopy and other tracheoscopy' ) AND datetime(procedures_icd.charttime,'start of year') = datetime('2100-12-31 23:59:00','start of year','-0 year') ) AS T1 JOIN ( SELECT admissions.subject_id, labevents.itemid, labevents.charttime, admissions.hadm_id FROM labevents JOIN admissions ON labevents.hadm_id = admissions.hadm_id WHERE datetime(labevents.charttime,'start of year') = datetime('2100-12-31 23:59:00','start of year','-0 year') ) AS T2 ON T1.subject_id = T2.subject_id WHERE T1.charttime < T2.charttime AND T1.hadm_id = T2.hadm_id GROUP BY T2.itemid ) AS T3 WHERE T3.C1 <= 4 )"
+ },
+ {
+  "qid": 49,
+  "id": "43bc1abffacc510680225ed9",
+  "db_id": "mimic_iv",
+  "template": "What are_verb the top [n_rank] frequent lab tests that patients had [time_filter_within] after having received a {procedure_name} procedure [time_filter_global1]?",
+  "question": "For patients who had reposition left maxilla with external fixation device, percutaneous approach since 1 year ago, could you tell me the three most common lab tests they had during the same month afterwards?",
+  "query": "SELECT d_labitems.label FROM d_labitems WHERE d_labitems.itemid IN ( SELECT T3.itemid FROM ( SELECT T2.itemid, DENSE_RANK() OVER ( ORDER BY COUNT(*) DESC ) AS C1 FROM ( SELECT admissions.subject_id, procedures_icd.charttime FROM procedures_icd JOIN admissions ON procedures_icd.hadm_id = admissions.hadm_id WHERE procedures_icd.icd_code = ( SELECT d_icd_procedures.icd_code FROM d_icd_procedures WHERE d_icd_procedures.long_title = 'reposition left maxilla with external fixation device, percutaneous approach' ) AND datetime(procedures_icd.charttime) >= datetime(current_time,'-1 year') ) AS T1 JOIN ( SELECT admissions.subject_id, labevents.itemid, labevents.charttime FROM labevents JOIN admissions ON labevents.hadm_id = admissions.hadm_id WHERE datetime(labevents.charttime) >= datetime(current_time,'-1 year') ) AS T2 ON T1.subject_id = T2.subject_id WHERE T1.charttime < T2.charttime AND datetime(T1.charttime,'start of month') = datetime(T2.charttime,'start of month') GROUP BY T2.itemid ) AS T3 WHERE T3.C1 <= 3 )",
+  "gold_sql": "SELECT d_labitems.label FROM d_labitems WHERE d_labitems.itemid IN ( SELECT T3.itemid FROM ( SELECT T2.itemid, DENSE_RANK() OVER ( ORDER BY COUNT(*) DESC ) AS C1 FROM ( SELECT admissions.subject_id, procedures_icd.charttime FROM procedures_icd JOIN admissions ON procedures_icd.hadm_id = admissions.hadm_id WHERE procedures_icd.icd_code = ( SELECT d_icd_procedures.icd_code FROM d_icd_procedures WHERE d_icd_procedures.long_title = 'reposition left maxilla with external fixation device, percutaneous approach' ) AND datetime(procedures_icd.charttime) >= datetime('2100-12-31 23:59:00','-1 year') ) AS T1 JOIN ( SELECT admissions.subject_id, labevents.itemid, labevents.charttime FROM labevents JOIN admissions ON labevents.hadm_id = admissions.hadm_id WHERE datetime(labevents.charttime) >= datetime('2100-12-31 23:59:00','-1 year') ) AS T2 ON T1.subject_id = T2.subject_id WHERE T1.charttime < T2.charttime AND datetime(T1.charttime,'start of month') = datetime(T2.charttime,'start of month') GROUP BY T2.itemid ) AS T3 WHERE T3.C1 <= 3 )"
+ },
+ {
+  "qid": 50,
+  "id": "33c6e26e755a5e0efb3a25b9",
+  "db_id": "mimic_iv",
+  "template": "Has_verb patient {patient_id} been to an emergency room [time_filter_global1]?",
+  "question": "During the first hospital visit, was patient 10019568 in the emergency room?",
+  "query": "SELECT COUNT(*)>0 FROM admissions WHERE admissions.subject_id = 10019568 AND admissions.admission_location = 'emergency room' AND admissions.dischtime IS NOT NULL ORDER BY admissions.admittime ASC LIMIT 1",
+  "gold_sql": "SELECT COUNT(*)>0 FROM admissions WHERE admissions.subject_id = 10019568 AND admissions.admission_location = 'emergency room' AND admissions.dischtime IS NOT NULL ORDER BY admissions.admittime ASC LIMIT 1"
+ },
+ {
+  "qid": 51,
+  "id": "b422362f19ca6957cfa3fb02",
+  "db_id": "mimic_iv",
+  "template": "Has_verb patient {patient_id} been to an emergency room [time_filter_global1]?",
+  "question": "During the last year, did patient 10007795 come into an ER?",
+  "query": "SELECT COUNT(*)>0 FROM admissions WHERE admissions.subject_id = 10007795 AND admissions.admission_location = 'emergency room' AND datetime(admissions.admittime,'start of year') = datetime(current_time,'start of year','-1 year')",
+  "gold_sql": "SELECT COUNT(*)>0 FROM admissions WHERE admissions.subject_id = 10007795 AND admissions.admission_location = 'emergency room' AND datetime(admissions.admittime,'start of year') = datetime('2100-12-31 23:59:00','start of year','-1 year')"
+ },
+ {
+  "qid": 52,
+  "id": "c3c3a56dc8cd277bd5826031",
+  "db_id": "mimic_iv",
+  "template": "Has_verb patient {patient_id} been to an emergency room [time_filter_global1]?",
+  "question": "Did patient 10007928 go to the E.R. in the previous year?",
+  "query": "SELECT COUNT(*)>0 FROM admissions WHERE admissions.subject_id = 10007928 AND admissions.admission_location = 'emergency room' AND datetime(admissions.admittime,'start of year') = datetime(current_time,'start of year','-1 year')",
+  "gold_sql": "SELECT COUNT(*)>0 FROM admissions WHERE admissions.subject_id = 10007928 AND admissions.admission_location = 'emergency room' AND datetime(admissions.admittime,'start of year') = datetime('2100-12-31 23:59:00','start of year','-1 year')"
+ },
+ {
+  "qid": 53,
+  "id": "461ed0b2f30a1fe2a7aca6e3",
+  "db_id": "mimic_iv",
+  "template": "Has_verb patient {patient_id} been to an emergency room [time_filter_global1]?",
+  "question": "Has patient 10012853 gone to an emergency room?",
+  "query": "SELECT COUNT(*)>0 FROM admissions WHERE admissions.subject_id = 10012853 AND admissions.admission_location = 'emergency room'",
+  "gold_sql": "SELECT COUNT(*)>0 FROM admissions WHERE admissions.subject_id = 10012853 AND admissions.admission_location = 'emergency room'"
+ },
+ {
+  "qid": 54,
+  "id": "38b8d432b6882df96340f954",
+  "db_id": "mimic_iv",
+  "template": "Has_verb patient {patient_id} been to an emergency room [time_filter_global1]?",
+  "question": "Has patient 10008454 been admitted to a hospital emergency room in 2100?",
+  "query": "SELECT COUNT(*)>0 FROM admissions WHERE admissions.subject_id = 10008454 AND admissions.admission_location = 'emergency room' AND strftime('%Y',admissions.admittime) = '2100'",
+  "gold_sql": "SELECT COUNT(*)>0 FROM admissions WHERE admissions.subject_id = 10008454 AND admissions.admission_location = 'emergency room' AND strftime('%Y',admissions.admittime) = '2100'"
+ },
+ {
+  "qid": 55,
+  "id": "f020778ee34bfe4318ed4bde",
+  "db_id": "mimic_iv",
+  "template": "Has_verb patient {patient_id} been to an emergency room [time_filter_global1]?",
+  "question": "During their first hospital visit, was patient 10001217 in the emergency room?",
+  "query": "SELECT COUNT(*)>0 FROM admissions WHERE admissions.subject_id = 10001217 AND admissions.admission_location = 'emergency room' AND admissions.dischtime IS NOT NULL ORDER BY admissions.admittime ASC LIMIT 1",
+  "gold_sql": "SELECT COUNT(*)>0 FROM admissions WHERE admissions.subject_id = 10001217 AND admissions.admission_location = 'emergency room' AND admissions.dischtime IS NOT NULL ORDER BY admissions.admittime ASC LIMIT 1"
+ },
+ {
+  "qid": 56,
+  "id": "18827b43fd9e61dcfc5d9388",
+  "db_id": "mimic_iv",
+  "template": "Has_verb patient {patient_id} been to an emergency room [time_filter_global1]?",
+  "question": "During the previous year, did patient 10016810 come into an ER?",
+  "query": "SELECT COUNT(*)>0 FROM admissions WHERE admissions.subject_id = 10016810 AND admissions.admission_location = 'emergency room' AND datetime(admissions.admittime,'start of year') = datetime(current_time,'start of year','-1 year')",
+  "gold_sql": "SELECT COUNT(*)>0 FROM admissions WHERE admissions.subject_id = 10016810 AND admissions.admission_location = 'emergency room' AND datetime(admissions.admittime,'start of year') = datetime('2100-12-31 23:59:00','start of year','-1 year')"
+ },
+ {
+  "qid": 57,
+  "id": "f75de59a1a66905c8e18c843",
+  "db_id": "mimic_iv",
+  "template": "When was the [time_filter_exact1] time that patient {patient_id} was prescribed a medication via {drug_route} route [time_filter_global1]?",
+  "question": "When was the last time that patient 10006580 was prescribed a medicine via the im route since 26 months ago?",
+  "query": "SELECT prescriptions.starttime FROM prescriptions WHERE prescriptions.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10006580 ) AND prescriptions.route = 'im' AND datetime(prescriptions.starttime) >= datetime(current_time,'-26 month') ORDER BY prescriptions.starttime DESC LIMIT 1",
+  "gold_sql": "SELECT prescriptions.starttime FROM prescriptions WHERE prescriptions.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10006580 ) AND prescriptions.route = 'im' AND datetime(prescriptions.starttime) >= datetime('2100-12-31 23:59:00','-26 month') ORDER BY prescriptions.starttime DESC LIMIT 1"
+ },
+ {
+  "qid": 58,
+  "id": "bf8aee434927ad78efbb9c37",
+  "db_id": "mimic_iv",
+  "template": "When was the [time_filter_exact1] time that patient {patient_id} was prescribed a medication via {drug_route} route [time_filter_global1]?",
+  "question": "When was patient 10026255 last prescribed a medicine via the iv route since 06/2100?",
+  "query": "SELECT prescriptions.starttime FROM prescriptions WHERE prescriptions.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10026255 ) AND prescriptions.route = 'iv' AND strftime('%Y-%m',prescriptions.starttime) >= '2100-06' ORDER BY prescriptions.starttime DESC LIMIT 1",
+  "gold_sql": "SELECT prescriptions.starttime FROM prescriptions WHERE prescriptions.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10026255 ) AND prescriptions.route = 'iv' AND strftime('%Y-%m',prescriptions.starttime) >= '2100-06' ORDER BY prescriptions.starttime DESC LIMIT 1"
+ },
+ {
+  "qid": 59,
+  "id": "ba85b4185b40acf102f505e5",
+  "db_id": "mimic_iv",
+  "template": "When was the [time_filter_exact1] time that patient {patient_id} was prescribed a medication via {drug_route} route [time_filter_global1]?",
+  "question": "When was the last time that patient 10022880 was prescribed a medication via the iv route in 03/2100?",
+  "query": "SELECT prescriptions.starttime FROM prescriptions WHERE prescriptions.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10022880 ) AND prescriptions.route = 'iv' AND strftime('%Y-%m',prescriptions.starttime) = '2100-03' ORDER BY prescriptions.starttime DESC LIMIT 1",
+  "gold_sql": "SELECT prescriptions.starttime FROM prescriptions WHERE prescriptions.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10022880 ) AND prescriptions.route = 'iv' AND strftime('%Y-%m',prescriptions.starttime) = '2100-03' ORDER BY prescriptions.starttime DESC LIMIT 1"
+ },
+ {
+  "qid": 60,
+  "id": "9c36c694493cc1a4533c0e35",
+  "db_id": "mimic_iv",
+  "template": "When was the [time_filter_exact1] time that patient {patient_id} was prescribed a medication via {drug_route} route [time_filter_global1]?",
+  "question": "When did patient 10010471 receive a prescription for the last time since 08/2100, via the iv route?",
+  "query": "SELECT prescriptions.starttime FROM prescriptions WHERE prescriptions.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10010471 ) AND prescriptions.route = 'iv' AND strftime('%Y-%m',prescriptions.starttime) >= '2100-08' ORDER BY prescriptions.starttime DESC LIMIT 1",
+  "gold_sql": "SELECT prescriptions.starttime FROM prescriptions WHERE prescriptions.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10010471 ) AND prescriptions.route = 'iv' AND strftime('%Y-%m',prescriptions.starttime) >= '2100-08' ORDER BY prescriptions.starttime DESC LIMIT 1"
+ },
+ {
+  "qid": 61,
+  "id": "9db8bd8eeca37c40ce0282d9",
+  "db_id": "mimic_iv",
+  "template": "When was the [time_filter_exact1] time that patient {patient_id} was prescribed a medication via {drug_route} route [time_filter_global1]?",
+  "question": "When was the first time in 10/2100 patient 10038081 was prescribed a drug via the neb route?",
+  "query": "SELECT prescriptions.starttime FROM prescriptions WHERE prescriptions.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10038081 ) AND prescriptions.route = 'neb' AND strftime('%Y-%m',prescriptions.starttime) = '2100-10' ORDER BY prescriptions.starttime ASC LIMIT 1",
+  "gold_sql": "SELECT prescriptions.starttime FROM prescriptions WHERE prescriptions.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10038081 ) AND prescriptions.route = 'neb' AND strftime('%Y-%m',prescriptions.starttime) = '2100-10' ORDER BY prescriptions.starttime ASC LIMIT 1"
+ },
+ {
+  "qid": 62,
+  "id": "0184b4b16596dc35beb98cfd",
+  "db_id": "mimic_iv",
+  "template": "When was the [time_filter_exact1] time that patient {patient_id} was prescribed a medication via {drug_route} route [time_filter_global1]?",
+  "question": "When was patient 10001217 prescribed medication via the po/ng route, for the first time in 12/this year?",
+  "query": "SELECT prescriptions.starttime FROM prescriptions WHERE prescriptions.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10001217 ) AND prescriptions.route = 'po/ng' AND datetime(prescriptions.starttime,'start of year') = datetime(current_time,'start of year','-0 year') AND strftime('%m',prescriptions.starttime) = '12' ORDER BY prescriptions.starttime ASC LIMIT 1",
+  "gold_sql": "SELECT prescriptions.starttime FROM prescriptions WHERE prescriptions.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10001217 ) AND prescriptions.route = 'po/ng' AND datetime(prescriptions.starttime,'start of year') = datetime('2100-12-31 23:59:00','start of year','-0 year') AND strftime('%m',prescriptions.starttime) = '12' ORDER BY prescriptions.starttime ASC LIMIT 1"
+ },
+ {
+  "qid": 63,
+  "id": "4ec0747fdc64218ae8ffc26d",
+  "db_id": "mimic_iv",
+  "template": "When was the [time_filter_exact1] time that patient {patient_id} was prescribed a medication via {drug_route} route [time_filter_global1]?",
+  "question": "In the previous month, when was patient 10019172 prescribed a medication via the pr route for the first time?",
+  "query": "SELECT prescriptions.starttime FROM prescriptions WHERE prescriptions.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10019172 ) AND prescriptions.route = 'pr' AND datetime(prescriptions.starttime,'start of month') = datetime(current_time,'start of month','-1 month') ORDER BY prescriptions.starttime ASC LIMIT 1",
+  "gold_sql": "SELECT prescriptions.starttime FROM prescriptions WHERE prescriptions.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10019172 ) AND prescriptions.route = 'pr' AND datetime(prescriptions.starttime,'start of month') = datetime('2100-12-31 23:59:00','start of month','-1 month') ORDER BY prescriptions.starttime ASC LIMIT 1"
+ },
+ {
+  "qid": 64,
+  "id": "84ffe2eecf94db13c293cd18",
+  "db_id": "mimic_iv",
+  "template": "What was the name of the diagnosis that patient {patient_id} [time_filter_exact1] received [time_filter_global1]?",
+  "question": "What was the name of the diagnosis that patient 10006580 received last since 1 year ago?",
+  "query": "SELECT DISTINCT d_icd_diagnoses.long_title FROM d_icd_diagnoses WHERE d_icd_diagnoses.icd_code IN ( SELECT diagnoses_icd.icd_code FROM diagnoses_icd WHERE diagnoses_icd.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10006580 ) AND datetime(diagnoses_icd.charttime) >= datetime(current_time,'-1 year') AND diagnoses_icd.charttime = ( SELECT DISTINCT diagnoses_icd.charttime FROM diagnoses_icd WHERE diagnoses_icd.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10006580 ) AND datetime(diagnoses_icd.charttime) >= datetime(current_time,'-1 year') ORDER BY diagnoses_icd.charttime DESC LIMIT 1 ) )",
+  "gold_sql": "SELECT DISTINCT d_icd_diagnoses.long_title FROM d_icd_diagnoses WHERE d_icd_diagnoses.icd_code IN ( SELECT diagnoses_icd.icd_code FROM diagnoses_icd WHERE diagnoses_icd.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10006580 ) AND datetime(diagnoses_icd.charttime) >= datetime('2100-12-31 23:59:00','-1 year') AND diagnoses_icd.charttime = ( SELECT DISTINCT diagnoses_icd.charttime FROM diagnoses_icd WHERE diagnoses_icd.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10006580 ) AND datetime(diagnoses_icd.charttime) >= datetime('2100-12-31 23:59:00','-1 year') ORDER BY diagnoses_icd.charttime DESC LIMIT 1 ) )"
+ },
+ {
+  "qid": 65,
+  "id": "531d3b5c9daeaf625b709381",
+  "db_id": "mimic_iv",
+  "template": "What was the name of the diagnosis that patient {patient_id} [time_filter_exact1] received [time_filter_global1]?",
+  "question": "What was patient 10025612 diagnosed with the last time since 1 year ago?",
+  "query": "SELECT DISTINCT d_icd_diagnoses.long_title FROM d_icd_diagnoses WHERE d_icd_diagnoses.icd_code IN ( SELECT diagnoses_icd.icd_code FROM diagnoses_icd WHERE diagnoses_icd.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10025612 ) AND datetime(diagnoses_icd.charttime) >= datetime(current_time,'-1 year') AND diagnoses_icd.charttime = ( SELECT DISTINCT diagnoses_icd.charttime FROM diagnoses_icd WHERE diagnoses_icd.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10025612 ) AND datetime(diagnoses_icd.charttime) >= datetime(current_time,'-1 year') ORDER BY diagnoses_icd.charttime DESC LIMIT 1 ) )",
+  "gold_sql": "SELECT DISTINCT d_icd_diagnoses.long_title FROM d_icd_diagnoses WHERE d_icd_diagnoses.icd_code IN ( SELECT diagnoses_icd.icd_code FROM diagnoses_icd WHERE diagnoses_icd.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10025612 ) AND datetime(diagnoses_icd.charttime) >= datetime('2100-12-31 23:59:00','-1 year') AND diagnoses_icd.charttime = ( SELECT DISTINCT diagnoses_icd.charttime FROM diagnoses_icd WHERE diagnoses_icd.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10025612 ) AND datetime(diagnoses_icd.charttime) >= datetime('2100-12-31 23:59:00','-1 year') ORDER BY diagnoses_icd.charttime DESC LIMIT 1 ) )"
+ },
+ {
+  "qid": 66,
+  "id": "c382285cc641ffefb4754fec",
+  "db_id": "mimic_iv",
+  "template": "What was the name of the diagnosis that patient {patient_id} [time_filter_exact1] received [time_filter_global1]?",
+  "question": "Which diagnosis did patient 10011398 get for the last time during the first hospital encounter?",
+  "query": "SELECT DISTINCT d_icd_diagnoses.long_title FROM d_icd_diagnoses WHERE d_icd_diagnoses.icd_code IN ( SELECT diagnoses_icd.icd_code FROM diagnoses_icd WHERE diagnoses_icd.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10011398 AND admissions.dischtime IS NOT NULL ORDER BY admissions.admittime ASC LIMIT 1 ) AND diagnoses_icd.charttime = ( SELECT DISTINCT diagnoses_icd.charttime FROM diagnoses_icd WHERE diagnoses_icd.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10011398 AND admissions.dischtime IS NOT NULL ORDER BY admissions.admittime ASC LIMIT 1 ) ORDER BY diagnoses_icd.charttime DESC LIMIT 1 ) )",
+  "gold_sql": "SELECT DISTINCT d_icd_diagnoses.long_title FROM d_icd_diagnoses WHERE d_icd_diagnoses.icd_code IN ( SELECT diagnoses_icd.icd_code FROM diagnoses_icd WHERE diagnoses_icd.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10011398 AND admissions.dischtime IS NOT NULL ORDER BY admissions.admittime ASC LIMIT 1 ) AND diagnoses_icd.charttime = ( SELECT DISTINCT diagnoses_icd.charttime FROM diagnoses_icd WHERE diagnoses_icd.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10011398 AND admissions.dischtime IS NOT NULL ORDER BY admissions.admittime ASC LIMIT 1 ) ORDER BY diagnoses_icd.charttime DESC LIMIT 1 ) )"
+ },
+ {
+  "qid": 67,
+  "id": "a68a8f7c8f9c51d21140fbb2",
+  "db_id": "mimic_iv",
+  "template": "What was the name of the diagnosis that patient {patient_id} [time_filter_exact1] received [time_filter_global1]?",
+  "question": "What was the diagnosis received by patient 10020740 since 2100 for the first time?",
+  "query": "SELECT DISTINCT d_icd_diagnoses.long_title FROM d_icd_diagnoses WHERE d_icd_diagnoses.icd_code IN ( SELECT diagnoses_icd.icd_code FROM diagnoses_icd WHERE diagnoses_icd.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10020740 ) AND strftime('%Y', diagnoses_icd.charttime) >= '2100' AND diagnoses_icd.charttime = ( SELECT DISTINCT diagnoses_icd.charttime FROM diagnoses_icd WHERE diagnoses_icd.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10020740 ) AND strftime('%Y', diagnoses_icd.charttime) >= '2100' ORDER BY diagnoses_icd.charttime ASC LIMIT 1 ) )",
+  "gold_sql": "SELECT DISTINCT d_icd_diagnoses.long_title FROM d_icd_diagnoses WHERE d_icd_diagnoses.icd_code IN ( SELECT diagnoses_icd.icd_code FROM diagnoses_icd WHERE diagnoses_icd.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10020740 ) AND strftime('%Y', diagnoses_icd.charttime) >= '2100' AND diagnoses_icd.charttime = ( SELECT DISTINCT diagnoses_icd.charttime FROM diagnoses_icd WHERE diagnoses_icd.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10020740 ) AND strftime('%Y', diagnoses_icd.charttime) >= '2100' ORDER BY diagnoses_icd.charttime ASC LIMIT 1 ) )"
+ },
+ {
+  "qid": 68,
+  "id": "480b667942347b982307f45c",
+  "db_id": "mimic_iv",
+  "template": "What was the name of the diagnosis that patient {patient_id} [time_filter_exact1] received [time_filter_global1]?",
+  "question": "What was patient 10009628's first diagnosis in 2100?",
+  "query": "SELECT DISTINCT d_icd_diagnoses.long_title FROM d_icd_diagnoses WHERE d_icd_diagnoses.icd_code IN ( SELECT diagnoses_icd.icd_code FROM diagnoses_icd WHERE diagnoses_icd.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10009628 ) AND strftime('%Y', diagnoses_icd.charttime) = '2100' AND diagnoses_icd.charttime = ( SELECT DISTINCT diagnoses_icd.charttime FROM diagnoses_icd WHERE diagnoses_icd.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10009628 ) AND strftime('%Y', diagnoses_icd.charttime) = '2100' ORDER BY diagnoses_icd.charttime ASC LIMIT 1 ) )",
+  "gold_sql": "SELECT DISTINCT d_icd_diagnoses.long_title FROM d_icd_diagnoses WHERE d_icd_diagnoses.icd_code IN ( SELECT diagnoses_icd.icd_code FROM diagnoses_icd WHERE diagnoses_icd.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10009628 ) AND strftime('%Y', diagnoses_icd.charttime) = '2100' AND diagnoses_icd.charttime = ( SELECT DISTINCT diagnoses_icd.charttime FROM diagnoses_icd WHERE diagnoses_icd.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10009628 ) AND strftime('%Y', diagnoses_icd.charttime) = '2100' ORDER BY diagnoses_icd.charttime ASC LIMIT 1 ) )"
+ },
+ {
+  "qid": 69,
+  "id": "19013f71186dd94c3663224d",
+  "db_id": "mimic_iv",
+  "template": "What was the name of the diagnosis that patient {patient_id} [time_filter_exact1] received [time_filter_global1]?",
+  "question": "What was diagnosed for patient 10029291 for the first time in 2100?",
+  "query": "SELECT DISTINCT d_icd_diagnoses.long_title FROM d_icd_diagnoses WHERE d_icd_diagnoses.icd_code IN ( SELECT diagnoses_icd.icd_code FROM diagnoses_icd WHERE diagnoses_icd.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10029291 ) AND strftime('%Y', diagnoses_icd.charttime) = '2100' AND diagnoses_icd.charttime = ( SELECT DISTINCT diagnoses_icd.charttime FROM diagnoses_icd WHERE diagnoses_icd.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10029291 ) AND strftime('%Y', diagnoses_icd.charttime) = '2100' ORDER BY diagnoses_icd.charttime ASC LIMIT 1 ) )",
+  "gold_sql": "SELECT DISTINCT d_icd_diagnoses.long_title FROM d_icd_diagnoses WHERE d_icd_diagnoses.icd_code IN ( SELECT diagnoses_icd.icd_code FROM diagnoses_icd WHERE diagnoses_icd.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10029291 ) AND strftime('%Y', diagnoses_icd.charttime) = '2100' AND diagnoses_icd.charttime = ( SELECT DISTINCT diagnoses_icd.charttime FROM diagnoses_icd WHERE diagnoses_icd.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10029291 ) AND strftime('%Y', diagnoses_icd.charttime) = '2100' ORDER BY diagnoses_icd.charttime ASC LIMIT 1 ) )"
+ },
+ {
+  "qid": 70,
+  "id": "b389e224ed07b11a553f0329",
+  "db_id": "mimic_iv",
+  "template": "What was the name of the diagnosis that patient {patient_id} [time_filter_exact1] received [time_filter_global1]?",
+  "question": "What was the name of the diagnosis that patient 10001217 received first in 2100?",
+  "query": "SELECT DISTINCT d_icd_diagnoses.long_title FROM d_icd_diagnoses WHERE d_icd_diagnoses.icd_code IN ( SELECT diagnoses_icd.icd_code FROM diagnoses_icd WHERE diagnoses_icd.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10001217 ) AND strftime('%Y', diagnoses_icd.charttime) = '2100' AND diagnoses_icd.charttime = ( SELECT DISTINCT diagnoses_icd.charttime FROM diagnoses_icd WHERE diagnoses_icd.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10001217 ) AND strftime('%Y', diagnoses_icd.charttime) = '2100' ORDER BY diagnoses_icd.charttime ASC LIMIT 1 ) )",
+  "gold_sql": "SELECT DISTINCT d_icd_diagnoses.long_title FROM d_icd_diagnoses WHERE d_icd_diagnoses.icd_code IN ( SELECT diagnoses_icd.icd_code FROM diagnoses_icd WHERE diagnoses_icd.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10001217 ) AND strftime('%Y', diagnoses_icd.charttime) = '2100' AND diagnoses_icd.charttime = ( SELECT DISTINCT diagnoses_icd.charttime FROM diagnoses_icd WHERE diagnoses_icd.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10001217 ) AND strftime('%Y', diagnoses_icd.charttime) = '2100' ORDER BY diagnoses_icd.charttime ASC LIMIT 1 ) )"
+ },
+ {
+  "qid": 71,
+  "id": "97d71a4dfbda63c1b6544be6",
+  "db_id": "mimic_iv",
+  "template": "Count the number of patients who were diagnosed with {diagnosis_name2} [time_filter_within] after having been diagnosed with {diagnosis_name1} [time_filter_global1].",
+  "question": "How many patients were diagnosed with patient room in hospital as the place of occurrence of the external cause within 2 months following the previous diagnosis of multiple fractures of ribs, left side, initial encounter for closed fracture in 2100?",
+  "query": "SELECT COUNT( DISTINCT T1.subject_id ) FROM ( SELECT admissions.subject_id, diagnoses_icd.charttime FROM diagnoses_icd JOIN admissions ON diagnoses_icd.hadm_id = admissions.hadm_id WHERE diagnoses_icd.icd_code = ( SELECT d_icd_diagnoses.icd_code FROM d_icd_diagnoses WHERE d_icd_diagnoses.long_title = 'multiple fractures of ribs, left side, initial encounter for closed fracture' ) AND strftime('%Y',diagnoses_icd.charttime) = '2100' ) AS T1 JOIN ( SELECT admissions.subject_id, diagnoses_icd.charttime FROM diagnoses_icd JOIN admissions ON diagnoses_icd.hadm_id = admissions.hadm_id WHERE diagnoses_icd.icd_code = ( SELECT d_icd_diagnoses.icd_code FROM d_icd_diagnoses WHERE d_icd_diagnoses.long_title = 'patient room in hospital as the place of occurrence of the external cause' ) AND strftime('%Y',diagnoses_icd.charttime) = '2100' ) AS T2 ON T1.subject_id = T2.subject_id WHERE T1.charttime < T2.charttime AND datetime(T2.charttime) BETWEEN datetime(T1.charttime) AND datetime(T1.charttime,'+2 month')",
+  "gold_sql": "SELECT COUNT( DISTINCT T1.subject_id ) FROM ( SELECT admissions.subject_id, diagnoses_icd.charttime FROM diagnoses_icd JOIN admissions ON diagnoses_icd.hadm_id = admissions.hadm_id WHERE diagnoses_icd.icd_code = ( SELECT d_icd_diagnoses.icd_code FROM d_icd_diagnoses WHERE d_icd_diagnoses.long_title = 'multiple fractures of ribs, left side, initial encounter for closed fracture' ) AND strftime('%Y',diagnoses_icd.charttime) = '2100' ) AS T1 JOIN ( SELECT admissions.subject_id, diagnoses_icd.charttime FROM diagnoses_icd JOIN admissions ON diagnoses_icd.hadm_id = admissions.hadm_id WHERE diagnoses_icd.icd_code = ( SELECT d_icd_diagnoses.icd_code FROM d_icd_diagnoses WHERE d_icd_diagnoses.long_title = 'patient room in hospital as the place of occurrence of the external cause' ) AND strftime('%Y',diagnoses_icd.charttime) = '2100' ) AS T2 ON T1.subject_id = T2.subject_id WHERE T1.charttime < T2.charttime AND datetime(T2.charttime) BETWEEN datetime(T1.charttime) AND datetime(T1.charttime,'+2 month')"
+ },
+ {
+  "qid": 72,
+  "id": "72392c4da0fd16d899e4307e",
+  "db_id": "mimic_iv",
+  "template": "Count the number of patients who were diagnosed with {diagnosis_name2} [time_filter_within] after having been diagnosed with {diagnosis_name1} [time_filter_global1].",
+  "question": "Count the number of patients who were diagnosed with bipolar i disorder, most recent episode (or current) mixed, unspecified during the same hospital visit after being diagnosed with other and unspecified hyperlipidemia in 2100.",
+  "query": "SELECT COUNT( DISTINCT T1.subject_id ) FROM ( SELECT admissions.subject_id, diagnoses_icd.charttime, admissions.hadm_id FROM diagnoses_icd JOIN admissions ON diagnoses_icd.hadm_id = admissions.hadm_id WHERE diagnoses_icd.icd_code = ( SELECT d_icd_diagnoses.icd_code FROM d_icd_diagnoses WHERE d_icd_diagnoses.long_title = 'other and unspecified hyperlipidemia' ) AND strftime('%Y',diagnoses_icd.charttime) = '2100' ) AS T1 JOIN ( SELECT admissions.subject_id, diagnoses_icd.charttime, admissions.hadm_id FROM diagnoses_icd JOIN admissions ON diagnoses_icd.hadm_id = admissions.hadm_id WHERE diagnoses_icd.icd_code = ( SELECT d_icd_diagnoses.icd_code FROM d_icd_diagnoses WHERE d_icd_diagnoses.long_title = 'bipolar i disorder, most recent episode (or current) mixed, unspecified' ) AND strftime('%Y',diagnoses_icd.charttime) = '2100' ) AS T2 ON T1.subject_id = T2.subject_id WHERE T1.charttime < T2.charttime AND T1.hadm_id = T2.hadm_id",
+  "gold_sql": "SELECT COUNT( DISTINCT T1.subject_id ) FROM ( SELECT admissions.subject_id, diagnoses_icd.charttime, admissions.hadm_id FROM diagnoses_icd JOIN admissions ON diagnoses_icd.hadm_id = admissions.hadm_id WHERE diagnoses_icd.icd_code = ( SELECT d_icd_diagnoses.icd_code FROM d_icd_diagnoses WHERE d_icd_diagnoses.long_title = 'other and unspecified hyperlipidemia' ) AND strftime('%Y',diagnoses_icd.charttime) = '2100' ) AS T1 JOIN ( SELECT admissions.subject_id, diagnoses_icd.charttime, admissions.hadm_id FROM diagnoses_icd JOIN admissions ON diagnoses_icd.hadm_id = admissions.hadm_id WHERE diagnoses_icd.icd_code = ( SELECT d_icd_diagnoses.icd_code FROM d_icd_diagnoses WHERE d_icd_diagnoses.long_title = 'bipolar i disorder, most recent episode (or current) mixed, unspecified' ) AND strftime('%Y',diagnoses_icd.charttime) = '2100' ) AS T2 ON T1.subject_id = T2.subject_id WHERE T1.charttime < T2.charttime AND T1.hadm_id = T2.hadm_id"
+ },
+ {
+  "qid": 73,
+  "id": "ddee5ac733d7dabd9130af5c",
+  "db_id": "mimic_iv",
+  "template": "Count the number of patients who were diagnosed with {diagnosis_name2} [time_filter_within] after having been diagnosed with {diagnosis_name1} [time_filter_global1].",
+  "question": "What is the count of patients who were diagnosed with constipation, unspecified in the same hospital visit after having been diagnosed with alcohol abuse, unspecified since 2100?",
+  "query": "SELECT COUNT( DISTINCT T1.subject_id ) FROM ( SELECT admissions.subject_id, diagnoses_icd.charttime, admissions.hadm_id FROM diagnoses_icd JOIN admissions ON diagnoses_icd.hadm_id = admissions.hadm_id WHERE diagnoses_icd.icd_code = ( SELECT d_icd_diagnoses.icd_code FROM d_icd_diagnoses WHERE d_icd_diagnoses.long_title = 'alcohol abuse, unspecified' ) AND strftime('%Y',diagnoses_icd.charttime) >= '2100' ) AS T1 JOIN ( SELECT admissions.subject_id, diagnoses_icd.charttime, admissions.hadm_id FROM diagnoses_icd JOIN admissions ON diagnoses_icd.hadm_id = admissions.hadm_id WHERE diagnoses_icd.icd_code = ( SELECT d_icd_diagnoses.icd_code FROM d_icd_diagnoses WHERE d_icd_diagnoses.long_title = 'constipation, unspecified' ) AND strftime('%Y',diagnoses_icd.charttime) >= '2100' ) AS T2 ON T1.subject_id = T2.subject_id WHERE T1.charttime < T2.charttime AND T1.hadm_id = T2.hadm_id",
+  "gold_sql": "SELECT COUNT( DISTINCT T1.subject_id ) FROM ( SELECT admissions.subject_id, diagnoses_icd.charttime, admissions.hadm_id FROM diagnoses_icd JOIN admissions ON diagnoses_icd.hadm_id = admissions.hadm_id WHERE diagnoses_icd.icd_code = ( SELECT d_icd_diagnoses.icd_code FROM d_icd_diagnoses WHERE d_icd_diagnoses.long_title = 'alcohol abuse, unspecified' ) AND strftime('%Y',diagnoses_icd.charttime) >= '2100' ) AS T1 JOIN ( SELECT admissions.subject_id, diagnoses_icd.charttime, admissions.hadm_id FROM diagnoses_icd JOIN admissions ON diagnoses_icd.hadm_id = admissions.hadm_id WHERE diagnoses_icd.icd_code = ( SELECT d_icd_diagnoses.icd_code FROM d_icd_diagnoses WHERE d_icd_diagnoses.long_title = 'constipation, unspecified' ) AND strftime('%Y',diagnoses_icd.charttime) >= '2100' ) AS T2 ON T1.subject_id = T2.subject_id WHERE T1.charttime < T2.charttime AND T1.hadm_id = T2.hadm_id"
+ },
+ {
+  "qid": 74,
+  "id": "d81467bbe205d33ca94ef61f",
+  "db_id": "mimic_iv",
+  "template": "Count the number of patients who were diagnosed with {diagnosis_name2} [time_filter_within] after having been diagnosed with {diagnosis_name1} [time_filter_global1].",
+  "question": "How many people were diagnosed with diarrhea after the previous diagnosis of tobacco use disorder in the same hospital visit in 2100?",
+  "query": "SELECT COUNT( DISTINCT T1.subject_id ) FROM ( SELECT admissions.subject_id, diagnoses_icd.charttime, admissions.hadm_id FROM diagnoses_icd JOIN admissions ON diagnoses_icd.hadm_id = admissions.hadm_id WHERE diagnoses_icd.icd_code = ( SELECT d_icd_diagnoses.icd_code FROM d_icd_diagnoses WHERE d_icd_diagnoses.long_title = 'tobacco use disorder' ) AND strftime('%Y',diagnoses_icd.charttime) = '2100' ) AS T1 JOIN ( SELECT admissions.subject_id, diagnoses_icd.charttime, admissions.hadm_id FROM diagnoses_icd JOIN admissions ON diagnoses_icd.hadm_id = admissions.hadm_id WHERE diagnoses_icd.icd_code = ( SELECT d_icd_diagnoses.icd_code FROM d_icd_diagnoses WHERE d_icd_diagnoses.long_title = 'diarrhea' ) AND strftime('%Y',diagnoses_icd.charttime) = '2100' ) AS T2 ON T1.subject_id = T2.subject_id WHERE T1.charttime < T2.charttime AND T1.hadm_id = T2.hadm_id",
+  "gold_sql": "SELECT COUNT( DISTINCT T1.subject_id ) FROM ( SELECT admissions.subject_id, diagnoses_icd.charttime, admissions.hadm_id FROM diagnoses_icd JOIN admissions ON diagnoses_icd.hadm_id = admissions.hadm_id WHERE diagnoses_icd.icd_code = ( SELECT d_icd_diagnoses.icd_code FROM d_icd_diagnoses WHERE d_icd_diagnoses.long_title = 'tobacco use disorder' ) AND strftime('%Y',diagnoses_icd.charttime) = '2100' ) AS T1 JOIN ( SELECT admissions.subject_id, diagnoses_icd.charttime, admissions.hadm_id FROM diagnoses_icd JOIN admissions ON diagnoses_icd.hadm_id = admissions.hadm_id WHERE diagnoses_icd.icd_code = ( SELECT d_icd_diagnoses.icd_code FROM d_icd_diagnoses WHERE d_icd_diagnoses.long_title = 'diarrhea' ) AND strftime('%Y',diagnoses_icd.charttime) = '2100' ) AS T2 ON T1.subject_id = T2.subject_id WHERE T1.charttime < T2.charttime AND T1.hadm_id = T2.hadm_id"
+ },
+ {
+  "qid": 75,
+  "id": "43c158cb01b2f2079157b719",
+  "db_id": "mimic_iv",
+  "template": "Count the number of patients who were diagnosed with {diagnosis_name2} [time_filter_within] after having been diagnosed with {diagnosis_name1} [time_filter_global1].",
+  "question": "How many patients were diagnosed with aortic valve disorders in the same month following the previous diagnosis of postprocedural fever since 2100?",
+  "query": "SELECT COUNT( DISTINCT T1.subject_id ) FROM ( SELECT admissions.subject_id, diagnoses_icd.charttime FROM diagnoses_icd JOIN admissions ON diagnoses_icd.hadm_id = admissions.hadm_id WHERE diagnoses_icd.icd_code = ( SELECT d_icd_diagnoses.icd_code FROM d_icd_diagnoses WHERE d_icd_diagnoses.long_title = 'postprocedural fever' ) AND strftime('%Y',diagnoses_icd.charttime) >= '2100' ) AS T1 JOIN ( SELECT admissions.subject_id, diagnoses_icd.charttime FROM diagnoses_icd JOIN admissions ON diagnoses_icd.hadm_id = admissions.hadm_id WHERE diagnoses_icd.icd_code = ( SELECT d_icd_diagnoses.icd_code FROM d_icd_diagnoses WHERE d_icd_diagnoses.long_title = 'aortic valve disorders' ) AND strftime('%Y',diagnoses_icd.charttime) >= '2100' ) AS T2 ON T1.subject_id = T2.subject_id WHERE T1.charttime < T2.charttime AND datetime(T1.charttime,'start of month') = datetime(T2.charttime,'start of month')",
+  "gold_sql": "SELECT COUNT( DISTINCT T1.subject_id ) FROM ( SELECT admissions.subject_id, diagnoses_icd.charttime FROM diagnoses_icd JOIN admissions ON diagnoses_icd.hadm_id = admissions.hadm_id WHERE diagnoses_icd.icd_code = ( SELECT d_icd_diagnoses.icd_code FROM d_icd_diagnoses WHERE d_icd_diagnoses.long_title = 'postprocedural fever' ) AND strftime('%Y',diagnoses_icd.charttime) >= '2100' ) AS T1 JOIN ( SELECT admissions.subject_id, diagnoses_icd.charttime FROM diagnoses_icd JOIN admissions ON diagnoses_icd.hadm_id = admissions.hadm_id WHERE diagnoses_icd.icd_code = ( SELECT d_icd_diagnoses.icd_code FROM d_icd_diagnoses WHERE d_icd_diagnoses.long_title = 'aortic valve disorders' ) AND strftime('%Y',diagnoses_icd.charttime) >= '2100' ) AS T2 ON T1.subject_id = T2.subject_id WHERE T1.charttime < T2.charttime AND datetime(T1.charttime,'start of month') = datetime(T2.charttime,'start of month')"
+ },
+ {
+  "qid": 76,
+  "id": "3e9064d2108a3ee8c6ae4ee2",
+  "db_id": "mimic_iv",
+  "template": "Count the number of patients who were diagnosed with {diagnosis_name2} [time_filter_within] after having been diagnosed with {diagnosis_name1} [time_filter_global1].",
+  "question": "Count the number of patients who were diagnosed with diabetes mellitus without mention of complication, type ii or unspecified type, not stated as uncontrolled in the same hospital visit after being diagnosed with unspecified disorder of kidney and ureter.",
+  "query": "SELECT COUNT( DISTINCT T1.subject_id ) FROM ( SELECT admissions.subject_id, diagnoses_icd.charttime, admissions.hadm_id FROM diagnoses_icd JOIN admissions ON diagnoses_icd.hadm_id = admissions.hadm_id WHERE diagnoses_icd.icd_code = ( SELECT d_icd_diagnoses.icd_code FROM d_icd_diagnoses WHERE d_icd_diagnoses.long_title = 'unspecified disorder of kidney and ureter' ) ) AS T1 JOIN ( SELECT admissions.subject_id, diagnoses_icd.charttime, admissions.hadm_id FROM diagnoses_icd JOIN admissions ON diagnoses_icd.hadm_id = admissions.hadm_id WHERE diagnoses_icd.icd_code = ( SELECT d_icd_diagnoses.icd_code FROM d_icd_diagnoses WHERE d_icd_diagnoses.long_title = 'diabetes mellitus without mention of complication, type ii or unspecified type, not stated as uncontrolled' ) ) AS T2 ON T1.subject_id = T2.subject_id WHERE T1.charttime < T2.charttime AND T1.hadm_id = T2.hadm_id",
+  "gold_sql": "SELECT COUNT( DISTINCT T1.subject_id ) FROM ( SELECT admissions.subject_id, diagnoses_icd.charttime, admissions.hadm_id FROM diagnoses_icd JOIN admissions ON diagnoses_icd.hadm_id = admissions.hadm_id WHERE diagnoses_icd.icd_code = ( SELECT d_icd_diagnoses.icd_code FROM d_icd_diagnoses WHERE d_icd_diagnoses.long_title = 'unspecified disorder of kidney and ureter' ) ) AS T1 JOIN ( SELECT admissions.subject_id, diagnoses_icd.charttime, admissions.hadm_id FROM diagnoses_icd JOIN admissions ON diagnoses_icd.hadm_id = admissions.hadm_id WHERE diagnoses_icd.icd_code = ( SELECT d_icd_diagnoses.icd_code FROM d_icd_diagnoses WHERE d_icd_diagnoses.long_title = 'diabetes mellitus without mention of complication, type ii or unspecified type, not stated as uncontrolled' ) ) AS T2 ON T1.subject_id = T2.subject_id WHERE T1.charttime < T2.charttime AND T1.hadm_id = T2.hadm_id"
+ },
+ {
+  "qid": 77,
+  "id": "f87b894e8644d660bf3e856f",
+  "db_id": "mimic_iv",
+  "template": "Count the number of patients who were diagnosed with {diagnosis_name2} [time_filter_within] after having been diagnosed with {diagnosis_name1} [time_filter_global1].",
+  "question": "What is the count of patients who were diagnosed with patient room in hospital as the place of occurrence of the external cause within the same hospital visit after having been diagnosed with collapsed vertebra, not elsewhere classified, thoracic region, initial encounter for fracture in 2100?",
+  "query": "SELECT COUNT( DISTINCT T1.subject_id ) FROM ( SELECT admissions.subject_id, diagnoses_icd.charttime, admissions.hadm_id FROM diagnoses_icd JOIN admissions ON diagnoses_icd.hadm_id = admissions.hadm_id WHERE diagnoses_icd.icd_code = ( SELECT d_icd_diagnoses.icd_code FROM d_icd_diagnoses WHERE d_icd_diagnoses.long_title = 'collapsed vertebra, not elsewhere classified, thoracic region, initial encounter for fracture' ) AND strftime('%Y',diagnoses_icd.charttime) = '2100' ) AS T1 JOIN ( SELECT admissions.subject_id, diagnoses_icd.charttime, admissions.hadm_id FROM diagnoses_icd JOIN admissions ON diagnoses_icd.hadm_id = admissions.hadm_id WHERE diagnoses_icd.icd_code = ( SELECT d_icd_diagnoses.icd_code FROM d_icd_diagnoses WHERE d_icd_diagnoses.long_title = 'patient room in hospital as the place of occurrence of the external cause' ) AND strftime('%Y',diagnoses_icd.charttime) = '2100' ) AS T2 ON T1.subject_id = T2.subject_id WHERE T1.charttime < T2.charttime AND T1.hadm_id = T2.hadm_id",
+  "gold_sql": "SELECT COUNT( DISTINCT T1.subject_id ) FROM ( SELECT admissions.subject_id, diagnoses_icd.charttime, admissions.hadm_id FROM diagnoses_icd JOIN admissions ON diagnoses_icd.hadm_id = admissions.hadm_id WHERE diagnoses_icd.icd_code = ( SELECT d_icd_diagnoses.icd_code FROM d_icd_diagnoses WHERE d_icd_diagnoses.long_title = 'collapsed vertebra, not elsewhere classified, thoracic region, initial encounter for fracture' ) AND strftime('%Y',diagnoses_icd.charttime) = '2100' ) AS T1 JOIN ( SELECT admissions.subject_id, diagnoses_icd.charttime, admissions.hadm_id FROM diagnoses_icd JOIN admissions ON diagnoses_icd.hadm_id = admissions.hadm_id WHERE diagnoses_icd.icd_code = ( SELECT d_icd_diagnoses.icd_code FROM d_icd_diagnoses WHERE d_icd_diagnoses.long_title = 'patient room in hospital as the place of occurrence of the external cause' ) AND strftime('%Y',diagnoses_icd.charttime) = '2100' ) AS T2 ON T1.subject_id = T2.subject_id WHERE T1.charttime < T2.charttime AND T1.hadm_id = T2.hadm_id"
+ },
+ {
+  "qid": 78,
+  "id": "d90596b35371ba4a84a1a128",
+  "db_id": "mimic_iv",
+  "template": "List the hospital admission time of patient {patient_id} [time_filter_global1].",
+  "question": "Throughout this year, what was the admission time of patient 10020187 at the hospital?",
+  "query": "SELECT admissions.admittime FROM admissions WHERE admissions.subject_id = 10020187 AND datetime(admissions.admittime,'start of year') = datetime(current_time,'start of year','-0 year')",
+  "gold_sql": "SELECT admissions.admittime FROM admissions WHERE admissions.subject_id = 10020187 AND datetime(admissions.admittime,'start of year') = datetime('2100-12-31 23:59:00','start of year','-0 year')"
+ },
+ {
+  "qid": 79,
+  "id": "2fe2de5ecc04ecf656ea58f3",
+  "db_id": "mimic_iv",
+  "template": "List the hospital admission time of patient {patient_id} [time_filter_global1].",
+  "question": "Can you retrieve the time of patient 10023117's hospital admission since 1 year ago?",
+  "query": "SELECT admissions.admittime FROM admissions WHERE admissions.subject_id = 10023117 AND datetime(admissions.admittime) >= datetime(current_time,'-1 year')",
+  "gold_sql": "SELECT admissions.admittime FROM admissions WHERE admissions.subject_id = 10023117 AND datetime(admissions.admittime) >= datetime('2100-12-31 23:59:00','-1 year')"
+ },
+ {
+  "qid": 80,
+  "id": "0980045acad692ba2a8996db",
+  "db_id": "mimic_iv",
+  "template": "List the hospital admission time of patient {patient_id} [time_filter_global1].",
+  "question": "Could you provide me with patient 10016742's hospital admission time since 2100?",
+  "query": "SELECT admissions.admittime FROM admissions WHERE admissions.subject_id = 10016742 AND strftime('%Y',admissions.admittime) >= '2100'",
+  "gold_sql": "SELECT admissions.admittime FROM admissions WHERE admissions.subject_id = 10016742 AND strftime('%Y',admissions.admittime) >= '2100'"
+ },
+ {
+  "qid": 81,
+  "id": "05ac3a771a3724d766be2218",
+  "db_id": "mimic_iv",
+  "template": "List the hospital admission time of patient {patient_id} [time_filter_global1].",
+  "question": "Could you list the times of hospital admission for patient 10018423 in 2100?",
+  "query": "SELECT admissions.admittime FROM admissions WHERE admissions.subject_id = 10018423 AND strftime('%Y',admissions.admittime) = '2100'",
+  "gold_sql": "SELECT admissions.admittime FROM admissions WHERE admissions.subject_id = 10018423 AND strftime('%Y',admissions.admittime) = '2100'"
+ },
+ {
+  "qid": 82,
+  "id": "89880a69f1f260cad697501f",
+  "db_id": "mimic_iv",
+  "template": "List the hospital admission time of patient {patient_id} [time_filter_global1].",
+  "question": "What's the admission time for patient 10038999 at the hospital in this year?",
+  "query": "SELECT admissions.admittime FROM admissions WHERE admissions.subject_id = 10038999 AND datetime(admissions.admittime,'start of year') = datetime(current_time,'start of year','-0 year')",
+  "gold_sql": "SELECT admissions.admittime FROM admissions WHERE admissions.subject_id = 10038999 AND datetime(admissions.admittime,'start of year') = datetime('2100-12-31 23:59:00','start of year','-0 year')"
+ },
+ {
+  "qid": 83,
+  "id": "fcb5ab40c54f3bce352480bc",
+  "db_id": "mimic_iv",
+  "template": "List the hospital admission time of patient {patient_id} [time_filter_global1].",
+  "question": "Give me the details of the time patient 10020740 was admitted to the hospital in 2100.",
+  "query": "SELECT admissions.admittime FROM admissions WHERE admissions.subject_id = 10020740 AND strftime('%Y',admissions.admittime) = '2100'",
+  "gold_sql": "SELECT admissions.admittime FROM admissions WHERE admissions.subject_id = 10020740 AND strftime('%Y',admissions.admittime) = '2100'"
+ },
+ {
+  "qid": 84,
+  "id": "bee55ba67d6da489306ff469",
+  "db_id": "mimic_iv",
+  "template": "List the hospital admission time of patient {patient_id} [time_filter_global1].",
+  "question": "Can you list the time when patient 10035185 was admitted to the hospital?",
+  "query": "SELECT admissions.admittime FROM admissions WHERE admissions.subject_id = 10035185",
+  "gold_sql": "SELECT admissions.admittime FROM admissions WHERE admissions.subject_id = 10035185"
+ },
+ {
+  "qid": 85,
+  "id": "5e1e03c6f5228f110a137a50",
+  "db_id": "mimic_iv",
+  "template": "Count the number of hospital visits of patient {patient_id} [time_filter_global1].",
+  "question": "Count the total number of hospital visits of patient 10023117 in 2100.",
+  "query": "SELECT COUNT( DISTINCT admissions.hadm_id ) FROM admissions WHERE admissions.subject_id = 10023117 AND strftime('%Y',admissions.admittime) = '2100'",
+  "gold_sql": "SELECT COUNT( DISTINCT admissions.hadm_id ) FROM admissions WHERE admissions.subject_id = 10023117 AND strftime('%Y',admissions.admittime) = '2100'"
+ },
+ {
+  "qid": 86,
+  "id": "cfd45a15a268ad1a89df54dd",
+  "db_id": "mimic_iv",
+  "template": "Count the number of hospital visits of patient {patient_id} [time_filter_global1].",
+  "question": "How many times did patient 10020944 go into the hospital since 1 year ago?",
+  "query": "SELECT COUNT( DISTINCT admissions.hadm_id ) FROM admissions WHERE admissions.subject_id = 10020944 AND datetime(admissions.admittime) >= datetime(current_time,'-1 year')",
+  "gold_sql": "SELECT COUNT( DISTINCT admissions.hadm_id ) FROM admissions WHERE admissions.subject_id = 10020944 AND datetime(admissions.admittime) >= datetime('2100-12-31 23:59:00','-1 year')"
+ },
+ {
+  "qid": 87,
+  "id": "93181a0681785a3fc636f0c0",
+  "db_id": "mimic_iv",
+  "template": "Count the number of hospital visits of patient {patient_id} [time_filter_global1].",
+  "question": "How many times did patient 10037861 come to the hospital in this year?",
+  "query": "SELECT COUNT( DISTINCT admissions.hadm_id ) FROM admissions WHERE admissions.subject_id = 10037861 AND datetime(admissions.admittime,'start of year') = datetime(current_time,'start of year','-0 year')",
+  "gold_sql": "SELECT COUNT( DISTINCT admissions.hadm_id ) FROM admissions WHERE admissions.subject_id = 10037861 AND datetime(admissions.admittime,'start of year') = datetime('2100-12-31 23:59:00','start of year','-0 year')"
+ },
+ {
+  "qid": 88,
+  "id": "1565b3431aebbecefff6df1d",
+  "db_id": "mimic_iv",
+  "template": "Count the number of hospital visits of patient {patient_id} [time_filter_global1].",
+  "question": "Give me the number of hospital visits patient 10018501 made.",
+  "query": "SELECT COUNT( DISTINCT admissions.hadm_id ) FROM admissions WHERE admissions.subject_id = 10018501",
+  "gold_sql": "SELECT COUNT( DISTINCT admissions.hadm_id ) FROM admissions WHERE admissions.subject_id = 10018501"
+ },
+ {
+  "qid": 89,
+  "id": "97aace30ba0ffdefe43a92fd",
+  "db_id": "mimic_iv",
+  "template": "Count the number of hospital visits of patient {patient_id} [time_filter_global1].",
+  "question": "How many times did patient 10014729 visit the hospital?",
+  "query": "SELECT COUNT( DISTINCT admissions.hadm_id ) FROM admissions WHERE admissions.subject_id = 10014729",
+  "gold_sql": "SELECT COUNT( DISTINCT admissions.hadm_id ) FROM admissions WHERE admissions.subject_id = 10014729"
+ },
+ {
+  "qid": 90,
+  "id": "2e777a27e1019908bf9c76e0",
+  "db_id": "mimic_iv",
+  "template": "Count the number of hospital visits of patient {patient_id} [time_filter_global1].",
+  "question": "Count the total number of hospital visits of patient 10003400 last year.",
+  "query": "SELECT COUNT( DISTINCT admissions.hadm_id ) FROM admissions WHERE admissions.subject_id = 10003400 AND datetime(admissions.admittime,'start of year') = datetime(current_time,'start of year','-1 year')",
+  "gold_sql": "SELECT COUNT( DISTINCT admissions.hadm_id ) FROM admissions WHERE admissions.subject_id = 10003400 AND datetime(admissions.admittime,'start of year') = datetime('2100-12-31 23:59:00','start of year','-1 year')"
+ },
+ {
+  "qid": 91,
+  "id": "bb96274f7d0903a6f3ad4e76",
+  "db_id": "mimic_iv",
+  "template": "Count the number of hospital visits of patient {patient_id} [time_filter_global1].",
+  "question": "How many times did patient 10007058 go into the hospital since 2100?",
+  "query": "SELECT COUNT( DISTINCT admissions.hadm_id ) FROM admissions WHERE admissions.subject_id = 10007058 AND strftime('%Y',admissions.admittime) >= '2100'",
+  "gold_sql": "SELECT COUNT( DISTINCT admissions.hadm_id ) FROM admissions WHERE admissions.subject_id = 10007058 AND strftime('%Y',admissions.admittime) >= '2100'"
+ },
+ {
+  "qid": 92,
+  "id": "421833b510b5ec197a16d68f",
+  "db_id": "mimic_iv",
+  "template": "What are_verb the top [n_rank] frequent drugs that patients were prescribed [time_filter_within] after having been prescribed with {drug_name} [time_filter_global1]?",
+  "question": "What are the five most commonly prescribed medications for patients who were previously prescribed hydrocodone-acetaminophen (5mg-325mg) within 2 months, since 1 year ago?",
+  "query": "SELECT T3.drug FROM ( SELECT T2.drug, DENSE_RANK() OVER ( ORDER BY COUNT(*) DESC ) AS C1 FROM ( SELECT admissions.subject_id, prescriptions.starttime FROM prescriptions JOIN admissions ON prescriptions.hadm_id = admissions.hadm_id WHERE prescriptions.drug = 'hydrocodone-acetaminophen (5mg-325mg)' AND datetime(prescriptions.starttime) >= datetime(current_time,'-1 year') ) AS T1 JOIN ( SELECT admissions.subject_id, prescriptions.drug, prescriptions.starttime FROM prescriptions JOIN admissions ON prescriptions.hadm_id = admissions.hadm_id WHERE datetime(prescriptions.starttime) >= datetime(current_time,'-1 year') ) AS T2 ON T1.subject_id = T2.subject_id WHERE T1.starttime < T2.starttime AND datetime(T2.starttime) BETWEEN datetime(T1.starttime) AND datetime(T1.starttime,'+2 month') GROUP BY T2.drug ) AS T3 WHERE T3.C1 <= 5",
+  "gold_sql": "SELECT T3.drug FROM ( SELECT T2.drug, DENSE_RANK() OVER ( ORDER BY COUNT(*) DESC ) AS C1 FROM ( SELECT admissions.subject_id, prescriptions.starttime FROM prescriptions JOIN admissions ON prescriptions.hadm_id = admissions.hadm_id WHERE prescriptions.drug = 'hydrocodone-acetaminophen (5mg-325mg)' AND datetime(prescriptions.starttime) >= datetime('2100-12-31 23:59:00','-1 year') ) AS T1 JOIN ( SELECT admissions.subject_id, prescriptions.drug, prescriptions.starttime FROM prescriptions JOIN admissions ON prescriptions.hadm_id = admissions.hadm_id WHERE datetime(prescriptions.starttime) >= datetime('2100-12-31 23:59:00','-1 year') ) AS T2 ON T1.subject_id = T2.subject_id WHERE T1.starttime < T2.starttime AND datetime(T2.starttime) BETWEEN datetime(T1.starttime) AND datetime(T1.starttime,'+2 month') GROUP BY T2.drug ) AS T3 WHERE T3.C1 <= 5"
+ },
+ {
+  "qid": 93,
+  "id": "44162aee19eabadbab9a0172",
+  "db_id": "mimic_iv",
+  "template": "What are_verb the top [n_rank] frequent drugs that patients were prescribed [time_filter_within] after having been prescribed with {drug_name} [time_filter_global1]?",
+  "question": "What are the top four drugs that were prescribed to patients within 2 months after they were prescribed citrate dextrose 3% (acd-a) crrt?",
+  "query": "SELECT T3.drug FROM ( SELECT T2.drug, DENSE_RANK() OVER ( ORDER BY COUNT(*) DESC ) AS C1 FROM ( SELECT admissions.subject_id, prescriptions.starttime FROM prescriptions JOIN admissions ON prescriptions.hadm_id = admissions.hadm_id WHERE prescriptions.drug = 'citrate dextrose 3% (acd-a) crrt' ) AS T1 JOIN ( SELECT admissions.subject_id, prescriptions.drug, prescriptions.starttime FROM prescriptions JOIN admissions ON prescriptions.hadm_id = admissions.hadm_id ) AS T2 ON T1.subject_id = T2.subject_id WHERE T1.starttime < T2.starttime AND datetime(T2.starttime) BETWEEN datetime(T1.starttime) AND datetime(T1.starttime,'+2 month') GROUP BY T2.drug ) AS T3 WHERE T3.C1 <= 4",
+  "gold_sql": "SELECT T3.drug FROM ( SELECT T2.drug, DENSE_RANK() OVER ( ORDER BY COUNT(*) DESC ) AS C1 FROM ( SELECT admissions.subject_id, prescriptions.starttime FROM prescriptions JOIN admissions ON prescriptions.hadm_id = admissions.hadm_id WHERE prescriptions.drug = 'citrate dextrose 3% (acd-a) crrt' ) AS T1 JOIN ( SELECT admissions.subject_id, prescriptions.drug, prescriptions.starttime FROM prescriptions JOIN admissions ON prescriptions.hadm_id = admissions.hadm_id ) AS T2 ON T1.subject_id = T2.subject_id WHERE T1.starttime < T2.starttime AND datetime(T2.starttime) BETWEEN datetime(T1.starttime) AND datetime(T1.starttime,'+2 month') GROUP BY T2.drug ) AS T3 WHERE T3.C1 <= 4"
+ },
+ {
+  "qid": 94,
+  "id": "5f2f54291860e0ab6a44e725",
+  "db_id": "mimic_iv",
+  "template": "What are_verb the top [n_rank] frequent drugs that patients were prescribed [time_filter_within] after having been prescribed with {drug_name} [time_filter_global1]?",
+  "question": "For patients that were given plasmalyte since 2100, what are the top five drugs that they were prescribed afterwards in the same month?",
+  "query": "SELECT T3.drug FROM ( SELECT T2.drug, DENSE_RANK() OVER ( ORDER BY COUNT(*) DESC ) AS C1 FROM ( SELECT admissions.subject_id, prescriptions.starttime FROM prescriptions JOIN admissions ON prescriptions.hadm_id = admissions.hadm_id WHERE prescriptions.drug = 'plasmalyte' AND strftime('%Y',prescriptions.starttime) >= '2100' ) AS T1 JOIN ( SELECT admissions.subject_id, prescriptions.drug, prescriptions.starttime FROM prescriptions JOIN admissions ON prescriptions.hadm_id = admissions.hadm_id WHERE strftime('%Y',prescriptions.starttime) >= '2100' ) AS T2 ON T1.subject_id = T2.subject_id WHERE T1.starttime < T2.starttime AND datetime(T1.starttime,'start of month') = datetime(T2.starttime,'start of month') GROUP BY T2.drug ) AS T3 WHERE T3.C1 <= 5",
+  "gold_sql": "SELECT T3.drug FROM ( SELECT T2.drug, DENSE_RANK() OVER ( ORDER BY COUNT(*) DESC ) AS C1 FROM ( SELECT admissions.subject_id, prescriptions.starttime FROM prescriptions JOIN admissions ON prescriptions.hadm_id = admissions.hadm_id WHERE prescriptions.drug = 'plasmalyte' AND strftime('%Y',prescriptions.starttime) >= '2100' ) AS T1 JOIN ( SELECT admissions.subject_id, prescriptions.drug, prescriptions.starttime FROM prescriptions JOIN admissions ON prescriptions.hadm_id = admissions.hadm_id WHERE strftime('%Y',prescriptions.starttime) >= '2100' ) AS T2 ON T1.subject_id = T2.subject_id WHERE T1.starttime < T2.starttime AND datetime(T1.starttime,'start of month') = datetime(T2.starttime,'start of month') GROUP BY T2.drug ) AS T3 WHERE T3.C1 <= 5"
+ },
+ {
+  "qid": 95,
+  "id": "48e40b5c41147007595a5175",
+  "db_id": "mimic_iv",
+  "template": "What are_verb the top [n_rank] frequent drugs that patients were prescribed [time_filter_within] after having been prescribed with {drug_name} [time_filter_global1]?",
+  "question": "Since 2100, what are the top three most frequent drugs prescribed to patients within 2 months after the prescription of donepezil?",
+  "query": "SELECT T3.drug FROM ( SELECT T2.drug, DENSE_RANK() OVER ( ORDER BY COUNT(*) DESC ) AS C1 FROM ( SELECT admissions.subject_id, prescriptions.starttime FROM prescriptions JOIN admissions ON prescriptions.hadm_id = admissions.hadm_id WHERE prescriptions.drug = 'donepezil' AND strftime('%Y',prescriptions.starttime) >= '2100' ) AS T1 JOIN ( SELECT admissions.subject_id, prescriptions.drug, prescriptions.starttime FROM prescriptions JOIN admissions ON prescriptions.hadm_id = admissions.hadm_id WHERE strftime('%Y',prescriptions.starttime) >= '2100' ) AS T2 ON T1.subject_id = T2.subject_id WHERE T1.starttime < T2.starttime AND datetime(T2.starttime) BETWEEN datetime(T1.starttime) AND datetime(T1.starttime,'+2 month') GROUP BY T2.drug ) AS T3 WHERE T3.C1 <= 3",
+  "gold_sql": "SELECT T3.drug FROM ( SELECT T2.drug, DENSE_RANK() OVER ( ORDER BY COUNT(*) DESC ) AS C1 FROM ( SELECT admissions.subject_id, prescriptions.starttime FROM prescriptions JOIN admissions ON prescriptions.hadm_id = admissions.hadm_id WHERE prescriptions.drug = 'donepezil' AND strftime('%Y',prescriptions.starttime) >= '2100' ) AS T1 JOIN ( SELECT admissions.subject_id, prescriptions.drug, prescriptions.starttime FROM prescriptions JOIN admissions ON prescriptions.hadm_id = admissions.hadm_id WHERE strftime('%Y',prescriptions.starttime) >= '2100' ) AS T2 ON T1.subject_id = T2.subject_id WHERE T1.starttime < T2.starttime AND datetime(T2.starttime) BETWEEN datetime(T1.starttime) AND datetime(T1.starttime,'+2 month') GROUP BY T2.drug ) AS T3 WHERE T3.C1 <= 3"
+ },
+ {
+  "qid": 96,
+  "id": "7ec4445b22dfabb102812643",
+  "db_id": "mimic_iv",
+  "template": "What are_verb the top [n_rank] frequent drugs that patients were prescribed [time_filter_within] after having been prescribed with {drug_name} [time_filter_global1]?",
+  "question": "What are the three most commonly ordered drugs for patients also prescribed miconazole powder 2% previously in the same hospital visit, since 2100?",
+  "query": "SELECT T3.drug FROM ( SELECT T2.drug, DENSE_RANK() OVER ( ORDER BY COUNT(*) DESC ) AS C1 FROM ( SELECT admissions.subject_id, prescriptions.starttime, admissions.hadm_id FROM prescriptions JOIN admissions ON prescriptions.hadm_id = admissions.hadm_id WHERE prescriptions.drug = 'miconazole powder 2%' AND strftime('%Y',prescriptions.starttime) >= '2100' ) AS T1 JOIN ( SELECT admissions.subject_id, prescriptions.drug, prescriptions.starttime, admissions.hadm_id FROM prescriptions JOIN admissions ON prescriptions.hadm_id = admissions.hadm_id WHERE strftime('%Y',prescriptions.starttime) >= '2100' ) AS T2 ON T1.subject_id = T2.subject_id WHERE T1.starttime < T2.starttime AND T1.hadm_id = T2.hadm_id GROUP BY T2.drug ) AS T3 WHERE T3.C1 <= 3",
+  "gold_sql": "SELECT T3.drug FROM ( SELECT T2.drug, DENSE_RANK() OVER ( ORDER BY COUNT(*) DESC ) AS C1 FROM ( SELECT admissions.subject_id, prescriptions.starttime, admissions.hadm_id FROM prescriptions JOIN admissions ON prescriptions.hadm_id = admissions.hadm_id WHERE prescriptions.drug = 'miconazole powder 2%' AND strftime('%Y',prescriptions.starttime) >= '2100' ) AS T1 JOIN ( SELECT admissions.subject_id, prescriptions.drug, prescriptions.starttime, admissions.hadm_id FROM prescriptions JOIN admissions ON prescriptions.hadm_id = admissions.hadm_id WHERE strftime('%Y',prescriptions.starttime) >= '2100' ) AS T2 ON T1.subject_id = T2.subject_id WHERE T1.starttime < T2.starttime AND T1.hadm_id = T2.hadm_id GROUP BY T2.drug ) AS T3 WHERE T3.C1 <= 3"
+ },
+ {
+  "qid": 97,
+  "id": "b85c5a437b3cb22920ce10fb",
+  "db_id": "mimic_iv",
+  "template": "What are_verb the top [n_rank] frequent drugs that patients were prescribed [time_filter_within] after having been prescribed with {drug_name} [time_filter_global1]?",
+  "question": "What are the five most commonly prescribed medications for patients who were previously prescribed bupropion (sustained release) during the same hospital encounter, since 1 year ago?",
+  "query": "SELECT T3.drug FROM ( SELECT T2.drug, DENSE_RANK() OVER ( ORDER BY COUNT(*) DESC ) AS C1 FROM ( SELECT admissions.subject_id, prescriptions.starttime, admissions.hadm_id FROM prescriptions JOIN admissions ON prescriptions.hadm_id = admissions.hadm_id WHERE prescriptions.drug = 'bupropion (sustained release)' AND datetime(prescriptions.starttime) >= datetime(current_time,'-1 year') ) AS T1 JOIN ( SELECT admissions.subject_id, prescriptions.drug, prescriptions.starttime, admissions.hadm_id FROM prescriptions JOIN admissions ON prescriptions.hadm_id = admissions.hadm_id WHERE datetime(prescriptions.starttime) >= datetime(current_time,'-1 year') ) AS T2 ON T1.subject_id = T2.subject_id WHERE T1.starttime < T2.starttime AND T1.hadm_id = T2.hadm_id GROUP BY T2.drug ) AS T3 WHERE T3.C1 <= 5",
+  "gold_sql": "SELECT T3.drug FROM ( SELECT T2.drug, DENSE_RANK() OVER ( ORDER BY COUNT(*) DESC ) AS C1 FROM ( SELECT admissions.subject_id, prescriptions.starttime, admissions.hadm_id FROM prescriptions JOIN admissions ON prescriptions.hadm_id = admissions.hadm_id WHERE prescriptions.drug = 'bupropion (sustained release)' AND datetime(prescriptions.starttime) >= datetime('2100-12-31 23:59:00','-1 year') ) AS T1 JOIN ( SELECT admissions.subject_id, prescriptions.drug, prescriptions.starttime, admissions.hadm_id FROM prescriptions JOIN admissions ON prescriptions.hadm_id = admissions.hadm_id WHERE datetime(prescriptions.starttime) >= datetime('2100-12-31 23:59:00','-1 year') ) AS T2 ON T1.subject_id = T2.subject_id WHERE T1.starttime < T2.starttime AND T1.hadm_id = T2.hadm_id GROUP BY T2.drug ) AS T3 WHERE T3.C1 <= 5"
+ },
+ {
+  "qid": 98,
+  "id": "757270424b26647955e34c40",
+  "db_id": "mimic_iv",
+  "template": "What are_verb the top [n_rank] frequent drugs that patients were prescribed [time_filter_within] after having been prescribed with {drug_name} [time_filter_global1]?",
+  "question": "What are the top four drugs that were prescribed to patients during the same month after they were prescribed vecuronium bromide during this year?",
+  "query": "SELECT T3.drug FROM ( SELECT T2.drug, DENSE_RANK() OVER ( ORDER BY COUNT(*) DESC ) AS C1 FROM ( SELECT admissions.subject_id, prescriptions.starttime FROM prescriptions JOIN admissions ON prescriptions.hadm_id = admissions.hadm_id WHERE prescriptions.drug = 'vecuronium bromide' AND datetime(prescriptions.starttime,'start of year') = datetime(current_time,'start of year','-0 year') ) AS T1 JOIN ( SELECT admissions.subject_id, prescriptions.drug, prescriptions.starttime FROM prescriptions JOIN admissions ON prescriptions.hadm_id = admissions.hadm_id WHERE datetime(prescriptions.starttime,'start of year') = datetime(current_time,'start of year','-0 year') ) AS T2 ON T1.subject_id = T2.subject_id WHERE T1.starttime < T2.starttime AND datetime(T1.starttime,'start of month') = datetime(T2.starttime,'start of month') GROUP BY T2.drug ) AS T3 WHERE T3.C1 <= 4",
+  "gold_sql": "SELECT T3.drug FROM ( SELECT T2.drug, DENSE_RANK() OVER ( ORDER BY COUNT(*) DESC ) AS C1 FROM ( SELECT admissions.subject_id, prescriptions.starttime FROM prescriptions JOIN admissions ON prescriptions.hadm_id = admissions.hadm_id WHERE prescriptions.drug = 'vecuronium bromide' AND datetime(prescriptions.starttime,'start of year') = datetime('2100-12-31 23:59:00','start of year','-0 year') ) AS T1 JOIN ( SELECT admissions.subject_id, prescriptions.drug, prescriptions.starttime FROM prescriptions JOIN admissions ON prescriptions.hadm_id = admissions.hadm_id WHERE datetime(prescriptions.starttime,'start of year') = datetime('2100-12-31 23:59:00','start of year','-0 year') ) AS T2 ON T1.subject_id = T2.subject_id WHERE T1.starttime < T2.starttime AND datetime(T1.starttime,'start of month') = datetime(T2.starttime,'start of month') GROUP BY T2.drug ) AS T3 WHERE T3.C1 <= 4"
+ },
+ {
+  "qid": 99,
+  "id": "18df7b68a00300388686a82b",
+  "db_id": "mimic_iv",
+  "template": "What is_verb the [agg_function] total hospital cost that involves a procedure named {procedure_name} [time_filter_global1]?",
+  "question": "What is the maximum total hospital cost which involves extirpation of matter from right lower lung lobe, via natural or artificial opening endoscopic this year?",
+  "query": "SELECT MAX(T1.C1) FROM ( SELECT SUM(cost.cost) AS C1 FROM cost WHERE cost.hadm_id IN ( SELECT procedures_icd.hadm_id FROM procedures_icd WHERE procedures_icd.icd_code = ( SELECT d_icd_procedures.icd_code FROM d_icd_procedures WHERE d_icd_procedures.long_title = 'extirpation of matter from right lower lung lobe, via natural or artificial opening endoscopic' ) ) AND datetime(cost.chargetime,'start of year') = datetime(current_time,'start of year','-0 year') GROUP BY cost.hadm_id ) AS T1",
+  "gold_sql": "SELECT MAX(T1.C1) FROM ( SELECT SUM(cost.cost) AS C1 FROM cost WHERE cost.hadm_id IN ( SELECT procedures_icd.hadm_id FROM procedures_icd WHERE procedures_icd.icd_code = ( SELECT d_icd_procedures.icd_code FROM d_icd_procedures WHERE d_icd_procedures.long_title = 'extirpation of matter from right lower lung lobe, via natural or artificial opening endoscopic' ) ) AND datetime(cost.chargetime,'start of year') = datetime('2100-12-31 23:59:00','start of year','-0 year') GROUP BY cost.hadm_id ) AS T1"
+ },
+ {
+  "qid": 100,
+  "id": "c818322213949df55b14a582",
+  "db_id": "mimic_iv",
+  "template": "What is_verb the [agg_function] total hospital cost that involves a procedure named {procedure_name} [time_filter_global1]?",
+  "question": "What is the average total cost of a hospital visit that involves a procedure known as performance of urinary filtration, multiple since 2100?",
+  "query": "SELECT AVG(T1.C1) FROM ( SELECT SUM(cost.cost) AS C1 FROM cost WHERE cost.hadm_id IN ( SELECT procedures_icd.hadm_id FROM procedures_icd WHERE procedures_icd.icd_code = ( SELECT d_icd_procedures.icd_code FROM d_icd_procedures WHERE d_icd_procedures.long_title = 'performance of urinary filtration, multiple' ) ) AND strftime('%Y',cost.chargetime) >= '2100' GROUP BY cost.hadm_id ) AS T1",
+  "gold_sql": "SELECT AVG(T1.C1) FROM ( SELECT SUM(cost.cost) AS C1 FROM cost WHERE cost.hadm_id IN ( SELECT procedures_icd.hadm_id FROM procedures_icd WHERE procedures_icd.icd_code = ( SELECT d_icd_procedures.icd_code FROM d_icd_procedures WHERE d_icd_procedures.long_title = 'performance of urinary filtration, multiple' ) ) AND strftime('%Y',cost.chargetime) >= '2100' GROUP BY cost.hadm_id ) AS T1"
+ },
+ {
+  "qid": 101,
+  "id": "719bc524af77a513ee6e0aa0",
+  "db_id": "mimic_iv",
+  "template": "What is_verb the [agg_function] total hospital cost that involves a procedure named {procedure_name} [time_filter_global1]?",
+  "question": "What is the maximum total hospital cost that involved insertion of non-drug-eluting peripheral (non-coronary) vessel stent(s)?",
+  "query": "SELECT MAX(T1.C1) FROM ( SELECT SUM(cost.cost) AS C1 FROM cost WHERE cost.hadm_id IN ( SELECT procedures_icd.hadm_id FROM procedures_icd WHERE procedures_icd.icd_code = ( SELECT d_icd_procedures.icd_code FROM d_icd_procedures WHERE d_icd_procedures.long_title = 'insertion of non-drug-eluting peripheral (non-coronary) vessel stent(s)' ) ) GROUP BY cost.hadm_id ) AS T1",
+  "gold_sql": "SELECT MAX(T1.C1) FROM ( SELECT SUM(cost.cost) AS C1 FROM cost WHERE cost.hadm_id IN ( SELECT procedures_icd.hadm_id FROM procedures_icd WHERE procedures_icd.icd_code = ( SELECT d_icd_procedures.icd_code FROM d_icd_procedures WHERE d_icd_procedures.long_title = 'insertion of non-drug-eluting peripheral (non-coronary) vessel stent(s)' ) ) GROUP BY cost.hadm_id ) AS T1"
+ },
+ {
+  "qid": 102,
+  "id": "37edc3b1fd1e40d2f63d5c01",
+  "db_id": "mimic_iv",
+  "template": "What is_verb the [agg_function] total hospital cost that involves a procedure named {procedure_name} [time_filter_global1]?",
+  "question": "What is the average total cost of the hospital which involves other laparoscopic umbilical herniorrhaphy in 2100?",
+  "query": "SELECT AVG(T1.C1) FROM ( SELECT SUM(cost.cost) AS C1 FROM cost WHERE cost.hadm_id IN ( SELECT procedures_icd.hadm_id FROM procedures_icd WHERE procedures_icd.icd_code = ( SELECT d_icd_procedures.icd_code FROM d_icd_procedures WHERE d_icd_procedures.long_title = 'other laparoscopic umbilical herniorrhaphy' ) ) AND strftime('%Y',cost.chargetime) = '2100' GROUP BY cost.hadm_id ) AS T1",
+  "gold_sql": "SELECT AVG(T1.C1) FROM ( SELECT SUM(cost.cost) AS C1 FROM cost WHERE cost.hadm_id IN ( SELECT procedures_icd.hadm_id FROM procedures_icd WHERE procedures_icd.icd_code = ( SELECT d_icd_procedures.icd_code FROM d_icd_procedures WHERE d_icd_procedures.long_title = 'other laparoscopic umbilical herniorrhaphy' ) ) AND strftime('%Y',cost.chargetime) = '2100' GROUP BY cost.hadm_id ) AS T1"
+ },
+ {
+  "qid": 103,
+  "id": "29fabfc4794a216ba5bf1993",
+  "db_id": "mimic_iv",
+  "template": "What is_verb the [agg_function] total hospital cost that involves a procedure named {procedure_name} [time_filter_global1]?",
+  "question": "How much does the maximum total hospital cost include a procedure called combined right and left heart cardiac catheterization?",
+  "query": "SELECT MAX(T1.C1) FROM ( SELECT SUM(cost.cost) AS C1 FROM cost WHERE cost.hadm_id IN ( SELECT procedures_icd.hadm_id FROM procedures_icd WHERE procedures_icd.icd_code = ( SELECT d_icd_procedures.icd_code FROM d_icd_procedures WHERE d_icd_procedures.long_title = 'combined right and left heart cardiac catheterization' ) ) GROUP BY cost.hadm_id ) AS T1",
+  "gold_sql": "SELECT MAX(T1.C1) FROM ( SELECT SUM(cost.cost) AS C1 FROM cost WHERE cost.hadm_id IN ( SELECT procedures_icd.hadm_id FROM procedures_icd WHERE procedures_icd.icd_code = ( SELECT d_icd_procedures.icd_code FROM d_icd_procedures WHERE d_icd_procedures.long_title = 'combined right and left heart cardiac catheterization' ) ) GROUP BY cost.hadm_id ) AS T1"
+ },
+ {
+  "qid": 104,
+  "id": "778832d66a9a3b3ebeb51d39",
+  "db_id": "mimic_iv",
+  "template": "What is_verb the [agg_function] total hospital cost that involves a procedure named {procedure_name} [time_filter_global1]?",
+  "question": "What is the average total hospital cost which involves extirpation of matter from lung lingula, via natural or artificial opening endoscopic?",
+  "query": "SELECT AVG(T1.C1) FROM ( SELECT SUM(cost.cost) AS C1 FROM cost WHERE cost.hadm_id IN ( SELECT procedures_icd.hadm_id FROM procedures_icd WHERE procedures_icd.icd_code = ( SELECT d_icd_procedures.icd_code FROM d_icd_procedures WHERE d_icd_procedures.long_title = 'extirpation of matter from lung lingula, via natural or artificial opening endoscopic' ) ) GROUP BY cost.hadm_id ) AS T1",
+  "gold_sql": "SELECT AVG(T1.C1) FROM ( SELECT SUM(cost.cost) AS C1 FROM cost WHERE cost.hadm_id IN ( SELECT procedures_icd.hadm_id FROM procedures_icd WHERE procedures_icd.icd_code = ( SELECT d_icd_procedures.icd_code FROM d_icd_procedures WHERE d_icd_procedures.long_title = 'extirpation of matter from lung lingula, via natural or artificial opening endoscopic' ) ) GROUP BY cost.hadm_id ) AS T1"
+ },
+ {
+  "qid": 105,
+  "id": "7bc94deacf6c02cba88f38e5",
+  "db_id": "mimic_iv",
+  "template": "What is_verb the [agg_function] total hospital cost that involves a procedure named {procedure_name} [time_filter_global1]?",
+  "question": "What is the average total cost of a hospital visit that involves a procedure known as other bronchoscopy in 2100?",
+  "query": "SELECT AVG(T1.C1) FROM ( SELECT SUM(cost.cost) AS C1 FROM cost WHERE cost.hadm_id IN ( SELECT procedures_icd.hadm_id FROM procedures_icd WHERE procedures_icd.icd_code = ( SELECT d_icd_procedures.icd_code FROM d_icd_procedures WHERE d_icd_procedures.long_title = 'other bronchoscopy' ) ) AND strftime('%Y',cost.chargetime) = '2100' GROUP BY cost.hadm_id ) AS T1",
+  "gold_sql": "SELECT AVG(T1.C1) FROM ( SELECT SUM(cost.cost) AS C1 FROM cost WHERE cost.hadm_id IN ( SELECT procedures_icd.hadm_id FROM procedures_icd WHERE procedures_icd.icd_code = ( SELECT d_icd_procedures.icd_code FROM d_icd_procedures WHERE d_icd_procedures.long_title = 'other bronchoscopy' ) ) AND strftime('%Y',cost.chargetime) = '2100' GROUP BY cost.hadm_id ) AS T1"
+ },
+ {
+  "qid": 106,
+  "id": "21765b418ac742a54e95ff43",
+  "db_id": "mimic_iv",
+  "template": "When was patient {patient_id}'s [time_filter_exact1] {spec_name} microbiology test [time_filter_global1]?",
+  "question": "When has patient 10021487 first received the pleural fluid microbiology test since 07/2100?",
+  "query": "SELECT microbiologyevents.charttime FROM microbiologyevents WHERE microbiologyevents.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10021487 ) AND microbiologyevents.spec_type_desc = 'pleural fluid' AND strftime('%Y-%m',microbiologyevents.charttime) >= '2100-07' ORDER BY microbiologyevents.charttime ASC LIMIT 1",
+  "gold_sql": "SELECT microbiologyevents.charttime FROM microbiologyevents WHERE microbiologyevents.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10021487 ) AND microbiologyevents.spec_type_desc = 'pleural fluid' AND strftime('%Y-%m',microbiologyevents.charttime) >= '2100-07' ORDER BY microbiologyevents.charttime ASC LIMIT 1"
+ },
+ {
+  "qid": 107,
+  "id": "031ff26b606f0d58d734256c",
+  "db_id": "mimic_iv",
+  "template": "When was patient {patient_id}'s [time_filter_exact1] {spec_name} microbiology test [time_filter_global1]?",
+  "question": "When did patient 10031757 last take his or her swab microbiology test since 02/2100?",
+  "query": "SELECT microbiologyevents.charttime FROM microbiologyevents WHERE microbiologyevents.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10031757 ) AND microbiologyevents.spec_type_desc = 'swab' AND strftime('%Y-%m',microbiologyevents.charttime) >= '2100-02' ORDER BY microbiologyevents.charttime DESC LIMIT 1",
+  "gold_sql": "SELECT microbiologyevents.charttime FROM microbiologyevents WHERE microbiologyevents.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10031757 ) AND microbiologyevents.spec_type_desc = 'swab' AND strftime('%Y-%m',microbiologyevents.charttime) >= '2100-02' ORDER BY microbiologyevents.charttime DESC LIMIT 1"
+ },
+ {
+  "qid": 108,
+  "id": "8fc30d6e91b22c5fbe1a138b",
+  "db_id": "mimic_iv",
+  "template": "When was patient {patient_id}'s [time_filter_exact1] {spec_name} microbiology test [time_filter_global1]?",
+  "question": "When did patient 10016150 first get a urine microbiology test since 05/2100?",
+  "query": "SELECT microbiologyevents.charttime FROM microbiologyevents WHERE microbiologyevents.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10016150 ) AND microbiologyevents.spec_type_desc = 'urine' AND strftime('%Y-%m',microbiologyevents.charttime) >= '2100-05' ORDER BY microbiologyevents.charttime ASC LIMIT 1",
+  "gold_sql": "SELECT microbiologyevents.charttime FROM microbiologyevents WHERE microbiologyevents.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10016150 ) AND microbiologyevents.spec_type_desc = 'urine' AND strftime('%Y-%m',microbiologyevents.charttime) >= '2100-05' ORDER BY microbiologyevents.charttime ASC LIMIT 1"
+ },
+ {
+  "qid": 109,
+  "id": "76a9a991435e9dfbb0590490",
+  "db_id": "mimic_iv",
+  "template": "When was patient {patient_id}'s [time_filter_exact1] {spec_name} microbiology test [time_filter_global1]?",
+  "question": "When was the last time that patient 10019777 received a mrsa screen microbiology test in 03/2100?",
+  "query": "SELECT microbiologyevents.charttime FROM microbiologyevents WHERE microbiologyevents.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10019777 ) AND microbiologyevents.spec_type_desc = 'mrsa screen' AND strftime('%Y-%m',microbiologyevents.charttime) = '2100-03' ORDER BY microbiologyevents.charttime DESC LIMIT 1",
+  "gold_sql": "SELECT microbiologyevents.charttime FROM microbiologyevents WHERE microbiologyevents.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10019777 ) AND microbiologyevents.spec_type_desc = 'mrsa screen' AND strftime('%Y-%m',microbiologyevents.charttime) = '2100-03' ORDER BY microbiologyevents.charttime DESC LIMIT 1"
+ },
+ {
+  "qid": 110,
+  "id": "58f0822239c07b746c5df6fc",
+  "db_id": "mimic_iv",
+  "template": "When was patient {patient_id}'s [time_filter_exact1] {spec_name} microbiology test [time_filter_global1]?",
+  "question": "When did patient 10022041 first get mrsa screen microbiology test in 06/this year?",
+  "query": "SELECT microbiologyevents.charttime FROM microbiologyevents WHERE microbiologyevents.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10022041 ) AND microbiologyevents.spec_type_desc = 'mrsa screen' AND datetime(microbiologyevents.charttime,'start of year') = datetime(current_time,'start of year','-0 year') AND strftime('%m',microbiologyevents.charttime) = '06' ORDER BY microbiologyevents.charttime ASC LIMIT 1",
+  "gold_sql": "SELECT microbiologyevents.charttime FROM microbiologyevents WHERE microbiologyevents.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10022041 ) AND microbiologyevents.spec_type_desc = 'mrsa screen' AND datetime(microbiologyevents.charttime,'start of year') = datetime('2100-12-31 23:59:00','start of year','-0 year') AND strftime('%m',microbiologyevents.charttime) = '06' ORDER BY microbiologyevents.charttime ASC LIMIT 1"
+ },
+ {
+  "qid": 111,
+  "id": "689c016c32621989ea39ef0c",
+  "db_id": "mimic_iv",
+  "template": "When was patient {patient_id}'s [time_filter_exact1] {spec_name} microbiology test [time_filter_global1]?",
+  "question": "When does patient 10008454 have received a mrsa screen microbiology test for the first time in their first hospital encounter?",
+  "query": "SELECT microbiologyevents.charttime FROM microbiologyevents WHERE microbiologyevents.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10008454 AND admissions.dischtime IS NOT NULL ORDER BY admissions.admittime ASC LIMIT 1 ) AND microbiologyevents.spec_type_desc = 'mrsa screen' ORDER BY microbiologyevents.charttime ASC LIMIT 1",
+  "gold_sql": "SELECT microbiologyevents.charttime FROM microbiologyevents WHERE microbiologyevents.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10008454 AND admissions.dischtime IS NOT NULL ORDER BY admissions.admittime ASC LIMIT 1 ) AND microbiologyevents.spec_type_desc = 'mrsa screen' ORDER BY microbiologyevents.charttime ASC LIMIT 1"
+ },
+ {
+  "qid": 112,
+  "id": "a88028190c05dd2074203820",
+  "db_id": "mimic_iv",
+  "template": "When was patient {patient_id}'s [time_filter_exact1] {spec_name} microbiology test [time_filter_global1]?",
+  "question": "During the last hospital encounter, when was the last staph aureus swab microbiology test for patient 10005817?",
+  "query": "SELECT microbiologyevents.charttime FROM microbiologyevents WHERE microbiologyevents.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10005817 AND admissions.dischtime IS NOT NULL ORDER BY admissions.admittime DESC LIMIT 1 ) AND microbiologyevents.spec_type_desc = 'staph aureus swab' ORDER BY microbiologyevents.charttime DESC LIMIT 1",
+  "gold_sql": "SELECT microbiologyevents.charttime FROM microbiologyevents WHERE microbiologyevents.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10005817 AND admissions.dischtime IS NOT NULL ORDER BY admissions.admittime DESC LIMIT 1 ) AND microbiologyevents.spec_type_desc = 'staph aureus swab' ORDER BY microbiologyevents.charttime DESC LIMIT 1"
+ },
+ {
+  "qid": 113,
+  "id": "b0c1e2c1046cc6dad14ddbe4",
+  "db_id": "mimic_iv",
+  "template": "Count the number of times that patient {patient_id} were prescribed {drug_name} [time_filter_global1].",
+  "question": "How many times is chlorhexidine gluconate 0.12% oral rinse in 03/2100 prescribed to patient 10020740?",
+  "query": "SELECT COUNT(*) FROM prescriptions WHERE prescriptions.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10020740 ) AND prescriptions.drug = 'chlorhexidine gluconate 0.12% oral rinse' AND strftime('%Y-%m',prescriptions.starttime) = '2100-03'",
+  "gold_sql": "SELECT COUNT(*) FROM prescriptions WHERE prescriptions.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10020740 ) AND prescriptions.drug = 'chlorhexidine gluconate 0.12% oral rinse' AND strftime('%Y-%m',prescriptions.starttime) = '2100-03'"
+ },
+ {
+  "qid": 114,
+  "id": "3290627f36487b94ca743ca3",
+  "db_id": "mimic_iv",
+  "template": "Count the number of times that patient {patient_id} were prescribed {drug_name} [time_filter_global1].",
+  "question": "Compute the number of times patient 10018081 was prescribed 5% dextrose in 12/this year.",
+  "query": "SELECT COUNT(*) FROM prescriptions WHERE prescriptions.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10018081 ) AND prescriptions.drug = '5% dextrose' AND datetime(prescriptions.starttime,'start of year') = datetime(current_time,'start of year','-0 year') AND strftime('%m',prescriptions.starttime) = '12'",
+  "gold_sql": "SELECT COUNT(*) FROM prescriptions WHERE prescriptions.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10018081 ) AND prescriptions.drug = '5% dextrose' AND datetime(prescriptions.starttime,'start of year') = datetime('2100-12-31 23:59:00','start of year','-0 year') AND strftime('%m',prescriptions.starttime) = '12'"
+ },
+ {
+  "qid": 115,
+  "id": "f737cdc1f727761a17f22b7d",
+  "db_id": "mimic_iv",
+  "template": "Count the number of times that patient {patient_id} were prescribed {drug_name} [time_filter_global1].",
+  "question": "How many times was albumin 25% (12.5g / 50ml) prescribed for patient 10038081 in the first hospital encounter?",
+  "query": "SELECT COUNT(*) FROM prescriptions WHERE prescriptions.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10038081 AND admissions.dischtime IS NOT NULL ORDER BY admissions.admittime ASC LIMIT 1 ) AND prescriptions.drug = 'albumin 25% (12.5g / 50ml)'",
+  "gold_sql": "SELECT COUNT(*) FROM prescriptions WHERE prescriptions.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10038081 AND admissions.dischtime IS NOT NULL ORDER BY admissions.admittime ASC LIMIT 1 ) AND prescriptions.drug = 'albumin 25% (12.5g / 50ml)'"
+ },
+ {
+  "qid": 116,
+  "id": "0035d27329064c6e313badd1",
+  "db_id": "mimic_iv",
+  "template": "Count the number of times that patient {patient_id} were prescribed {drug_name} [time_filter_global1].",
+  "question": "How frequently was milk of magnesia prescribed to patient 10005348 in 09/this year?",
+  "query": "SELECT COUNT(*) FROM prescriptions WHERE prescriptions.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10005348 ) AND prescriptions.drug = 'milk of magnesia' AND datetime(prescriptions.starttime,'start of year') = datetime(current_time,'start of year','-0 year') AND strftime('%m',prescriptions.starttime) = '09'",
+  "gold_sql": "SELECT COUNT(*) FROM prescriptions WHERE prescriptions.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10005348 ) AND prescriptions.drug = 'milk of magnesia' AND datetime(prescriptions.starttime,'start of year') = datetime('2100-12-31 23:59:00','start of year','-0 year') AND strftime('%m',prescriptions.starttime) = '09'"
+ },
+ {
+  "qid": 117,
+  "id": "75f2ab4d9c265d10a7c0876f",
+  "db_id": "mimic_iv",
+  "template": "Count the number of times that patient {patient_id} were prescribed {drug_name} [time_filter_global1].",
+  "question": "Number of times patient 10015272 was prescribed potassium chloride replacement (critical care and oncology) in 2100.",
+  "query": "SELECT COUNT(*) FROM prescriptions WHERE prescriptions.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10015272 ) AND prescriptions.drug = 'potassium chloride replacement (critical care and oncology)' AND strftime('%Y',prescriptions.starttime) = '2100'",
+  "gold_sql": "SELECT COUNT(*) FROM prescriptions WHERE prescriptions.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10015272 ) AND prescriptions.drug = 'potassium chloride replacement (critical care and oncology)' AND strftime('%Y',prescriptions.starttime) = '2100'"
+ },
+ {
+  "qid": 118,
+  "id": "76ddecbe56caba3073d76d2d",
+  "db_id": "mimic_iv",
+  "template": "Count the number of times that patient {patient_id} were prescribed {drug_name} [time_filter_global1].",
+  "question": "How many times is levetiracetam oral solution in 09/2100 prescribed to patient 10038933?",
+  "query": "SELECT COUNT(*) FROM prescriptions WHERE prescriptions.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10038933 ) AND prescriptions.drug = 'levetiracetam oral solution' AND strftime('%Y-%m',prescriptions.starttime) = '2100-09'",
+  "gold_sql": "SELECT COUNT(*) FROM prescriptions WHERE prescriptions.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10038933 ) AND prescriptions.drug = 'levetiracetam oral solution' AND strftime('%Y-%m',prescriptions.starttime) = '2100-09'"
+ },
+ {
+  "qid": 119,
+  "id": "70280353be78e0850355e08c",
+  "db_id": "mimic_iv",
+  "template": "Count the number of times that patient {patient_id} were prescribed {drug_name} [time_filter_global1].",
+  "question": "Compute the number of times patient 10016810 was prescribed famotidine in their last hospital visit.",
+  "query": "SELECT COUNT(*) FROM prescriptions WHERE prescriptions.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10016810 AND admissions.dischtime IS NOT NULL ORDER BY admissions.admittime DESC LIMIT 1 ) AND prescriptions.drug = 'famotidine'",
+  "gold_sql": "SELECT COUNT(*) FROM prescriptions WHERE prescriptions.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10016810 AND admissions.dischtime IS NOT NULL ORDER BY admissions.admittime DESC LIMIT 1 ) AND prescriptions.drug = 'famotidine'"
+ }
+]

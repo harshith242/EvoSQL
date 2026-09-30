@@ -1,0 +1,15 @@
+{
+ "repo": "glee4810/ehrsql-2024",
+ "commit": "f9e1aa02160d39e3f8df52bf5c69c5cf2e472499",
+ "files": {
+  "data/ehrsql/mimic_iv/mimic_iv.sqlite": "a26a60261d7e3bbf1869ffd92efe1803abdbce3eb256a2883fc0439c63427796",
+  "data/ehrsql/annotated.json": "9d6bd4d6cadb50975c1aabf0d1dfb9c183ed391dcf086d7c9958dec95ac46ccb",
+  "data/ehrsql/postprocessing.py": "f03f9594b400a255830fd1414be62d4061b6221cd63480cfa7f92215ea8f5f8e"
+ },
+ "stream": {
+  "path": "data/ehrsql/stream_v8.json",
+  "sha256": "3a99b0933548c517bff4b68f6928b65150d49bbd00b6ffe1f0de7f9fb62a50cb",
+  "templates": 17,
+  "questions": 119
+ }
+}
