@@ -1,0 +1,285 @@
+<!doctype html><html><head><meta charset="utf-8"><title>EvoSQL results</title><style>
+body { font: 15px/1.55 -apple-system, "Segoe UI", sans-serif; max-width: 1000px; margin: 32px auto; padding: 0 16px;
+       color: #1f2328; }
+h1 { border-bottom: 2px solid #d0d7de; padding-bottom: 8px; } h2 { margin-top: 36px; color: #0b5cad; }
+table { border-collapse: collapse; margin: 12px 0; } th, td { border: 1px solid #d0d7de; padding: 6px 10px; }
+th { background: #f6f8fa; } tr:nth-child(even) td { background: #fbfbfc; }
+pre { background: #f6f8fa; padding: 12px; overflow-x: auto; font-size: 13px; } code { font-size: 13px; }
+</style></head><body><h1>EvoSQL v9 results (Arcwise-Plat formula_1)</h1>
+<p>The v7 stream (Arcwise-Plat formula_1, correct SQL revealed after each answer) with four arms: none, facts, examples, and examples plus a working-memory notes file (max 100 lines, updated after its failures with regression-checked edits). The none and facts arms replay v7 from cache.</p>
+<h2>Primary: examples + notes vs examples</h2>
+<table>
+<thead>
+<tr>
+<th>Order</th>
+<th>Database</th>
+<th>Questions (2nd half)</th>
+<th>Examples (2nd half)</th>
+<th>Examples + notes (2nd half)</th>
+<th>Diff</th>
+<th>Fixes / regressions (2nd half)</th>
+<th>Examples (all)</th>
+<th>Examples + notes (all)</th>
+<th>Fixes / regressions (all)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>0</td>
+<td>formula_1</td>
+<td>33</td>
+<td>0.697</td>
+<td>0.667</td>
+<td>-0.030</td>
+<td>+1 / -2</td>
+<td>0.712</td>
+<td>0.727</td>
+<td>+3 / -2</td>
+</tr>
+</tbody>
+</table>
+<p>Quarter accuracy, examples / examples + notes:</p>
+<ul>
+<li>Order 0, formula_1: 0.75/0.88 · 0.71/0.71 · 0.69/0.62 · 0.71/0.71</li>
+</ul>
+<h2>Primary: second half of each stream (facts vs none)</h2>
+<table>
+<thead>
+<tr>
+<th>Order</th>
+<th>Database</th>
+<th>Questions (2nd half)</th>
+<th>None</th>
+<th>Facts</th>
+<th>Diff</th>
+<th>Fixes / regressions</th>
+<th>Injection rate</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>0</td>
+<td>formula_1</td>
+<td>33</td>
+<td>0.515</td>
+<td>0.576</td>
+<td>+0.061</td>
+<td>+2 / -0</td>
+<td>36%</td>
+</tr>
+</tbody>
+</table>
+<ul>
+<li><strong>Direction count:</strong> 1 of 1 streams positive, 0 negative, 0 tied.</li>
+<li><strong>One database:</strong> question-level counts and the learning curve carry the result.</li>
+<li><strong>Heuristic, not exact (ignores dependence within a stream):</strong> question-level sign-flip p = 0.492; question-clustered 95% CI +0.000 to +0.152.</li>
+<li><strong>Injection check:</strong> 0 of 1 streams inert (facts injected on fewer than 10% of second-half questions). Where the arm is inert, a null result means the memory was rarely used, not that memory cannot help.</li>
+</ul>
+<h2>Primary: second half of each stream (examples vs none)</h2>
+<table>
+<thead>
+<tr>
+<th>Order</th>
+<th>Database</th>
+<th>Questions (2nd half)</th>
+<th>None</th>
+<th>Examples</th>
+<th>Diff</th>
+<th>Fixes / regressions</th>
+<th>Injection rate</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>0</td>
+<td>formula_1</td>
+<td>33</td>
+<td>0.515</td>
+<td>0.697</td>
+<td>+0.182</td>
+<td>+7 / -1</td>
+<td>100%</td>
+</tr>
+</tbody>
+</table>
+<ul>
+<li><strong>Direction count:</strong> 1 of 1 streams positive, 0 negative, 0 tied.</li>
+<li><strong>One database:</strong> question-level counts and the learning curve carry the result.</li>
+<li><strong>Heuristic, not exact (ignores dependence within a stream):</strong> question-level sign-flip p = 0.071; question-clustered 95% CI +0.030 to +0.333.</li>
+<li><strong>Injection check:</strong> 0 of 1 streams inert (examples shown on fewer than 10% of second-half questions). Where the arm is inert, a null result means the memory was rarely used, not that memory cannot help.</li>
+</ul>
+<h2>Primary: second half of each stream (examples + notes vs none)</h2>
+<table>
+<thead>
+<tr>
+<th>Order</th>
+<th>Database</th>
+<th>Questions (2nd half)</th>
+<th>None</th>
+<th>Examples + notes</th>
+<th>Diff</th>
+<th>Fixes / regressions</th>
+<th>Injection rate</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>0</td>
+<td>formula_1</td>
+<td>33</td>
+<td>0.515</td>
+<td>0.667</td>
+<td>+0.152</td>
+<td>+6 / -1</td>
+<td>100%</td>
+</tr>
+</tbody>
+</table>
+<ul>
+<li><strong>Direction count:</strong> 1 of 1 streams positive, 0 negative, 0 tied.</li>
+<li><strong>One database:</strong> question-level counts and the learning curve carry the result.</li>
+<li><strong>Heuristic, not exact (ignores dependence within a stream):</strong> question-level sign-flip p = 0.125; question-clustered 95% CI +0.000 to +0.303.</li>
+<li><strong>Injection check:</strong> 0 of 1 streams inert (notes lines shown on fewer than 10% of second-half questions). Where the arm is inert, a null result means the memory was rarely used, not that memory cannot help.</li>
+</ul>
+<h2>Whole stream, learning curve and memory size</h2>
+<table>
+<thead>
+<tr>
+<th>Order</th>
+<th>Database</th>
+<th>None (all)</th>
+<th>Facts (all)</th>
+<th>Examples (all)</th>
+<th>Examples + notes (all)</th>
+<th>Quarters none / facts / examples / examples + notes</th>
+<th>Active facts at each quarter</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>0</td>
+<td>formula_1</td>
+<td>0.591</td>
+<td>0.621</td>
+<td>0.712</td>
+<td>0.727</td>
+<td>0.75/0.75/0.75/0.88 · 0.59/0.59/0.71/0.71 · 0.44/0.44/0.69/0.62 · 0.59/0.71/0.71/0.71</td>
+<td>4 · 9 · 16 · 21</td>
+</tr>
+</tbody>
+</table>
+<h2>Notes updates</h2>
+<ul>
+<li>Failures that triggered an update: 18.</li>
+<li>Edits proposed 33, valid 33, applied 29.</li>
+<li>Batch outcomes: {'applied unchecked': 1, 'applied': 15, 'rejected: regression': 2}.</li>
+<li>Invalid-edit reasons: {}.</li>
+<li>Fix rate (the failed question answered right with the draft notes): 10 of 18.</li>
+<li>Notes lines at the last question: 28 (order 0, formula_1).</li>
+</ul>
+<h3>Final notes file</h3>
+<p>Order 0, formula_1:</p>
+<pre><code class="language-markdown">Working notes about this database:
+## Joins and keys
+- To find which races a driver took part in, join races to driverStandings on raceId; that table holds one row per driver per race.
+## Time and dates
+- Birth years are compared by extracting the year with STRFTIME('%Y', dob) against a year string, not by comparing dob to a full date literal.
+- Age questions derive a computed age from dob against the current date: year difference minus one when this year's birthday has not yet passed, returned as its own column.
+## Values and naming
+- Driver names are split into forename and surname columns; always filter both separately instead of guessing or hardcoding a driverId value.
+- Pit stop lengths are stored twice: duration as seconds in text form and a separate whole-millisecond column; average the seconds column so results stay in seconds.
+- Completing a race shows as non-null results.time or a 'Finished' status, while wording about finishing first is judged by results.position, never by time.
+- A driver credited with a race's fastest lap is flagged by non-null results.fastestLapTime or fastestLap, not results.rank or lapTimes; multi-race records are the minimum fastestLapTime.
+- fastestLapSpeed and duration CAST straight to REAL, but minute:second.millisecond values (q1/q2/q3, fastestLapTime) need minutes*60 + seconds parsed out before ranking.
+- Qualifying session times in q1/q2/q3 are stored as minute:second.millisecond text with no leading hour zero, so match a given clock time by LIKE on its minute:second prefix.
+- A driver's country or nationality is drivers.nationality; circuits.country describes venues only, so driver-country questions never join the circuits table.
+## Answer shape
+- Percentage answers return full precision: COUNT(IIF(condition, id, NULL)) * 100.0 / COUNT(id) cast to REAL, never wrapped in ROUND.
+- Rate-style denominators count result rows in the filtered period, one per race-and-driver combination, not distinct drivers or races.
+- Superlative age questions order by dob (DESC for youngest, ASC for oldest) with LIMIT 1 and return every requested attribute, such as computed age plus name, as separate columns.
+- Ranking questions select only the requested identifying columns and drop the aggregate used for ordering, even though that aggregate appears in ORDER BY.
+- Maximum or fastest-value questions return the stored column of one extreme row: ORDER BY that column DESC with LIMIT 1, never an aggregate like MAX wrapped around it.
+- Superlative 'in which ...' questions expecting multiple answers return all rows tied at the extreme value via an equality filter, not ORDER BY with LIMIT 1.
+- When a question asks for a season's page, link, or url, return only that url column, not extra identifying columns like the year used to locate it.
+## Traps
+- A driver's position or 'track number' constraint refers to driverStandings.position, not results.grid or results.position, which are starting and finishing spots.
+- Superlative queries filter IS NOT NULL on the ordering column itself, including near-full date columns like dob, because NULLs sort first and would otherwise be returned.
+- Race-number bounds in questions can map to raceId with strict endpoints; mirror the phrasing's exclusivity instead of defaulting to an inclusive BETWEEN.
+- Both qualifying and drivers have a number column; when a question asks a driver's own number, take drivers.number, not the qualifying row's number.
+- Location words such as track or circuit never justify an invented circuitId, country, or venue filter unless the question names a real place.
+</code></pre>
+<h2>JEV selection</h2>
+<ul>
+<li>Questions with at least one injected fact: 15 of 66; mean facts injected per question 0.24.</li>
+<li>Fact scores at or above the cutoff 2.75: 21 of 673.</li>
+<li>JEV cost in the stream: $0.0092.</li>
+</ul>
+<h2>Consolidation</h2>
+<ul>
+<li>Passes: 5 run, 0 skipped for budget.</li>
+<li>Edits proposed {'generalize': 3, 'condition': 3, 'merge': 4}, applied {'generalize': 3, 'condition': 3, 'merge': 3}, rejected {'merge': 1}.</li>
+<li>Rejection reasons: {"leakage: contains answer value 'hamilton'": 1}.</li>
+<li>Applied (order 0, formula_1): generalize f1 -&gt; f1: Date-text storage applies to all date columns, not only drivers.dob, so broaden it to help race-date questions too.</li>
+<li>Applied (order 0, formula_1): condition f7, f8, f9 -&gt; f10: Same status column: 'all laps completed' means exactly 'Finished', while 'race completion / finished the race' also includes lapped finishers; rewrite as one conditional fact.</li>
+<li>Applied (order 0, formula_1): merge f11, f16 -&gt; f20: Both facts say the same thing: lap duration is the integer lapTimes.milliseconds, while lapTimes.time is only its display form.</li>
+<li>Applied (order 0, formula_1): condition f10, f15 -&gt; f21: They conflict on whether lapped drivers count as finishing; each question's wording selects its own rule.</li>
+<li>Applied (order 0, formula_1): generalize f4 -&gt; f4: Coordinates rule is not tied to the phrase 'location coordinates'.</li>
+<li>Applied (order 0, formula_1): generalize f22 -&gt; f22: The stored-format rule holds for all qualifying time columns, not only the 0:01:54 example.</li>
+<li>Applied (order 0, formula_1): merge f18, f27 -&gt; f29: Both facts state that a driver's full name is split across drivers.forename and drivers.surname; one covers matching, the other returning.</li>
+<li>Applied (order 0, formula_1): merge f12, f28 -&gt; f30: Both describe results.fastestLapTime as the single-per-race overall fastest-lap marker, not a per-driver best.</li>
+<li>Applied (order 0, formula_1): condition f13, f26 -&gt; f31: Both map results.position phrases; combine to state when =1 versus &lt;&gt;1 applies.</li>
+</ul>
+<h2>Snippets</h2>
+<ul>
+<li>Snippets by outcome: {'kept': 12, 'snippet failed: misuse of aggregate: MAX()': 1, 'snippet failed: misuse of aggregate: AVG()': 1}.</li>
+<li>Facts with SQL in the final facts files: 16 of 31.</li>
+<li>Injections of a fact with SQL: 6 of 16.</li>
+</ul>
+<h2>Cost, latency, turns</h2>
+<ul>
+<li>Logical cost (peak prices; a prompt answered once per run is counted once): none $0.053, facts $0.012, examples $0.059, notes $0.059, proposer $0.061, pre-check $0.006, consolidation proposer $0.036, consolidation pre-check $0.019, JEV $0.010, notes proposer $0.063, notes checks $0.047.</li>
+<li>$ per correct answer: none $0.0014, facts $0.0035 (learning included), examples $0.0013, examples + notes $0.0035 (updates included). Real API spend: $0.226 of $0.80.</li>
+<li>Latency (original API time per answer) p50 / p95 s: none 3.0 / 6.7, facts 3.0 / 5.3, examples 2.3 / 5.5, examples + notes 2.3 / 4.3.</li>
+<li>Agent turns: none 3.0, facts 3.0, examples 2.8, examples + notes 2.6.</li>
+</ul>
+<h2>Learning</h2>
+<ul>
+<li>Learning events: 25; outcomes: {'pre-check unmatched': 18, 'pre-check passed': 7}.</li>
+</ul>
+<h3>Order 0, formula_1: 31 facts, retired {'consolidated into f10': 3, 'consolidated into f21': 2, 'consolidated into f20': 2, 'consolidated into f30': 2, 'consolidated into f31': 2, 'consolidated into f29': 2}</h3>
+<pre><code>f1 score +0 uses 1 [encoding] drivers.dob: Date columns such as drivers.dob and races.date are stored as text 'YYYY-MM-DD', so birth or race years are the leading four characters rather than whole-date literals.  (applies to: born before, driver date of birth, dob, birth year, race year)
+f2 score +0 uses 3 [meaning] drivers.dob: A driver's age is whole calendar years between drivers.dob and today, minus one if this year's birthday has not yet occurred; it is not a fractional day-based count.  (applies to: how old, age, youngest driver, oldest driver)
+f3 score +0 uses 0 [mapping] driverStandings.wins: A driver's win count is recorded in driverStandings.wins, carried forward in the standings; 'most wins' questions come from that column, not from counting first-place race results.  (applies to: most wins, winning driver, number of wins, driver with the most wins)
+f4 score +0 uses 3 [mapping] circuits.lat: A circuit's coordinates are circuits.lat and circuits.lng; circuits.location, circuits.name and circuits.country describe the place but are never coordinates.  (applies to: location coordinates, circuit coordinates, lat and lng, circuit location, where is the race held)
+f5 score +0 uses 0 [mapping] driverStandings.position: 'Track number' or track position for a driver in a race means driverStandings.position, the driver's championship standing at that race, not results.grid (the starting grid slot).  (applies to: track number, in track number less than, track position, standing position)
+f6 score +0 uses 0 [mapping] pitStops.duration: 'Average pit stop duration' (shortest/longest pit stops) is taken from pitStops.duration, the per-stop text value in seconds, not from pitStops.milliseconds.  (applies to: average pit stop duration, shortest pit stop, fastest pit stops, German drivers, born between 1980-1985)
+f7 score +0 uses 1 RETIRED (consolidated into f10) [mapping] status.status: 'Finished' in status marks that every lap of the race was completed; drivers classified a lap or more down carry separate status values, so all-laps completion matches the exact value 'Finished'.  (applies to: race completion percentage, completed all laps, finished the race, race result status)
+f8 score +0 uses 0 RETIRED (consolidated into f10) [relation] results.statusId: A result's completion classification lives in the status table reached through results.statusId; a driver who finished every lap has status 'Finished', so comparing results.laps within the race does not identify them.  (applies to: finished all laps, completed every lap of the race, finished the race, classified finishers, race result status)
+f9 score +0 uses 0 RETIRED (consolidated into f10) [mapping] status.status: Drivers who completed the race but were lapped still count as finishers; their status reads like '+1 Lap' or '+2 Laps', so race completion means status 'Finished' plus any '+...Lap...' status.  (applies to: race completion rate, completed the race, finished the race, did not finish, drivers who took part in the race)
+f10 score +0 uses 2 RETIRED (consolidated into f21) [mapping] status.status: Questions about finishing all laps or every lap match status 'Finished' exactly; questions about race completion or finishing the race also count lapped finishers, whose status reads '+1 Lap' or '+2 Laps'.  (applies to: all laps completed, finished all laps, race completion rate, completed the race, finished the race)
+f11 score +0 uses 0 RETIRED (consolidated into f20) [mapping] lapTimes.milliseconds: 'Fastest/best lap time' questions report and rank on lapTimes.milliseconds, the integer lap duration; lapTimes.time is only the formatted 'M:SS.mmm' display of the same lap, not the answer value.  (applies to: fastest lap time recorded, lap time)
+f12 score +0 uses 0 RETIRED (consolidated into f30) [mapping] results.fastestLapTime: A driver's own fastest lap is stored per lap in lapTimes (one row per driver per lap); results.fastestLapTime only marks the single overall fastest lap of each race, so it misses most driver bests.  (applies to: Michael Schumacher, driver's fastest lap)
+f13 score +0 uses 0 RETIRED (consolidated into f31) [mapping] results.position: The champion or winner of a race is the driver with results.position = 1, the official finishing place; results.positionOrder is a separate classification column, not the winner marker.  (applies to: champion of each race, winner of a race, won the race)
+f14 score +0 uses 1 [encoding] results.fastestLapSpeed: Fastest lap speed is stored in results.fastestLapSpeed as a text string such as '222.592'; report and rank the stored text value itself, since the answer is expected in that stored form, not as a numeric conversion.  (applies to: fastest lap speed, highest lap speed, lap speed in the 2009 Spanish Grand Prix, fastest speed of a driver, speed ranking in a race)
+f15 score +0 uses 0 RETIRED (consolidated into f21) [mapping] results.time: A 'finisher' is a result row whose results.time is not null (a recorded finish time); rows lacking a time did not finish and must be excluded from finisher counts, whatever their status.  (applies to: finishers, how many finishers, drivers who finished, disqualified finishers)
+f16 score +0 uses 0 RETIRED (consolidated into f20) [mapping] lapTimes.milliseconds: A driver's 'average lap time' is reported as the plain numeric average of lapTimes.milliseconds, not converted into an 'M:SS.mmm' text display.  (applies to: average lap time, mean lap time, average time per lap, Hamilton lap time)
+f17 score +0 uses 0 [mapping] results.time: In results, a race champion (winner) is the row whose results.time is the leader's total, written with two colons (H:MM:SS.mmm); every other finisher's time starts with '+' as a gap.  (applies to: fastest lap number of the champion, winner of each race in 2009)
+f18 score +2 uses 4 RETIRED (consolidated into f29) [mapping] drivers.forename: A driver's full name is split across drivers.forename and drivers.surname, so a question naming a driver must match both parts separately; no single full-name column exists.  (applies to: Lewis Hamilton, driver named in a question, full name, forename and surname)
+f19 score +0 uses 0 [relation] driverStandings.raceId: Every race a driver entered, including their first race, is recorded in driverStandings, one row per driver per race; results covers fewer driver-race pairs, so first-race questions must join races through driverStandings.  (applies to: first race joined, driver debut, first race, youngest racer, race entered)
+f20 score +0 uses 0 [mapping] lapTimes.milliseconds: Fastest and average lap times are reported and ranked on the integer lapTimes.milliseconds; lapTimes.time is only the formatted 'M:SS.mmm' display of the same lap, never the answer value.  (applies to: fastest lap time recorded, best lap time, average lap time, mean lap time, lap time)
+f21 score +0 uses 2 [mapping] finishing a race: For finishing questions: 'all laps completed' or 'every lap' matches status 'Finished' plus lapped statuses starting '+'; a plain 'finishers' count instead keeps rows where results.time is not null.  (applies to: all laps completed, every lap, finishers, race completion, completed the race)
+f22 score +0 uses 1 [encoding] qualifying.q3: Qualifying times qualifying.q1/q2/q3 are stored as 'M:SS.mmm' with an unpadded minute and no hour part, so a question time written H:MM:SS matches the stored minute:second prefix.  (applies to: Q3 time, qualifying lap time, Q1/Q2/Q3 times, finished 0:01:54, qualifying race No.903)
+f23 score +0 uses 0 [mapping] results.fastestLapTime: 'Lap record' means the smallest lap time: compare results.fastestLapTime after converting its 'M:SS.mmm' text to seconds; ranking by fastestLapSpeed fails because circuits differ in length.  (applies to: lap record, circuits in Italy)
+f24 score +0 uses 0 [mapping] constructorResults.points: A constructor's points in a race are stored in constructorResults, one row per constructor per race; results.points are per-driver points and are not the team's score.  (applies to: constructor scored most points, team points in a race, constructor points, which team scored most)
+f25 score +0 uses 0 [mapping] seasons.url: A season's 'page' means its link stored in seasons.url, reached by matching races.year to seasons.year; the season year number is not the page.  (applies to: season page, season link, year page, season of a race)
+f26 score +0 uses 0 RETIRED (consolidated into f31) [mapping] results.position: 'Did not finish' in these questions means not finishing first: it is counted from results.position not equal to 1, not from status text; rows with a null position are excluded.  (applies to: did not finish, not first, 1st, percentage not first)
+f27 score +2 uses 1 RETIRED (consolidated into f29) [mapping] drivers.forename: A driver's full name in answers is the two separate columns drivers.forename and drivers.surname; questions asking for 'full names' expect both columns returned, not a concatenated single value.  (applies to: full name, full names of drivers, list the full names, driver name)
+f28 score +0 uses 0 RETIRED (consolidated into f30) [mapping] results.fastestLapTime: Having the fastest lap time in a race means results.fastestLapTime is filled in (one such row per race); results.rank is not the marker for that driver.  (applies to: has the fastest lap, drivers with the fastest lap)
+f29 score +2 uses 4 [mapping] drivers.forename: A driver's full name is the two columns drivers.forename and drivers.surname; a named driver is matched on both parts separately, and 'full name' questions return both columns, never a concatenation.  (applies to: full name, full names of drivers, driver named in a question, forename and surname, driver name)
+f30 score +0 uses 0 [mapping] results.fastestLapTime: results.fastestLapTime is filled for the one overall fastest lap of each race, not a driver's own best; per-driver fastest laps come from lapTimes, and results.rank is not that marker.  (applies to: has the fastest lap, drivers with the fastest lap, driver's fastest lap, fastest lap time, fastest lap in a race)
+f31 score +0 uses 0 [mapping] results.position: 'Winner'/'champion' of a race means results.position = 1 (results.positionOrder is a separate classification); a question of a driver not finishing first counts results.position &lt;&gt; 1, with null positions excluded.  (applies to: champion of each race, winner of a race, won the race, did not finish, not first)
+</code></pre>
+<h2>Pinned data</h2>
+<p><code>uiuc-kang-lab/text_to_sql_benchmarks</code> at commit <code>fe766045c55b6875a43b30e9ac7683df5582f8cf</code>. Questions per database: {'formula_1': 66}.</p>
+<pre><code>baefe2ca4fbab86c  data/arcwise/arcwise_plat_full_with_diff.json
+</code></pre></body></html>

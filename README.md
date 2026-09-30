@@ -1,74 +1,92 @@
 # EvoSQL
 
-A Text-to-SQL agent that builds a **memory of each database** as it answers questions. After each answer it sees the correct SQL, turns its mistakes into short, checked facts about the database, and uses the relevant facts on later questions. The question EvoSQL tests, honestly:
+A Text-to-SQL agent that learns from its own mistakes on one database. After each answer it is shown the correct SQL, and it can keep what it learned for later questions. EvoSQL compares four ways of keeping that memory, measured honestly against the same agent without memory.
 
-> In an online stream of questions about one database, where the agent receives the correct SQL after each answer, does a per-database fact memory improve accuracy on later questions compared with the same agent without memory?
+## Results at a glance
 
-Spec: `docs/specs/2026-09-29-evosql-v6-design.md`.
+Accuracy on a stream of questions, one database at a time. Each question is answered **before** its correct SQL is revealed, so memory only ever comes from earlier questions.
 
-## How it works
+**MIMIC-IV (EHRSQL), questions that recur by type** — 127 questions: 119 from 17 question templates, then 8 questions that combine two templates.
 
-- **Data:**
-  - Arcwise-Plat: BIRD Mini-Dev with expert-corrected SQL, questions and column descriptions ([repo](https://github.com/uiuc-kang-lab/text_to_sql_benchmarks));
-  - the 4 largest databases, 221 questions;
-  - pinned by commit and SHA-256 hashes in `data/arcwise/manifest.json`.
-- **Agent:** a tool loop (describe tables, profile columns, test SQL, submit). The prompt holds the schema and a value profile per column, computed from the data and ending with the column's corrected description. Hints are never shown.
-- **Arms:**
-  - `none`: no memory;
-  - `facts`: the same agent, plus at most 1–2 learned facts in the prompt.
-- **Stream:** each database's questions come one at a time, in 2 pre-registered orders. For every question:
-  1. both arms answer and are scored;
-  2. then the correct SQL is revealed and the memory learns (test, then train).
+| Memory | Whole stream | Second half | Combination questions |
+|---|---|---|---|
+| none | 0.535 | 0.531 | 5/8 |
+| facts | 0.543 | 0.562 | 5/8 |
+| examples | 0.772 | 0.828 | 5/8 |
+| **examples + notes** | **0.890** | **0.953** | **8/8** |
 
-**How the facts arm learns and uses facts:**
+**BIRD (Arcwise-Plat), questions that rarely recur** — formula_1, 66 questions.
 
-| Step | What happens |
+| Memory | Whole stream | Second half |
+|---|---|---|
+| none | 0.591 | 0.515 |
+| facts | 0.621 | 0.576 |
+| **examples** | **0.712** | **0.697** |
+| examples + notes | 0.727 | 0.667 |
+
+On all 4 Arcwise databases (221 questions), facts moved accuracy from 0.679 to 0.683 (+4 fixed / −3 broken).
+
+## How each memory works
+
+- **none**: the agent sees the schema and a short profile of every column (common values, ranges, descriptions). Nothing is remembered.
+- **facts**: after a wrong answer, a second model writes one short fact about the database (for example "a driver's full name is forename + surname"). Facts are checked against the data before they are kept. For each new question, a small judge model ([JEV](https://openrouter.ai/docs/guides/community/jev)) picks at most 2 relevant facts. Facts that break answers are retired, and the memory is cleaned up every 15 questions.
+- **examples**: the 2 earlier questions most similar to the new one, each with its correct SQL.
+- **examples + notes**: the examples, plus a short notes file about the database (like a CLAUDE.md, at most 100 lines), always in the prompt. After a wrong answer, a model edits the notes, writing only what the examples did not show. An edit is kept only if 2 earlier questions the agent had right are still right with it.
+
+All arms use the same agent (DeepSeek Flash, thinking off) and the same questions in the same order.
+
+## What we learned
+
+1. **Facts rarely help when questions don't repeat.** On BIRD, most mistakes needed knowledge that no earlier question had taught (about 35 of 45 real misses in one audit). Facts gave about +0.4%.
+2. **Picking facts better is not enough.** Switching fact selection to the JEV judge doubled precision (81% vs 42% of injected facts were relevant) but barely changed accuracy: the right fact usually didn't exist yet.
+3. **Examples beat facts, most of all when question types repeat.** On MIMIC, showing 2 similar solved questions raised accuracy from 0.54 to 0.77; almost all of the gain came from questions whose example had the same template (0.55 → 0.86). Even on BIRD formula_1 they helped (0.59 → 0.71), more than facts (0.62).
+4. **Facts fail as a unit.** A question needs a whole recipe (joins, time windows, ranking with ties, which columns to return); a fact holds one rule, and a retrieved fact is easy to miss.
+5. **A notes file helps where conventions repeat.** Written to cover what examples leave out (shared conventions such as "top N keeps ties", "yes/no questions return COUNT(*)>0"), it added +16 fixed / −1 broken on top of examples on MIMIC and answered all 8 combination questions. On BIRD formula_1, where questions share fewer conventions, it was about even with examples alone (+3 / −2). Final notes: [MIMIC](results/mimic/v9_notes.md) (24 lines), [formula_1](results/arcwise/v9_formula_1_notes.md) (28 lines).
+
+## Caveats
+
+- One question order per database, and one database per setting for the notes arm.
+- The notes learn the "house style" of the people who wrote the correct SQL (for example, that "top 3" includes ties). For an assistant on one database that is what you want, but it is convention, not general SQL skill.
+- The regression check uses only 2 earlier questions per edit.
+- Any change to the prompt shifts the model's answers a little, so a few fixes or regressions in any arm may be luck.
+
+## Cost
+
+Every run is capped and cached; the old arms of a new run replay from cache at no cost.
+
+| Run | Real spend |
 |---|---|
-| Learn | When the facts arm fails, the proposer writes one general fact from the question, the wrong SQL and the correct SQL, with trigger phrases and the stored values it relies on. |
-| Check | Free checks drop facts that contain SQL, name missing columns or values, only restate the docs, or leak the answer. |
-| Pre-check | The new fact is tried alone on up to 2 earlier matching questions, and rejected on any regression. |
-| Retrieve | Facts are injected only on a whole-phrase trigger match. A generic phrase needs a second cue; grain and relation facts need the question to mention their table. Proven facts may also match by meaning. An unproven fact always goes alone. |
-| Prune | Each use scores +1 or −1 against the no-memory answer. A fact is retired at its first regression while unproven, at −2 once proven, or after 5 uses with no effect. |
+| Facts on BIRD, 4 databases (v6) | $1.29 |
+| JEV-selected facts on BIRD (v7) | $0.52 |
+| Facts and examples on MIMIC (v8) | $0.85 |
+| Examples + notes on MIMIC (v9) | $0.31 |
+| Examples + notes on BIRD formula_1 | $0.23 |
 
-**Report:** each (order, database) stream is one unit of evidence. It gives:
-- second-half accuracy, facts vs none, per stream;
-- a direction count and a stream-level bootstrap;
-- question-level statistics, labelled heuristic;
-- an injection-rate check (was the memory actually used?);
-- a learning curve, cost and latency, and every fact with its score.
+## Run it
 
-## Setup
-
-Requires [uv](https://docs.astral.sh/uv/), a [DeepSeek](https://platform.deepseek.com) API key and [Ollama](https://ollama.com) (local embeddings).
+Needs Python 3.13, [uv](https://docs.astral.sh/uv/), [Ollama](https://ollama.com) with `qwen3-embedding:0.6b` (local embeddings), and API keys in `.env`: `DEEPSEEK_API_KEY` and `OPENROUTER_API_KEY` (for JEV).
 
 ```bash
 uv sync
-echo "DEEPSEEK_API_KEY=..." > .env
-ollama pull qwen3-embedding:0.6b
-uv run python scripts/get_v6_data.py      # BIRD dev (~346 MB, once; keeps the 4 databases) + Arcwise-Plat + manifest
+uv run python scripts/get_ehrsql_data.py      # MIMIC-IV demo + EHRSQL questions (~38 MB), pinned by hash
+uv run python scripts/get_arcwise_data.py     # BIRD dev databases + Arcwise-Plat questions, pinned by hash
+uv run python -m evosql stream                # MIMIC run (configs/base.yaml)
+uv run python -m evosql report                # writes results_v9/summary.md and summary.html
+uv run python -m evosql --config configs/arcwise.yaml stream   # BIRD formula_1 run
 ```
 
-## Run
+`stream --replay-check` re-runs only the old arms from cache and confirms they match the earlier run exactly, without spending anything.
 
-```bash
-uv run python -m evosql stream     # both orders, all databases; $2 cap; rerun to resume (cached calls are free)
-uv run python -m evosql report     # results_v6/summary.md
-```
+## Repository
 
-Settings are in `configs/base.yaml`: databases, orders, budget per order, retrieval and pruning thresholds. The optional `--agent local` runs a free local model (`ollama/qwen3.5-9b-32k.Modelfile`).
+- `src/evosql/`: the agent (`agent.py`), the stream and arms (`stream.py`), facts (`facts.py`, `proposer.py`, `memory.py`, `consolidate.py`, `jev.py`), notes (`notes.py`), data loading (`bird.py`, `ehrsql.py`) and the report (`report.py`).
+- `configs/`: `base.yaml` (MIMIC) and `arcwise.yaml` (BIRD formula_1).
+- `results/`: the published reports, the final notes file and the log of every notes edit.
+- `tests/`: unit tests, no network (`uv run pytest`).
+- Earlier versions are kept as git tags (`v3` to `v9`); v3–v5 were offline experiments on one BIRD database.
 
-## History
+## Credits
 
-Earlier versions (git tags `v3`, `v4`, `v5`) learned facts once, froze them and tested on BIRD dev `thrombosis_prediction` (59 final questions):
-
-| Version | Result | Lesson |
-|---|---|---|
-| v3 | Facts kept by a learning gate did worse than no facts (10 vs 12) | Selecting facts on the same questions they came from is optimistic |
-| v4 | Retrieved facts 15 vs no facts 11 (+4/−0, p = 0.125) | A real effect size (+6.8 points), but too few questions to prove it |
-| v5 | Column descriptions in the prompt raised the baseline to 18; facts added nothing | The docs held most of the missing knowledge; the labels were noisy (26 gold-SQL fixes needed) |
-
-v6 moves to expert-corrected labels, several databases, an online memory and stricter fact handling. For comparison, EvoOntology (arXiv 2609.15779) reports +6.3 points for the same agent model on BIRD Mini-Dev.
-
-## Results
-
-Pending: see `results_v6/summary.md` after a run.
+- Questions and data: [EHRSQL 2024](https://github.com/glee4810/ehrsql-2024) (CC-BY-4.0) on the [MIMIC-IV clinical database demo](https://physionet.org/content/mimic-iv-demo/2.2/) (ODbL); [Arcwise-Plat](https://github.com/uiuc-kang-lab/text_to_sql_benchmarks), corrected [BIRD](https://bird-bench.github.io/) Mini-Dev.
+- Ideas this builds on: [ACE](https://arxiv.org/abs/2510.04618) and [Dynamic Cheatsheet](https://arxiv.org/abs/2504.07952) (evolving notes), [ReasoningBank](https://arxiv.org/abs/2509.25140) (learning from failures), [storing verified SQL](https://arxiv.org/abs/2608.07213), EvoOntology (arXiv 2609.15779).
+- Code: MIT license.
