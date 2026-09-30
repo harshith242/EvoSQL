@@ -106,3 +106,36 @@ class FactMemory:
             twin = next((f.id for f in merged if fact_key(f) == fact_key(fact)), None)
             record["merge"] = f"merged into {twin}" if twin else "dropped: lost its phrases in a merge conflict"
         return {**record, "conflicts": conflicts} if conflicts else record
+
+    def apply_edit(self, edit, try_fact):
+        """Apply one consolidation edit {op, ids, fact}, pre-checked; returns the fields for its log record."""
+        old = [self.facts[i] for i in edit["ids"]]
+        if edit["op"] == "drop":
+            for f in old:
+                self.state[f.id]["retired"] = "dropped by consolidation"
+            return {"applied": True}
+
+        new = edit["fact"]
+        new.learned_from = new.learned_from or old[0].learned_from
+        sources = sorted({qid for f in old for qid in f.source_qids})
+
+        # The replaced facts' own questions first, then the earlier questions JEV matches to the new fact.
+        pairs = [(q, ok) for q, ok in self.history if q.qid in sources][:self.rules["precheck_max"]]
+        seen = {q.qid for q, _ in pairs}
+        pairs += [(q, ok) for q, ok in self.matches(new) if q.qid not in seen]
+        record, _ = self.precheck(new, pairs, try_fact)
+        if record["outcome"] == "pre-check rejected":
+            return {"applied": False, **record}
+
+        new.source_qids = sources
+        if edit["op"] == "generalize":
+            new.id = old[0].id
+            self.facts[new.id] = new
+        else:
+            new.id = f"f{next(self.ids)}"
+            self.facts[new.id] = new
+            self.state[new.id] = {k: max(self.state[f.id][k] for f in old) for k in ("score", "best", "uses")}
+            self.state[new.id]["retired"] = None
+            for f in old:
+                self.state[f.id]["retired"] = f"consolidated into {new.id}"
+        return {"applied": True, "id": new.id, **record}
