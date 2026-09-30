@@ -1,0 +1,272 @@
+[
+  {
+    "id": "p01",
+    "db_id": "formula_1",
+    "level": "paraphrase",
+    "source_qid": 989,
+    "question": "How long did the winner of the 2008 Canadian Grand Prix take to finish?",
+    "gold_sql": "SELECT T1.time FROM results AS T1 INNER JOIN races AS T2 ON T1.raceId = T2.raceId WHERE T2.name = 'Canadian Grand Prix' AND T2.year = 2008 AND T1.time LIKE '_:%:__.___'",
+    "knowledge": "In results.time only the race winner has a full clock time (H:MM:SS.mmm); everyone else has a gap like '+x.xxx', so the winner's time matches LIKE '_:%:__.___'."
+  },
+  {
+    "id": "p02",
+    "db_id": "formula_1",
+    "level": "paraphrase",
+    "source_qid": 967,
+    "question": "Of the three youngest drivers, how many are from the Netherlands?",
+    "gold_sql": "SELECT COUNT(*) FROM ( SELECT T1.nationality FROM drivers AS T1 ORDER BY JULIANDAY(T1.dob) DESC LIMIT 3) AS T3 WHERE T3.nationality = 'Dutch'",
+    "knowledge": "Drivers from the Netherlands are stored as nationality = 'Dutch' (a demonym, not the country name)."
+  },
+  {
+    "id": "p03",
+    "db_id": "formula_1",
+    "level": "same_quirk",
+    "source_qid": 989,
+    "question": "What was the champion's finish time in the 2011 Monaco Grand Prix?",
+    "gold_sql": "SELECT T1.time FROM results AS T1 INNER JOIN races AS T2 ON T1.raceId = T2.raceId WHERE T2.name = 'Monaco Grand Prix' AND T2.year = 2011 AND T1.time LIKE '_:%:__.___'",
+    "knowledge": "In results.time only the race winner has a full clock time (H:MM:SS.mmm); everyone else has a gap like '+x.xxx', so the winner's time matches LIKE '_:%:__.___'."
+  },
+  {
+    "id": "p04",
+    "db_id": "formula_1",
+    "level": "same_quirk",
+    "source_qid": 846,
+    "question": "Please list the reference names of the drivers who were eliminated in the first period in race number 25.",
+    "gold_sql": "SELECT d.driverRef FROM qualifying AS q JOIN drivers AS d ON d.driverId = q.driverId WHERE q.raceId = 25 AND q.q2 IS NULL ORDER BY q.q1 DESC",
+    "knowledge": "A driver knocked out in the first qualifying period (Q1) has q2 IS NULL in qualifying; 'race number' is raceId."
+  },
+  {
+    "id": "p05",
+    "db_id": "formula_1",
+    "level": "new_surface",
+    "source_qid": 967,
+    "question": "How many drivers are from Holland?",
+    "gold_sql": "SELECT COUNT(*) FROM drivers WHERE nationality = 'Dutch'",
+    "knowledge": "Holland / the Netherlands is stored as nationality = 'Dutch' (a demonym, not the country name)."
+  },
+  {
+    "id": "p06",
+    "db_id": "formula_1",
+    "level": "new_surface",
+    "source_qid": 846,
+    "question": "Which drivers didn't make it through to Q2 in race No. 30? Give their full names.",
+    "gold_sql": "SELECT d.forename, d.surname FROM qualifying AS q JOIN drivers AS d ON d.driverId = q.driverId WHERE q.raceId = 30 AND q.q2 IS NULL",
+    "knowledge": "Not reaching Q2 means q2 IS NULL in qualifying; 'race No.' is raceId; full name is forename, surname."
+  },
+  {
+    "id": "p07",
+    "db_id": "formula_1",
+    "level": "control",
+    "source_qid": null,
+    "question": "Which circuit has hosted the most races?",
+    "gold_sql": "SELECT T1.name FROM circuits AS T1 INNER JOIN races AS T2 ON T2.circuitId = T1.circuitId GROUP BY T1.circuitId ORDER BY COUNT(T2.raceId) DESC LIMIT 1",
+    "knowledge": "none"
+  },
+  {
+    "id": "p08",
+    "db_id": "formula_1",
+    "level": "control",
+    "source_qid": null,
+    "question": "In which year were the most races held?",
+    "gold_sql": "SELECT year FROM races GROUP BY year ORDER BY COUNT(raceId) DESC LIMIT 1",
+    "knowledge": "none"
+  },
+  {
+    "id": "p09",
+    "db_id": "card_games",
+    "level": "paraphrase",
+    "source_qid": 405,
+    "question": "How many sets in the Commander block have been translated into Brazilian Portuguese?",
+    "gold_sql": "SELECT COUNT(T1.id) FROM sets AS T1 INNER JOIN set_translations AS T2 ON T1.code = T2.setCode WHERE T2.language = 'Portuguese (Brazil)' AND T1.block = 'Commander'",
+    "knowledge": "Brazilian Portuguese is stored as language = 'Portuguese (Brazil)'; set-name translations are in set_translations (sets.code = set_translations.setCode)."
+  },
+  {
+    "id": "p10",
+    "db_id": "card_games",
+    "level": "paraphrase",
+    "source_qid": 479,
+    "question": "In the Coldsnap set, how many cards costing more than 5 converted mana have an unknown power?",
+    "gold_sql": "SELECT SUM(CASE WHEN T1.power = '*' OR T1.power IS NULL THEN 1 ELSE 0 END) FROM cards AS T1 INNER JOIN sets AS T2 ON T2.code = T1.setCode WHERE T2.name = 'Coldsnap' AND T1.convertedManaCost > 5",
+    "knowledge": "Unknown power means power IS NULL or power = '*' (power is stored as text)."
+  },
+  {
+    "id": "p11",
+    "db_id": "card_games",
+    "level": "same_quirk",
+    "source_qid": 468,
+    "question": "What is the Simplified Chinese translation of the name of the set \"Coldsnap\"?",
+    "gold_sql": "SELECT T2.translation FROM sets AS T1 INNER JOIN set_translations AS T2 ON T2.setCode = T1.code WHERE T1.name = 'Coldsnap' AND T2.language = 'Chinese Simplified'",
+    "knowledge": "Simplified Chinese is stored as language = 'Chinese Simplified' (reversed word order); set-name translations are in set_translations."
+  },
+  {
+    "id": "p12",
+    "db_id": "card_games",
+    "level": "same_quirk",
+    "source_qid": 416,
+    "question": "What percentage of cards without power have a Japanese version?",
+    "gold_sql": "SELECT CAST(COUNT(DISTINCT CASE WHEN T2.language = 'Japanese' THEN T1.id ELSE NULL END) AS REAL) * 100 / COUNT(DISTINCT T1.id) FROM cards AS T1 LEFT JOIN foreign_data AS T2 ON T1.uuid = T2.uuid WHERE T1.power IS NULL OR T1.power = '*'",
+    "knowledge": "Cards without (unknown) power have power IS NULL or power = '*'; foreign_data has one row per card per language, so count distinct cards over a LEFT JOIN."
+  },
+  {
+    "id": "p13",
+    "db_id": "card_games",
+    "level": "new_surface",
+    "source_qid": 352,
+    "question": "What share of cards have a Traditional Chinese translation? Give it as a percentage.",
+    "gold_sql": "SELECT CAST(COUNT(DISTINCT CASE WHEN T2.language = 'Chinese Traditional' THEN T1.id ELSE NULL END) AS REAL) * 100 / COUNT(DISTINCT T1.id) FROM cards AS T1 LEFT JOIN foreign_data AS T2 ON T1.uuid = T2.uuid",
+    "knowledge": "Traditional Chinese is stored as language = 'Chinese Traditional' (reversed word order); foreign_data has one row per card per language, so count distinct cards over a LEFT JOIN."
+  },
+  {
+    "id": "p14",
+    "db_id": "card_games",
+    "level": "new_surface",
+    "source_qid": 405,
+    "question": "How many sets in the Kamigawa block have a Portuguese translation?",
+    "gold_sql": "SELECT COUNT(T1.id) FROM sets AS T1 INNER JOIN set_translations AS T2 ON T1.code = T2.setCode WHERE T2.language = 'Portuguese (Brazil)' AND T1.block = 'Kamigawa'",
+    "knowledge": "The only Portuguese variant stored is language = 'Portuguese (Brazil)'; set-name translations are in set_translations."
+  },
+  {
+    "id": "p15",
+    "db_id": "card_games",
+    "level": "control",
+    "source_qid": null,
+    "question": "In which year were the most rulings issued?",
+    "gold_sql": "SELECT STRFTIME('%Y', date) FROM rulings GROUP BY STRFTIME('%Y', date) ORDER BY COUNT(id) DESC LIMIT 1",
+    "knowledge": "none"
+  },
+  {
+    "id": "p16",
+    "db_id": "card_games",
+    "level": "control",
+    "source_qid": null,
+    "question": "How many sets were released in 2010?",
+    "gold_sql": "SELECT COUNT(id) FROM sets WHERE STRFTIME('%Y', releaseDate) = '2010'",
+    "knowledge": "none"
+  },
+  {
+    "id": "p17",
+    "db_id": "superhero",
+    "level": "paraphrase",
+    "source_qid": 747,
+    "question": "How many heroes don't have a full name on record?",
+    "gold_sql": "SELECT COUNT(id) FROM superhero WHERE full_name IS NULL OR full_name = '-'",
+    "knowledge": "A missing full name is stored either as NULL or as the placeholder '-'."
+  },
+  {
+    "id": "p18",
+    "db_id": "superhero",
+    "level": "paraphrase",
+    "source_qid": 750,
+    "question": "On average, how much do female superheroes weigh?",
+    "gold_sql": "SELECT AVG(weight_kg) FROM superhero s JOIN gender g ON s.gender_id = g.id WHERE g.gender = 'Female' AND weight_kg > 0",
+    "knowledge": "weight_kg = 0 (or NULL) means the weight is missing, so averages use weight_kg > 0."
+  },
+  {
+    "id": "p19",
+    "db_id": "superhero",
+    "level": "same_quirk",
+    "source_qid": 791,
+    "question": "What's the average height of DC Comics heroes?",
+    "gold_sql": "SELECT AVG(T1.height_cm) FROM superhero AS T1 INNER JOIN publisher AS T2 ON T1.publisher_id = T2.id WHERE T2.publisher_name = 'DC Comics' AND T1.height_cm > 0",
+    "knowledge": "height_cm = 0 (or NULL) means the height is missing, so averages use height_cm > 0."
+  },
+  {
+    "id": "p20",
+    "db_id": "superhero",
+    "level": "same_quirk",
+    "source_qid": 822,
+    "question": "How many female villains are there?",
+    "gold_sql": "SELECT COUNT(T1.id) FROM superhero AS T1 INNER JOIN alignment AS T2 ON T1.alignment_id = T2.id INNER JOIN gender AS T3 ON T1.gender_id = T3.id WHERE T2.alignment = 'Bad' AND T3.gender = 'Female'",
+    "knowledge": "Villains are alignment = 'Bad'."
+  },
+  {
+    "id": "p21",
+    "db_id": "superhero",
+    "level": "new_surface",
+    "source_qid": 747,
+    "question": "Which Dark Horse Comics heroes have an unknown real name?",
+    "gold_sql": "SELECT T1.superhero_name FROM superhero AS T1 INNER JOIN publisher AS T2 ON T1.publisher_id = T2.id WHERE T2.publisher_name = 'Dark Horse Comics' AND (T1.full_name IS NULL OR T1.full_name = '-')",
+    "knowledge": "A hero's real name is full_name; an unknown one is stored as NULL or the placeholder '-'."
+  },
+  {
+    "id": "p22",
+    "db_id": "superhero",
+    "level": "new_surface",
+    "source_qid": 750,
+    "question": "How many Marvel Comics heroes have no weight listed?",
+    "gold_sql": "SELECT COUNT(T1.id) FROM superhero AS T1 INNER JOIN publisher AS T2 ON T1.publisher_id = T2.id WHERE T2.publisher_name = 'Marvel Comics' AND (T1.weight_kg = 0 OR T1.weight_kg IS NULL)",
+    "knowledge": "A missing weight is stored as weight_kg = 0 or NULL."
+  },
+  {
+    "id": "p23",
+    "db_id": "superhero",
+    "level": "control",
+    "source_qid": null,
+    "question": "What's the average intelligence score across all heroes?",
+    "gold_sql": "SELECT AVG(T1.attribute_value) FROM hero_attribute AS T1 INNER JOIN attribute AS T2 ON T1.attribute_id = T2.id WHERE T2.attribute_name = 'Intelligence'",
+    "knowledge": "none"
+  },
+  {
+    "id": "p24",
+    "db_id": "european_football_2",
+    "level": "paraphrase",
+    "source_qid": 1025,
+    "question": "In the 2016 season, which league had the highest total number of goals?",
+    "gold_sql": "SELECT t2.name FROM Match AS t1 INNER JOIN League AS t2 ON t1.league_id = t2.id WHERE t1.season = '2015/2016' GROUP BY t2.name ORDER BY SUM(t1.home_team_goal + t1.away_team_goal) DESC LIMIT 1",
+    "knowledge": "Seasons are stored as 'YYYY/YYYY' text; 'the 2016 season' is season = '2015/2016'."
+  },
+  {
+    "id": "p25",
+    "db_id": "european_football_2",
+    "level": "paraphrase",
+    "source_qid": 1091,
+    "question": "How many games were played in the Belgian Jupiler League in April 2009?",
+    "gold_sql": "SELECT COUNT(t2.id) FROM League AS t1 INNER JOIN Match AS t2 ON t1.id = t2.league_id WHERE t1.name = 'Belgium Jupiler League' AND SUBSTR(t2.\"date\", 1, 7) = '2009-04'",
+    "knowledge": "The league is stored as 'Belgium Jupiler League'; Match.date is text 'YYYY-MM-DD 00:00:00', so a month is SUBSTR(date, 1, 7)."
+  },
+  {
+    "id": "p26",
+    "db_id": "european_football_2",
+    "level": "same_quirk",
+    "source_qid": 1030,
+    "question": "Which league had the fewest drawn matches in the 2012 season?",
+    "gold_sql": "SELECT t2.name FROM Match AS t1 INNER JOIN League AS t2 ON t1.league_id = t2.id WHERE t1.season = '2011/2012' AND t1.home_team_goal = t1.away_team_goal GROUP BY t2.name ORDER BY COUNT(t1.id) ASC LIMIT 1",
+    "knowledge": "Seasons are stored as 'YYYY/YYYY' text; 'the 2012 season' is season = '2011/2012'."
+  },
+  {
+    "id": "p27",
+    "db_id": "european_football_2",
+    "level": "same_quirk",
+    "source_qid": 1113,
+    "question": "What was Celtic's build up play speed class on 2014/9/19?",
+    "gold_sql": "SELECT t2.buildUpPlaySpeedClass FROM Team AS t1 INNER JOIN Team_Attributes AS t2 ON t1.team_api_id = t2.team_api_id WHERE t1.team_long_name = 'Celtic' AND t2.\"date\" LIKE '2014-09-19%'",
+    "knowledge": "Team_Attributes.date is text with a time suffix ('YYYY-MM-DD 00:00:00'), so a day is matched with LIKE 'YYYY-MM-DD%'."
+  },
+  {
+    "id": "p28",
+    "db_id": "european_football_2",
+    "level": "new_surface",
+    "source_qid": 1025,
+    "question": "Which league had the most goals in the season that ended in 2014?",
+    "gold_sql": "SELECT t2.name FROM Match AS t1 INNER JOIN League AS t2 ON t1.league_id = t2.id WHERE t1.season = '2013/2014' GROUP BY t2.name ORDER BY SUM(t1.home_team_goal + t1.away_team_goal) DESC LIMIT 1",
+    "knowledge": "Seasons are stored as 'YYYY/YYYY' text named by both years; the season ending in 2014 is season = '2013/2014'."
+  },
+  {
+    "id": "p29",
+    "db_id": "european_football_2",
+    "level": "new_surface",
+    "source_qid": 1091,
+    "question": "How many La Liga matches were played in March 2012?",
+    "gold_sql": "SELECT COUNT(t2.id) FROM League AS t1 INNER JOIN Match AS t2 ON t1.id = t2.league_id WHERE t1.name = 'Spain LIGA BBVA' AND SUBSTR(t2.\"date\", 1, 7) = '2012-03'",
+    "knowledge": "La Liga is stored as League.name = 'Spain LIGA BBVA'; Match.date is text 'YYYY-MM-DD 00:00:00', so a month is SUBSTR(date, 1, 7)."
+  },
+  {
+    "id": "p30",
+    "db_id": "european_football_2",
+    "level": "control",
+    "source_qid": null,
+    "question": "Which team has the highest defence pressure score in any of its attribute records? Give the team's long name.",
+    "gold_sql": "SELECT t1.team_long_name FROM Team AS t1 INNER JOIN Team_Attributes AS t2 ON t1.team_api_id = t2.team_api_id ORDER BY t2.defencePressure DESC LIMIT 1",
+    "knowledge": "none"
+  }
+]
