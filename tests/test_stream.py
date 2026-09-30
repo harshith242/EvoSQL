@@ -168,6 +168,16 @@ def test_the_notes_arm_replays_the_examples_prompt_while_the_notes_are_empty(tmp
     assert first_prompt(live_agent, 2) == examples_prompt
 
 
+def test_a_new_examples_arm_answers_live_and_never_through_the_replay_only_agent(tmp_path, monkeypatch):
+    live_agent = LiveAgent(lambda system, q: True)
+    live = Live(Answers(live_agent, 3), NotesProposer([]), lambda: True, {"max_lines": 100, "max_words": 40},
+                examples_live=True)
+    _, _, _, agent = stream(tmp_path, monkeypatch, lambda: True, live)
+
+    assert not any("Similar past" in system for _, system in agent.asked)
+    assert any("Similar past" in system for _, system in live_agent.asked)
+
+
 def test_an_applied_update_shows_up_in_the_next_prompt_and_the_log(tmp_path, monkeypatch):
     recs, live_agent, _ = notes_stream(tmp_path, monkeypatch, lambda system, q: "A finished race" in system,
                                        "A finished race has a time value.")

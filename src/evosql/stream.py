@@ -75,6 +75,7 @@ class Live:
     proposer: object
     can_check: object
     notes_cfg: dict
+    examples_live: bool = False  # the examples arm is new (not in the replayed run), so it answers live too
 
 
 def notes_text(shown, notes):
@@ -188,7 +189,8 @@ def run_stream(db, order, answers, proposer, memory, can_precheck, log_path, con
         picked, scores = memory.select(q.question)
         facts = answers.get(db, q, gold, picked)
         shown = similar(memory.embed, q.question, [eq for eq, _ in memory.history], k_examples)
-        examples = answers.get(db, q, gold, notes=examples_notes(shown))
+        examples = (live.answers if live and live.examples_live else answers).get(db, q, gold,
+                                                                                notes=examples_notes(shown))
         if live:  # with empty notes this prompt equals the examples arm's, so it replays that answer
             notes_arm = live.answers.get(db, q, gold, notes=notes_text(shown, notes))
 
@@ -306,12 +308,13 @@ def run(cfg, replay_check=False):
                 memory = FactMemory(db, jev, embed, sc["rules"], f"{db_id} ({sc['databases'][db_id]})")
                 # v8 never skipped a pre-check, so the replayed facts arm must not either.
                 can_precheck = lambda: True
+                reference = stream_log(sc["replay_reference"], seed, db_id)
+                examples_replayed = "examples_ok" in reference.read_text()
                 live = None if replay_check else Live(
                     answers_live, notes_proposer, lambda: cost(priced[2:]) < allocation - sc["precheck_reserve_usd"],
-                    sc["notes"])
-                reference = stream_log(sc["replay_reference"], seed, db_id)
+                    sc["notes"], examples_live=not examples_replayed)
                 # A reference without an examples arm (v7): show no examples, so no new call is needed to replay.
-                k_examples = sc["examples"] if not replay_check or "examples_ok" in reference.read_text() else 0
+                k_examples = sc["examples"] if not replay_check or examples_replayed else 0
                 with tqdm(total=len(order), desc=f"order {seed} {db_id}", unit="q", dynamic_ncols=True) as bar:
                     notes = run_stream(db, order, answers, proposer, memory, can_precheck, stream_log(out, seed, db_id),
                                        consolidation_log(out, seed, db_id), sc["consolidate_every"], templates,
