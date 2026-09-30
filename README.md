@@ -4,11 +4,14 @@ A Text-to-SQL agent that learns from its own mistakes on one database. After eac
 
 ## Results at a glance
 
-Accuracy on a stream of questions, one database at a time. Each question is answered **before** its correct SQL is revealed, so memory only ever comes from earlier questions.
+The agent answers the questions of one database one by one. Each question is answered **before** its correct SQL is revealed, so memory only ever comes from earlier questions. Numbers are the share of questions answered correctly:
+
+- **All questions:** accuracy over every question, from the first to the last.
+- **Later half:** accuracy over the second half of the questions only, once memory has had time to build up. Early on there is little to remember yet, so this column shows the effect of memory more clearly.
 
 **MIMIC-IV (EHRSQL), questions that recur by type** — 127 questions: 119 from 17 question templates, then 8 questions that combine two templates.
 
-| Memory | Whole stream | Second half | Combination questions |
+| Memory | All questions | Later half | Combination questions |
 |---|---|---|---|
 | none | 0.535 | 0.531 | 5/8 |
 | facts | 0.543 | 0.562 | 5/8 |
@@ -17,7 +20,7 @@ Accuracy on a stream of questions, one database at a time. Each question is answ
 
 **BIRD (Arcwise-Plat), questions that rarely recur** — formula_1, 66 questions.
 
-| Memory | Whole stream | Second half |
+| Memory | All questions | Later half |
 |---|---|---|
 | none | 0.591 | 0.515 |
 | facts | 0.621 | 0.576 |
@@ -33,7 +36,7 @@ On all 4 Arcwise databases (221 questions), facts moved accuracy from 0.679 to 0
 - **examples**: the 2 earlier questions most similar to the new one, each with its correct SQL.
 - **examples + notes**: the examples, plus a short notes file about the database (like a CLAUDE.md, at most 100 lines), always in the prompt. After a wrong answer, a model edits the notes, writing only what the examples did not show. An edit is kept only if 2 earlier questions the agent had right are still right with it.
 
-All arms use the same agent (DeepSeek Flash, thinking off) and the same questions in the same order.
+All four use the same agent (DeepSeek Flash, thinking off) and the same questions in the same order.
 
 ## What we learned
 
