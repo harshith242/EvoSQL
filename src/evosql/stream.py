@@ -1,6 +1,6 @@
-"""The v7 stream: for each order and database, the none and facts arms answer each question, then the memory learns
-from the correct SQL (test, then train). Answers are memoised by prompt within a run and every LLM reply is cached on
-disk, so the none arm is shared by both orders and a rerun replays finished work for free and identically."""
+"""The v7 stream: for one order and each database, the none and facts arms answer each question, the memory learns from
+the correct SQL, and it is consolidated every N questions and at the end. Every LLM and JEV reply is cached on disk,
+so the none arm replays v6 and a rerun replays finished work for free and identically."""
 import hashlib
 import json
 import os
@@ -13,6 +13,7 @@ from tqdm import tqdm
 from evosql.agent import answer
 from evosql.bird import exec_match, gold_rows, load_arcwise, open_db
 from evosql.budget import Budget, BudgetExceeded
+from evosql.consolidate import consolidate
 from evosql.facts import check, check_snippet, render
 from evosql.files import append_jsonl, write_atomic
 from evosql.jev import Jev, JevUnavailable
@@ -30,6 +31,10 @@ def facts_file(out, seed, db_id):
     return Path(out) / f"facts_s{seed}_{db_id}.json"
 
 
+def consolidation_log(out, seed, db_id):
+    return Path(out) / f"consolidation_s{seed}_{db_id}.jsonl"
+
+
 def usage_since(llm, before):
     return {k: llm.usage[k] - before.get(k, 0) for k in llm.usage}
 
@@ -44,8 +49,8 @@ class Answers:
     def __init__(self, agent, max_steps):
         self.agent, self.max_steps, self.memo = agent, max_steps, {}
 
-    def get(self, db, q, gold, facts):
-        notes = render(facts)
+    def get(self, db, q, gold, facts=(), notes=None):
+        notes = render(facts) if notes is None else notes
         key = (q.db_id, q.qid, notes)
         if key in self.memo:
             return {**self.memo[key], "usage": {}}
@@ -55,6 +60,16 @@ class Answers:
         self.memo[key] = {"sql": sql, "turns": turns, "ok": exec_match(db.path, sql, gold),
                           "latency_s": usage.get("latency_s", 0.0)}
         return {**self.memo[key], "usage": usage}
+
+
+def trier(db, answers, usage):
+    """try_fact(fact, question) for pre-checks: answers with only that fact and adds the usage to usage["precheck"]."""
+    def try_fact(fact, eq):
+        result = answers.get(db, eq, gold_rows(db.path, eq), [fact])
+        usage["precheck"] = add_usage(usage["precheck"], result["usage"])
+        return result["ok"]
+
+    return try_fact
 
 
 def learn(db, q, gold, facts_sql, answers, proposer, memory, precheck):
@@ -72,24 +87,34 @@ def learn(db, q, gold, facts_sql, answers, proposer, memory, precheck):
         if snippet != "kept":
             fact.sql = None
 
-    def try_fact(f, eq):
-        result = answers.get(db, eq, gold_rows(db.path, eq), [f])
-        usage["precheck"] = add_usage(usage["precheck"], result["usage"])
-        return result["ok"]
-
-    record = memory.admit(fact, try_fact if precheck else None)
+    record = memory.admit(fact, trier(db, answers, usage) if precheck else None)
     return {**record, "fact": asdict(fact), "snippet": snippet, "usage": usage}
 
 
-def run_stream(db, order, answers, proposer, memory, can_precheck, log_path, bar=None):
-    """One (database, order) stream, one log record per question."""
+def consolidation_pass(pos, db, answers, proposer, memory, can_precheck, path):
+    """One consolidation pass after question pos, logged; skipped when the budget rule allows no pre-checks."""
+    if not can_precheck():
+        append_jsonl(path, {"after_pos": pos, "skipped": "budget"})
+        return
+    usage = {"proposer": {}, "precheck": {}}
+    before, jev_before = dict(proposer.usage), memory.jev.usage["usd"]
+    edits = consolidate(proposer, memory, lambda q: gold_rows(db.path, q), trier(db, answers, usage))
+    usage["proposer"] = usage_since(proposer, before)
+    append_jsonl(path, {"after_pos": pos, "edits": edits, "usage": usage,
+                        "jev_usd": memory.jev.usage["usd"] - jev_before})
+
+
+def run_stream(db, order, answers, proposer, memory, can_precheck, log_path, consolidation_path, every, bar=None):
+    """One (database, order) stream: one log record per question, a consolidation pass every N and at the end."""
     write_atomic(log_path, "")
+    write_atomic(consolidation_path, "")
     for pos, q in enumerate(order, 1):
+        jev_before = memory.jev.usage["usd"]
         gold = gold_rows(db.path, q)
 
         # Both arms answer before anything about q is revealed; with no fact injected, facts replays none.
         none = answers.get(db, q, gold, [])
-        picked, _ = memory.select(q.question)
+        picked, scores = memory.select(q.question)
         facts = answers.get(db, q, gold, picked)
 
         # Reveal the correct answer: credit the injected facts, learn from a failure, then remember q.
@@ -105,10 +130,14 @@ def run_stream(db, order, answers, proposer, memory, can_precheck, log_path, bar
             "injected": [f.id for f in picked], "memory_size": len(memory.active()),
             "latency_s": [none["latency_s"], facts["latency_s"]],
             "usage": {"none": none["usage"], "facts": facts["usage"]},
-            "learning": learning,
+            "learning": learning, "jev_usd": memory.jev.usage["usd"] - jev_before, "jev_scores": scores,
         })
+        # The final pass covers the last question, so a multiple of `every` there is not repeated.
+        if pos % every == 0 and pos < len(order):
+            consolidation_pass(pos, db, answers, proposer, memory, can_precheck, consolidation_path)
         if bar:
             bar.update(1)
+    consolidation_pass(len(order), db, answers, proposer, memory, can_precheck, consolidation_path)
 
 
 def check_pinned(questions_path):
@@ -143,7 +172,8 @@ def run(cfg):
                 memory = FactMemory(db, jev, embed, sc["rules"], f"{db_id} ({sc['databases'][db_id]})")
                 can_precheck = lambda: logical() < allocation - sc["precheck_reserve_usd"]
                 with tqdm(total=len(order), desc=f"order {seed} {db_id}", unit="q", dynamic_ncols=True) as bar:
-                    run_stream(db, order, answers, proposer, memory, can_precheck, stream_log(out, seed, db_id), bar)
+                    run_stream(db, order, answers, proposer, memory, can_precheck, stream_log(out, seed, db_id),
+                               consolidation_log(out, seed, db_id), sc["consolidate_every"], bar)
                 write_atomic(facts_file(out, seed, db_id), json.dumps(
                     [{**asdict(f), **memory.state.get(f.id, {})} for f in memory.facts.values()], indent=1))
     except (BudgetExceeded, ProviderExhausted, JevUnavailable) as e:

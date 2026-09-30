@@ -30,8 +30,18 @@ class Proposer:
 
     def chat(self, messages, tools=None):
         self.usage["calls"] += 1
+        if "edits" in messages[0]["content"]:  # the consolidation prompt
+            return {"content": json.dumps({"edits": []})}
         return {"content": json.dumps({"fact": {"kind": "mapping", "subject": "results.time", "statement": FACT,
                                                 "applies_to": ["finished"], "values": [], "probe": None}})}
+
+
+class PricedJev(FakeJev):
+    """A JEV that charges $0.50 per call."""
+
+    def decide(self, state, questions):
+        self.usage["usd"] += 0.5
+        return super().decide(state, questions)
 
 
 def stream(tmp_path, monkeypatch, can_precheck):
@@ -39,14 +49,17 @@ def stream(tmp_path, monkeypatch, can_precheck):
     db = make_db(tmp_path, "f1", "CREATE TABLE results (raceId INTEGER, driverId INTEGER, time TEXT); "
                                  "INSERT INTO results VALUES (1, 1, '1:30'), (1, 2, NULL), (1, 3, '1:31');")
     order = [Question(i, "f1", f"How many drivers finished race {i}?", GOLD) for i in (1, 2, 3)]
-    memory = FactMemory(db, FakeJev(lambda state, key: 3.0), lambda texts: np.ones((len(texts), 2)), RULES, "f1 (test)")
+    jev = PricedJev(lambda state, key: 3.0)
+    memory = FactMemory(db, jev, lambda texts: np.ones((len(texts), 2)), RULES, "f1 (test)")
     agent = Agent()
-    run_stream(db, order, Answers(agent, 3), Proposer(), memory, can_precheck, tmp_path / "log.jsonl")
-    return [json.loads(line) for line in open(tmp_path / "log.jsonl")], memory, agent
+    run_stream(db, order, Answers(agent, 3), Proposer(), memory, can_precheck, tmp_path / "log.jsonl",
+               tmp_path / "consolidation.jsonl", 2)
+    read = lambda name: [json.loads(line) for line in open(tmp_path / name)]
+    return read("log.jsonl"), read("consolidation.jsonl"), memory, agent
 
 
 def test_a_fact_is_learned_after_its_question_and_helps_the_next_one(tmp_path, monkeypatch):
-    recs, memory, agent = stream(tmp_path, monkeypatch, lambda: True)
+    recs, _, memory, agent = stream(tmp_path, monkeypatch, lambda: True)
     first, second = recs[0], recs[1]
     assert first["injected"] == [] and not first["facts_ok"]  # a question never sees the fact learned from it
     assert first["learning"]["outcome"] == "pre-check unmatched"  # no earlier question to check against
@@ -57,5 +70,18 @@ def test_a_fact_is_learned_after_its_question_and_helps_the_next_one(tmp_path, m
 
 
 def test_the_precheck_follows_the_budget_rule_it_is_given(tmp_path, monkeypatch):
-    recs, _, _ = stream(tmp_path, monkeypatch, lambda: False)
+    recs, passes, _, _ = stream(tmp_path, monkeypatch, lambda: False)
     assert recs[0]["learning"]["outcome"] == "added unproven (pre-check skipped: budget)"
+    assert passes == [{"after_pos": 2, "skipped": "budget"}, {"after_pos": 3, "skipped": "budget"}]
+
+
+def test_consolidation_runs_every_n_questions_and_once_at_the_end(tmp_path, monkeypatch):
+    _, passes, _, _ = stream(tmp_path, monkeypatch, lambda: True)
+    assert [p["after_pos"] for p in passes] == [2, 3]
+    assert passes[0]["edits"] == [] and passes[0]["usage"]["proposer"] == {"calls": 1} and passes[0]["jev_usd"] == 0
+
+
+def test_each_question_logs_its_jev_cost_and_scores(tmp_path, monkeypatch):
+    recs, _, _, _ = stream(tmp_path, monkeypatch, lambda: True)
+    assert [r["jev_usd"] for r in recs] == [0, 0.5, 0.5]  # no fact to score for question 1
+    assert [r["jev_scores"] for r in recs] == [{}, {"f1": 3.0}, {"f1": 3.0}]

@@ -1,3 +1,4 @@
+import hashlib
 import json
 import pytest
 
@@ -81,3 +82,10 @@ def test_no_facts_send_the_no_memory_prompt_so_both_arms_share_cached_replies(db
     answer(llm, db, "q?", render([]))
     assert llm.history[0][0]["content"] == SYSTEM.format(ddl=db.ddl, profile=db.profile + "\n\n", notes="")
     assert llm.tools[0] == TOOLS
+
+
+def test_no_memory_prompt_is_unchanged_from_v6():
+    # The none arm replays v6's cache only while its prompt and tools are byte-identical to v6's.
+    digest = hashlib.sha256((SYSTEM + json.dumps(TOOLS, sort_keys=True)).encode()).hexdigest()
+    assert digest == "fc5924031fda8d3650c450ed03f9fdc6ee18bfca6a38c97df6c35352424806bd"
+    assert render([]) == ""
