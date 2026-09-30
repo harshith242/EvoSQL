@@ -1,23 +1,16 @@
 import json
-import sqlite3
-
 import pytest
 
-from evosql.bird import Question, open_db
-from evosql.facts import Fact
-from evosql.proposer import check, leak_exempt, propose
+from conftest import make_db
+from evosql.bird import Question
+from evosql.facts import Fact, check
+from evosql.proposer import propose
 
 
 @pytest.fixture
 def db(tmp_path):
-    d = tmp_path / "toy"
-    d.mkdir()
-    con = sqlite3.connect(d / "toy.sqlite")
-    con.execute("CREATE TABLE Patient (ID INTEGER, SEX TEXT)")
-    con.executemany("INSERT INTO Patient VALUES (?, ?)", [(1, "F"), (2, "M"), (3, "F")])
-    con.commit()
-    con.close()
-    return open_db(tmp_path, "toy")
+    return make_db(tmp_path, "toy", "CREATE TABLE Patient (ID INTEGER, SEX TEXT); "
+                                    "INSERT INTO Patient VALUES (1, 'F'), (2, 'M'), (3, 'F');")
 
 
 class ReplyLLM:
@@ -29,7 +22,7 @@ class ReplyLLM:
 
 
 def q(qid, text):
-    return Question(qid, "toy", text, "SELECT SEX FROM Patient WHERE ID = 1", "simple")
+    return Question(qid, "toy", text, "SELECT SEX FROM Patient WHERE ID = 1")
 
 
 def test_sloppy_proposer_fields_are_cleaned_and_a_null_fact_means_nothing_reusable(db):
@@ -47,7 +40,7 @@ def test_a_code_that_equals_the_answer_is_allowed_but_a_unique_value_is_not(db):
     code = Fact("f1", "encoding", "Patient.SEX", "Women are stored as 'F' in Patient.SEX.", ["women", "Which sex has"],
                 None, [2], [{"table": "Patient", "column": "SEX", "value": "F"}])
     # 'F' is the answer, but it is a code stored in 2 rows; a trigger phrase may reuse the question's words.
-    assert leak_exempt(code, db) == {"f"} and check(code, question, [("F",)], db) is None
+    assert check(code, db, question, [("F",)]) is None
     unique = Fact("f2", "encoding", "Patient.ID", "Patient.ID 2 is the only man.", ["man"], None, [2],
                   [{"table": "Patient", "column": "ID", "value": "2"}])
-    assert check(unique, question, [(2,)], db).startswith("leakage")
+    assert check(unique, db, question, [(2,)]).startswith("leakage")

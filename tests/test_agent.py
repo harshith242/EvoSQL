@@ -1,10 +1,8 @@
 import json
-import sqlite3
-
 import pytest
 
 from evosql.agent import SYSTEM, TOOLS, answer
-from evosql.bird import open_db
+from conftest import make_db
 from evosql.facts import Fact, render
 
 
@@ -33,14 +31,8 @@ class FakeLLM:
 
 @pytest.fixture
 def db(tmp_path):
-    d = tmp_path / "toy"
-    d.mkdir()
-    con = sqlite3.connect(d / "toy.sqlite")
-    con.execute("CREATE TABLE patient (id INTEGER, sex TEXT)")
-    con.executemany("INSERT INTO patient VALUES (?, ?)", [(1, "F"), (2, "M"), (3, "F")])
-    con.commit()
-    con.close()
-    return open_db(tmp_path, "toy")
+    return make_db(tmp_path, "toy", "CREATE TABLE patient (id INTEGER, sex TEXT); "
+                                    "INSERT INTO patient VALUES (1, 'F'), (2, 'M'), (3, 'F');")
 
 
 def test_tool_result_is_fed_back_then_submit_returns_sql(db):
@@ -84,8 +76,8 @@ def test_value_profile_goes_between_schema_and_notes(db):
     assert system.index("CREATE TABLE") < system.index("value profile") < system.index("Learned database knowledge")
 
 
-def test_docs_mode_sends_exactly_the_v3_prompt_and_tools_so_cached_replies_are_reused(db):
+def test_no_facts_send_the_no_memory_prompt_so_both_arms_share_cached_replies(db):
     llm = FakeLLM({0: [call("submit", sql="SELECT 1")]})
-    answer(llm, db, "q?")
-    assert llm.history[0][0]["content"] == SYSTEM.format(ddl=db.ddl, profile="", notes="")
+    answer(llm, db, "q?", render([]))
+    assert llm.history[0][0]["content"] == SYSTEM.format(ddl=db.ddl, profile=db.profile + "\n\n", notes="")
     assert llm.tools[0] == TOOLS

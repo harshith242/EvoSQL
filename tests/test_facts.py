@@ -1,21 +1,13 @@
-import sqlite3
-
 import pytest
 
-from evosql.bird import open_db
+from conftest import make_db
 from evosql.facts import Fact, check_fact, leaks, merge
 
 
 @pytest.fixture
 def db(tmp_path):
-    d = tmp_path / "toy"
-    d.mkdir()
-    con = sqlite3.connect(d / "toy.sqlite")
-    con.execute("CREATE TABLE Laboratory (ID INTEGER, RNP TEXT, UN INTEGER)")
-    con.executemany("INSERT INTO Laboratory VALUES (?, ?, ?)", [(1, "negative", 29), (2, "0", 40), (3, "16", 12)])
-    con.commit()
-    con.close()
-    return open_db(tmp_path, "toy")
+    return make_db(tmp_path, "toy", "CREATE TABLE Laboratory (ID INTEGER, RNP TEXT, UN INTEGER); "
+                                    "INSERT INTO Laboratory VALUES (1, 'negative', 29), (2, '0', 40), (3, '16', 12);")
 
 
 def fact(text, subject="Laboratory.RNP", kind="encoding", applies_to=("normal RNP",), probe=None, qids=(1,), id="f1",
@@ -38,7 +30,8 @@ def test_only_structured_values_are_grounded_and_facts_must_name_the_schema(db):
     assert check_fact(fact("Normal is a code.", values=[value("neg")]), db) == "value not in data: 'neg'"
     assert check_fact(fact("A 'normal' result is a code in Laboratory.RNP."), db) is None  # quoted prose is not a value
     assert check_fact(fact("Normal is 'negative'.", subject="Laboratory.RNPX"), db) == "unknown column"
-    assert check_fact(fact("Averages are over rows.", subject="averages", kind="meaning"), db) == "not scoped to the schema"
+    unscoped = fact("Averages are over rows.", subject="averages", kind="meaning")
+    assert check_fact(unscoped, db) == "not scoped to the schema"
 
 
 def test_fact_needs_a_trigger_phrase_and_a_probe_with_a_result(db):
@@ -53,14 +46,15 @@ def test_fact_needs_a_trigger_phrase_and_a_probe_with_a_result(db):
 
 
 def test_facts_that_only_restate_the_column_docs_are_dropped(db):
-    db.column_notes = {"Laboratory": {"un": "urea nitrogen | values: Commonsense evidence:Normal range: N < 30"}}
+    note = lambda values: {"un": {"name": "UN", "description": "urea nitrogen", "values": values}}
+    db.notes = {"Laboratory": note("Commonsense evidence:Normal range: N < 30")}
     restated = fact("A normal Laboratory.UN is below 30.", "Laboratory.UN", "constraint")
     assert check_fact(restated, db) == "already in docs"
     boundary = fact("An abnormal Laboratory.UN includes the boundary: 30 or more.", "Laboratory.UN", "constraint")
     new_range = fact("A dangerous Laboratory.UN is above 40.", "Laboratory.UN", "constraint")
     assert check_fact(boundary, db) is None and check_fact(new_range, db) is None
     # Docs with the direction inverted (as BIRD's uric acid docs are): a fact that corrects them is kept.
-    db.column_notes = {"Laboratory": {"UN": "urea nitrogen | values: Normal range: N > 30"}}
+    db.notes = {"Laboratory": note("Normal range: N > 30")}
     assert check_fact(restated, db) is None
 
 
@@ -74,7 +68,8 @@ def test_answer_values_and_copied_wording_leak(db):
 
 
 def test_merge_unites_duplicates_and_resolves_mapping_conflicts(db):
-    same = [fact("Normal is 'negative'.", qids=[1], id="f1"), fact("normal is 'negative'", applies_to=["RNP"], qids=[2], id="f2")]
+    same = [fact("Normal is 'negative'.", qids=[1], id="f1"),
+            fact("normal is 'negative'", applies_to=["RNP"], qids=[2], id="f2")]
     merged, _ = merge(same, db)
     assert len(merged) == 1 and merged[0].source_qids == [1, 2] and merged[0].applies_to == ["normal RNP", "RNP"]
     # Texts that differ only in a symbolic stored value are different facts, not duplicates.
@@ -82,7 +77,7 @@ def test_merge_unites_duplicates_and_resolves_mapping_conflicts(db):
     assert len(merge([plus, minus], db)[0]) == 2
     # "urea" mapped to two different columns: the better-supported mapping wins.
     rnp = fact("Urea means Laboratory.RNP.", kind="mapping", applies_to=["urea"], qids=[1], id="f1")
-    un = fact("Urea means Laboratory.UN.", subject="Laboratory.UN", kind="mapping", applies_to=["Urea"], qids=[2, 3], id="f2")
+    un = fact("Urea means Laboratory.UN.", "Laboratory.UN", "mapping", ["Urea"], qids=[2, 3], id="f2")
     merged, conflicts = merge([rnp, un], db)
     assert [f.id for f in merged] == ["f2"] and conflicts == [{"phrase": "urea", "facts": ["f1", "f2"], "kept": "f2"}]
     # A tie drops both.

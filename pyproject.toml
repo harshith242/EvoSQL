@@ -11,7 +11,6 @@ dependencies = [
     "openai>=3.19.2",
     "python-dotenv>=1.2.3",
     "pyyaml>=6.0.3",
-    "scipy>=1.18.1",
     "tqdm>=4.70.1",
 ]
 

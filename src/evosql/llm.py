@@ -28,7 +28,8 @@ def usd(usage, prices):
         return 0.0
     hit = usage.get("provider_cached_tokens", 0)
     miss = usage.get("prompt_tokens", 0) - hit
-    return (hit * prices["cache_hit"] + miss * prices["cache_miss"] + usage.get("completion_tokens", 0) * prices["output"]) / 1e6
+    output = usage.get("completion_tokens", 0)
+    return (hit * prices["cache_hit"] + miss * prices["cache_miss"] + output * prices["output"]) / 1e6
 
 
 def extract_json(text):
@@ -58,21 +59,20 @@ class LLM:
         self.max_tries = max_tries
         self.options = options or {}  # extra request params, e.g. {"reasoning_effort": "low"}
         self.prices, self.on_spend = prices, on_spend  # on_spend(usd) runs after every real (non-cached) call
-        self.usage = {"calls": 0, "cached": 0, **dict.fromkeys(USAGE_KEYS, 0)}
+        self.usage = {"calls": 0, **dict.fromkeys(USAGE_KEYS, 0)}
         self.seen = set()  # cache keys already counted in this process: in-run replays are free
 
-    def chat(self, messages, tools=None, temperature=0.0, sample=0):
-        """Return {content, reasoning, tool_calls: [{id, name, arguments}], model, USAGE_KEYS}; replays keep latency_s."""
-        payload = [self.model, self.options, messages, tools, temperature, sample]
+    def chat(self, messages, tools=None):
+        """{content, reasoning, tool_calls: [{id, name, arguments}], model, USAGE_KEYS}; replays keep latency_s."""
+        payload = [self.model, self.options, messages, tools, 0.0, 0]  # temperature, sample: kept for the cache keys
         key = hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
         path = self.cache_dir / key[:2] / f"{key}.json"
         if path.exists():
             reply = json.loads(path.read_text())
             if key in self.seen:
                 return reply
-            self.usage["cached"] += 1
         else:
-            reply = self._call(messages, tools, temperature)
+            reply = self._call(messages, tools)
             write_atomic(path, json.dumps(reply))
             if self.on_spend:
                 self.on_spend(usd(reply, self.prices))
@@ -82,17 +82,17 @@ class LLM:
             self.usage[k] += reply.get(k, 0)
         return reply
 
-    def _call(self, messages, tools, temperature):
+    def _call(self, messages, tools):
         extra = {"tools": tools, **self.options} if tools else dict(self.options)
         for attempt in range(self.max_tries):
+            backoff = min(2 ** (attempt + 1), 60)
             start = time.monotonic()
             try:
-                resp = self.client.chat.completions.create(
-                    model=self.model, messages=messages, temperature=temperature, **extra
-                )
+                resp = self.client.chat.completions.create(model=self.model, messages=messages, temperature=0.0,
+                                                           **extra)
             except openai.RateLimitError as e:
                 last = e
-                wait = float(e.response.headers.get("retry-after") or 2 ** (attempt + 1))
+                wait = float(e.response.headers.get("retry-after") or backoff)
                 if wait > MAX_WAIT:
                     raise ProviderExhausted(f"{self.model}: rate limited for {wait:.0f}s (daily limit?)")
                 tqdm.write(f"  {self.model}: rate limited, waiting {wait:.0f}s")
@@ -100,15 +100,16 @@ class LLM:
                 continue
             except RETRYABLE as e:
                 last = e
-                time.sleep(min(2 ** (attempt + 1), 60))
+                time.sleep(backoff)
                 continue
             if not getattr(resp, "choices", None):
                 # Some providers answer 200 with an error body and no choices when the upstream model fails.
                 last = f"empty response: {getattr(resp, 'error', None)}"
-                time.sleep(min(2 ** (attempt + 1), 60))
+                time.sleep(backoff)
                 continue
             msg = resp.choices[0].message
-            calls = [{"id": c.id, "name": c.function.name, "arguments": c.function.arguments} for c in msg.tool_calls or []]
+            calls = [{"id": c.id, "name": c.function.name, "arguments": c.function.arguments}
+                     for c in msg.tool_calls or []]
             return {
                 "content": msg.content,
                 "reasoning": getattr(msg, "reasoning_content", None),  # DeepSeek thinking; must be sent back with tools

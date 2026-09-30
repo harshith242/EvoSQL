@@ -1,10 +1,10 @@
 """Facts about one database: typed statements with trigger phrases (applies_to), the stored values they rely on and an
-optional evidence query. check_fact drops facts that are ungrounded, contain SQL or only restate the docs; leaks catches
-memorized answers; merge unites duplicates and resolves one phrase mapped to different columns."""
+optional evidence query. check() holds every free check a new fact must pass before it may enter the memory;
+merge() unites duplicates and resolves one phrase mapped to different columns."""
 import re
 from dataclasses import asdict, dataclass, field
 
-from evosql.bird import execute, quote
+from evosql.bird import execute, note_text, value_count
 
 KINDS = ("mapping", "encoding", "constraint", "meaning", "grain", "relation")
 
@@ -12,7 +12,7 @@ KINDS = ("mapping", "encoding", "constraint", "meaning", "grain", "relation")
 SQL_PATTERN = re.compile(r"\b(SELECT|FROM|WHERE|JOIN|GROUP BY|ORDER BY|LIMIT|DISTINCT)\b|(?i:\bcount\s*\()")
 
 # Wording that adds a boundary rule the docs' "N < 30" style ranges leave open.
-BOUNDARY = re.compile(r"includ|boundary|inclusive|exclusive|strictly|at least|at most|or more|or less|or above|or below", re.I)
+BOUNDARY = re.compile(r"includ|boundary|inclusive|exclusive|strictly|at (least|most)|or (more|less|above|below)", re.I)
 
 
 @dataclass
@@ -38,31 +38,36 @@ def render(facts):
     return "\n".join(lines)
 
 
-def _unquote(text):
+def phrase_in(phrase, text):
+    """Whole-phrase match with word boundaries: "age" is in "patient age" but not in "average"."""
+    return re.search(rf"(?<!\w){re.escape(phrase.lower().strip())}(?!\w)", text.lower()) is not None
+
+
+def _fact_text(fact):
     # Identifier quotes (`aCL IgG`, "T-BIL") are style, not part of the name.
-    return re.sub(r'[`"]', "", text)
+    return re.sub(r'[`"]', "", f"{fact.subject} {fact.fact}").lower()
 
 
 def fact_columns(db, fact):
     """(table, column) pairs the fact is about: written as Table.Column in its subject or text."""
-    text = _unquote(f"{fact.subject} {fact.fact}").lower()
+    text = _fact_text(fact)
     return [(t, c) for t in db.tables for c in db.columns[t] if f"{t}.{c}".lower() in text]
 
 
-def names_schema(db, fact):
-    """True when the fact names a column (Table.Column) or a table of this database."""
-    text = _unquote(f"{fact.subject} {fact.fact}").lower()
-    return bool(fact_columns(db, fact)) or any(re.search(rf"\b{re.escape(t.lower())}\b", text) for t in db.tables)
+def fact_tables(db, fact):
+    """Tables the fact names, as Table.Column or as a table name on its own."""
+    text = _fact_text(fact)
+    return {t for t, _ in fact_columns(db, fact)} | {t for t in db.tables if phrase_in(t, text)}
 
 
-def _value_in(db, table, col, value):
-    literal = "'" + value.replace("'", "''") + "'"
-    rows, _ = execute(db.path, f"SELECT 1 FROM {quote(table)} WHERE CAST({quote(col)} AS TEXT) = {literal} LIMIT 1")
-    return bool(rows)
+def column_note(db, table, column):
+    """The column's description text ("" when undocumented)."""
+    note = db.notes.get(table, {}).get(column.lower())
+    return note_text(note) if note else ""
 
 
 def check_fact(fact, db):
-    """Why the fact must be dropped (kind, phrase, SQL, column, value, scope, restates docs, probe), or None."""
+    """Why a fact must be dropped for its content (kind, phrase, SQL, column, value, scope, docs, probe), or None."""
     if fact.kind not in KINDS:
         return "unknown kind"
     if not any(isinstance(p, str) and p.strip() for p in fact.applies_to):
@@ -70,16 +75,16 @@ def check_fact(fact, db):
     if SQL_PATTERN.search(fact.fact):
         return "contains SQL"
 
-    table, _, col = _unquote(fact.subject).partition(".")
+    table, _, col = re.sub(r'[`"]', "", fact.subject).partition(".")
     if col and table in db.tables and col not in db.columns[table]:
         return "unknown column"
     # Only the declared {table, column, value} entries are grounded; quoted words in the text are prose.
     for v in fact.values:
         if v["table"] not in db.tables or v["column"] not in db.columns[v["table"]]:
             return "unknown column"
-        if not _value_in(db, v["table"], v["column"], str(v["value"])):
+        if not value_count(db, v["table"], v["column"], v["value"]):
             return f"value not in data: {v['value']!r}"
-    if not names_schema(db, fact):
+    if not fact_tables(db, fact):
         return "not scoped to the schema"
 
     if in_docs(fact, db):
@@ -95,6 +100,21 @@ def check_fact(fact, db):
     return None
 
 
+def check(fact, db, q, gold):
+    """Why a new fact learned from question q must be dropped (content checks, then leakage of q), or None."""
+    reason = check_fact(fact, db)
+    if reason:
+        return reason
+    # A stored code in 2+ rows may equal the answer (e.g. 'DSQ'); trigger phrases may reuse the question's words.
+    codes = {str(v["value"]).strip().lower() for v in fact.values
+             if value_count(db, v["table"], v["column"], v["value"]) >= 2}
+    texts = [(fact.subject, True), (fact.fact, True)] + [(p, False) for p in fact.applies_to]
+    for text, wording in texts:
+        if leak := leaks(text, q.question, q.gold_sql, gold, allowed=codes, wording=wording):
+            return f"leakage: {leak}"
+    return None
+
+
 def _direction(text):
     # "<" or ">" when the text states one comparison direction, else None.
     less = re.search(r"\b(below|under|less|lower|smaller)\b|<", text, re.I)
@@ -103,55 +123,48 @@ def _direction(text):
 
 
 def in_docs(fact, db):
-    """True when a range or code fact only restates the docs of a column it names (every number, value and direction)."""
+    """True when a range or code fact only restates a named column's docs (every number, value and direction)."""
     if fact.kind not in ("constraint", "encoding") or BOUNDARY.search(fact.fact):
         return False
     tokens = re.findall(r"(?<![\w.])\d+(?:\.\d+)?(?!\w|\.\d)", fact.fact) + [str(v["value"]) for v in fact.values]
-    notes = [{c.lower(): d for c, d in db.column_notes.get(t, {}).items()}.get(c.lower(), "")
-             for t, c in fact_columns(db, fact)]
+    notes = [column_note(db, t, c) for t, c in fact_columns(db, fact)]
     same_way = lambda n: _direction(fact.fact) in (None, _direction(n))  # flipping the docs' direction corrects them
     has_all = lambda n: all(re.search(rf"(?<![\w.]){re.escape(x)}(?!\w|\.\d)", n) for x in tokens)
     return bool(tokens) and any(n and same_way(n) and has_all(n) for n in notes)
 
 
-def leaks(text, question, gold_sql, gold, max_rows=50, allowed=(), wording=True):
-    """Why the text memorizes this question (its answer or wording) instead of stating knowledge, or None.
-    allowed: lowercase values that may equal an answer (reusable codes); wording=False skips the copied-words check."""
-    text, sql = text.lower(), gold_sql.lower()
-    for row in gold[:max_rows]:
-        for value in row:
-            v = str(value).strip().lower()
-            if v in allowed:
-                continue
-            # Constants that already appear in the gold SQL (e.g. 'F', 1) are schema knowledge, not answers.
-            word = rf"(?<!\w){re.escape(v)}(?!\w)"
-            if len(v) >= 2 and not re.search(word, sql) and re.search(word, text):
-                return f"contains answer value {v!r}"
-    if len(gold) == 1 and len(gold[0]) == 1 and isinstance(gold[0][0], int | float):
-        # A single numeric answer: even a one-digit number is the answer.
-        word = rf"(?<![\w.]){re.escape(str(gold[0][0]))}(?![\w.])"
-        if str(gold[0][0]).lower() not in allowed and not re.search(word, sql) and re.search(word, text):
-            return f"contains answer value {str(gold[0][0])!r}"
+def leaks(text, question, gold_sql, gold, allowed=(), wording=True):
+    """Why the text memorizes this question (an answer value or copied wording) rather than knowledge, or None."""
+    values = {str(v).strip().lower() for row in gold[:50] for v in row} - set(allowed)
+    single_number = len(gold) == 1 and len(gold[0]) == 1 and isinstance(gold[0][0], int | float)
+    for v in sorted(values):
+        # Constants in the gold SQL (e.g. 'F', 1) are schema knowledge; a single numeric answer counts at any length.
+        if (len(v) >= 2 or single_number) and not phrase_in(v, gold_sql) and phrase_in(v, text):
+            return f"contains answer value {v!r}"
     if not wording:
         return None
-    q_words, t_words = re.findall(r"\w+", question.lower()), re.findall(r"\w+", text)
+    q_words, t_words = re.findall(r"\w+", question.lower()), re.findall(r"\w+", text.lower())
     q_grams = {tuple(q_words[i:i + 5]) for i in range(len(q_words) - 4)}
     if any(tuple(t_words[i:i + 5]) in q_grams for i in range(len(t_words) - 4)):
         return "copies question wording"
     return None
 
 
+def fact_key(fact):
+    """Facts with the same key are duplicates: same kind, subject and text (normalised)."""
+    return fact.kind, _norm(fact.subject), _norm(fact.fact)
+
+
 def _norm(text):
     # Quoted values stay whole: "'+'" and "'-'" differ although they have no word characters.
-    return " ".join(re.findall(r"'[^']*'|\w+", _unquote(text).lower()))
+    return " ".join(re.findall(r"'[^']*'|\w+", re.sub(r'[`"]', "", text).lower()))
 
 
 def merge(facts, db):
-    """Unite duplicates (same kind, subject and text); when one phrase maps to different columns, only the mapping with
-    more source questions keeps the phrase (none on a tie); a fact left without phrases is dropped. Returns (facts, conflicts)."""
+    """(facts, conflicts): duplicates united; a phrase mapped to 2+ columns kept by the best-supported mapping only."""
     unique = {}
     for f in facts:
-        key = (f.kind, _norm(f.subject), _norm(f.fact))
+        key = fact_key(f)
         if key not in unique:
             unique[key] = Fact(**asdict(f))
             continue
@@ -162,7 +175,8 @@ def merge(facts, db):
     kept, conflicts = list(unique.values()), []
     targets = {f.id: frozenset(fact_columns(db, f)) for f in kept}
     for phrase in sorted({_norm(p) for f in kept if f.kind == "mapping" for p in f.applies_to}):
-        group = [f for f in kept if f.kind == "mapping" and targets[f.id] and phrase in {_norm(p) for p in f.applies_to}]
+        group = [f for f in kept
+                 if f.kind == "mapping" and targets[f.id] and phrase in {_norm(p) for p in f.applies_to}]
         if len({targets[f.id] for f in group}) < 2:
             continue
         most = max(len(f.source_qids) for f in group)

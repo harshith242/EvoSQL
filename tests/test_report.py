@@ -3,7 +3,7 @@ from evosql.report import pooled_diff, stream_stats
 
 def recs(pairs, injected=()):
     """Stream records from (none_ok, facts_ok) pairs; `injected` lists positions with a fact in the prompt."""
-    return [{"pos": i, "none_ok": n, "facts_ok": f, "injected": ["f1"] if i in injected else []}
+    return [{"pos": i, "none_ok": n, "facts_ok": f, "injected": ["f1"] if i in injected else [], "memory_size": 1}
             for i, (n, f) in enumerate(pairs, 1)]
 
 

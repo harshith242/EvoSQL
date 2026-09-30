@@ -1,8 +1,10 @@
+import json
 import sqlite3
 
 import pytest
 
-from evosql.bird import exec_match, execute
+from conftest import make_db
+from evosql.bird import exec_match, execute, load_arcwise, value_profile
 
 
 @pytest.fixture
@@ -45,32 +47,22 @@ def test_slow_query_times_out(db):
     assert rows is None and "interrupt" in error
 
 
-def test_value_profile_lists_coded_values_nulls_and_ids(db):
-    from evosql.bird import value_profile
-    prof = value_profile(db, ["patient"], max_values=2).splitlines()
-    assert "- patient.sex TEXT: 'F' 2, 'M' 1" in prof
+def test_value_profile_lists_values_nulls_ids_and_ends_each_line_with_its_description(tmp_path):
+    db = make_db(tmp_path, "toy", "CREATE TABLE patient (id INTEGER, sex TEXT, age INTEGER); "
+                                  "INSERT INTO patient VALUES (1, 'F', 30), (2, 'M', NULL), (3, 'F', 50);",
+                 notes={"patient": {"SEX": "sex of the patient"}})
+    prof = value_profile(db.path, db.tables, db.notes, max_values=2).splitlines()
+    assert "- patient.sex TEXT: 'F' 2, 'M' 1 | sex of the patient" in prof  # description names match any case
     age = next(line for line in prof if line.startswith("- patient.age"))
     assert age.startswith("- patient.age INTEGER, 33% null:") and "50 1" in age and "30 1" in age
-    assert "- patient.id INTEGER: unique per row" in prof
-
-
-def test_column_docs_end_each_profile_line_only_when_enabled(db):
-    from evosql.bird import value_profile
-    docs = {"patient": {"SEX": "sex | values: F: female; M: male", "Age": "age in years"}}
-    prof = value_profile(db, ["patient"], max_values=2, docs=docs).splitlines()
-    assert "- patient.sex TEXT: 'F' 2, 'M' 1 | sex | values: F: female; M: male" in prof  # doc names match any case
-    assert next(line for line in prof if line.startswith("- patient.age")).endswith(" | age in years")
-    assert "- patient.id INTEGER: unique per row" in prof  # undocumented column: no note
-    assert value_profile(db, ["patient"], max_values=2).splitlines()[0] == "Database value profile (computed from the data):"
+    assert "- patient.id INTEGER: unique per row" in prof  # undocumented column: no description
 
 
 def test_load_arcwise_keeps_only_requested_databases(tmp_path):
-    import json
-    from evosql.bird import load_arcwise
     path = tmp_path / "plat.json"
     path.write_text(json.dumps([
-        {"question_id": "7", "db_id": "formula_1", "question": "q7", "SQL": "SELECT 7", "difficulty": "simple"},
+        {"question_id": "7", "db_id": "formula_1", "question": "q7", "SQL": "SELECT 7"},
         {"question_id": 8, "db_id": "financial", "question": "q8", "SQL": "SELECT 8"},
     ]))
     [only] = load_arcwise(path, {"formula_1"})
-    assert (only.qid, only.gold_sql, only.difficulty) == (7, "SELECT 7", "simple")
+    assert (only.qid, only.gold_sql) == (7, "SELECT 7")

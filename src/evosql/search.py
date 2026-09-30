@@ -1,5 +1,4 @@
-"""Text helpers for fact retrieval: content words with a light suffix strip, the text a fact is embedded as, and local
-Ollama embeddings (OpenAI-compatible endpoint) cached on disk by text hash."""
+"""Content words with a light suffix strip, and local Ollama embeddings (OpenAI-compatible endpoint) cached by text."""
 import hashlib
 import json
 import re
@@ -19,22 +18,21 @@ def words(text):
     return [re.sub(r"(?<=\w{3})(ing|ed|s)$", "", w) for w in re.findall(r"\w+", text.lower()) if w not in STOPWORDS]
 
 
-def fact_text(f):
-    return f"{'; '.join(f.applies_to)}. {f.subject}: {f.fact}"
-
-
 class Embedder:
-    """Local Ollama embeddings through its OpenAI-compatible endpoint, cached on disk by text hash."""
+    """Local Ollama embeddings, cached in memory and on disk by text hash."""
 
     def __init__(self, model, base_url, cache_dir="cache/embed"):
-        self.model, self.cache_dir = model, Path(cache_dir)
+        self.model, self.cache_dir, self.memo = model, Path(cache_dir), {}
         self.client = openai.OpenAI(base_url=base_url, api_key="local")
 
     def __call__(self, texts):
+        if all(t in self.memo for t in texts):
+            return np.array([self.memo[t] for t in texts])
         paths = [self.cache_dir / f"{hashlib.sha256(f'{self.model}\n{t}'.encode()).hexdigest()}.json" for t in texts]
         missing = {t: p for t, p in zip(texts, paths) if not p.exists()}
         if missing:
             data = self.client.embeddings.create(model=self.model, input=list(missing)).data
             for p, e in zip(missing.values(), data):
                 write_atomic(p, json.dumps(e.embedding))
-        return np.array([json.loads(p.read_text()) for p in paths])
+        self.memo.update({t: json.loads(p.read_text()) for t, p in zip(texts, paths)})
+        return np.array([self.memo[t] for t in texts])

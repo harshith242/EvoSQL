@@ -32,16 +32,15 @@ def test_repeat_call_is_served_from_cache_but_still_counted(tmp_path):
     assert llm.usage["calls"] == 1  # an in-run replay is free
     rerun = LLM("m", cache_dir=tmp_path, client=transport)  # a later run replaying the cache counts it once
     rerun.chat(messages)
-    assert transport.calls == 1 and rerun.usage == {"calls": 1, "cached": 1, "prompt_tokens": 100, "completion_tokens": 10,
+    assert transport.calls == 1 and rerun.usage == {"calls": 1, "prompt_tokens": 100, "completion_tokens": 10,
                                                     "provider_cached_tokens": 0, "latency_s": first["latency_s"]}
 
 
-def test_different_sample_index_bypasses_cache(tmp_path):
+def test_different_messages_bypass_cache(tmp_path):
     transport = FakeTransport()
     llm = LLM("m", cache_dir=tmp_path, client=transport)
-    messages = [{"role": "user", "content": "hi"}]
-    llm.chat(messages, sample=0)
-    llm.chat(messages, sample=1)
+    llm.chat([{"role": "user", "content": "hi"}])
+    llm.chat([{"role": "user", "content": "bye"}])
     assert transport.calls == 2
 
 
@@ -57,8 +56,10 @@ def test_per_minute_limit_is_waited_out_but_daily_limit_stops_the_run(tmp_path, 
     transport = FakeTransport()
     errors = [rate_limited(3)]
     real_create = transport.create
-    transport.chat.completions.create = lambda **kw: (_ for _ in ()).throw(errors.pop()) if errors else real_create(**kw)
-    assert LLM("m", cache_dir=tmp_path, client=transport).chat([{"role": "user", "content": "a"}])["content"] == "SELECT 1"
+    fail_then_answer = lambda **kw: (_ for _ in ()).throw(errors.pop()) if errors else real_create(**kw)
+    transport.chat.completions.create = fail_then_answer
+    reply = LLM("m", cache_dir=tmp_path, client=transport).chat([{"role": "user", "content": "a"}])
+    assert reply["content"] == "SELECT 1"
     assert slept == [3.0]
 
     transport.chat.completions.create = lambda **kw: (_ for _ in ()).throw(rate_limited(3600))

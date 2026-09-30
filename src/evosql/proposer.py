@@ -1,7 +1,5 @@
-"""The proposer turns one failed question (question, agent SQL, correct SQL) into one general fact about the database,
-and the free checks decide whether that fact may enter the memory: grounded, no SQL, not in the docs, no leaked answer."""
-from evosql.bird import execute, quote
-from evosql.facts import Fact, check_fact, leaks
+"""The proposer turns one failed question (question, agent SQL, correct SQL) into one general fact about the database."""
+from evosql.facts import Fact, render
 from evosql.llm import extract_json
 
 PROPOSER = """You maintain a knowledge base about ONE SQLite database so that a Text2SQL agent answers future, different questions correctly.
@@ -38,7 +36,7 @@ Correct SQL: {gold_sql}"""
 
 
 def parse_fact(d, qid):
-    """A Fact from the proposer's JSON object, or None when a required field is missing; bad optional fields are cleaned."""
+    """A Fact from the proposer's JSON (None when a required field is missing); bad optional fields are cleaned."""
     if not (isinstance(d, dict) and all(isinstance(d.get(k), str) and d[k] for k in ("kind", "subject", "fact"))):
         return None
     phrases = d.get("applies_to") if isinstance(d.get("applies_to"), list) else []
@@ -52,35 +50,7 @@ def parse_fact(d, qid):
 
 def propose(llm, db, q, agent_sql, facts):
     """Exactly one fact for one failed question, or None when the proposer finds nothing reusable."""
-    knowledge = "\n".join(f"- [{f.kind}] {f.subject}: {f.fact}" for f in facts) or "(empty)"
-    prompt = PROPOSER.format(ddl=db.ddl, profile=db.profile, knowledge=knowledge, question=q.question,
+    prompt = PROPOSER.format(ddl=db.ddl, profile=db.profile, knowledge=render(facts) or "(empty)", question=q.question,
                              agent_sql=agent_sql or "(none)", gold_sql=q.gold_sql)
     reply = llm.chat([{"role": "user", "content": prompt}])
     return parse_fact(extract_json(reply["content"]), q.qid)
-
-
-def leak_exempt(fact, db):
-    """Lowercase structured values that may equal an answer: grounded in their column and stored in 2+ rows (codes)."""
-    allowed = set()
-    for v in fact.values:
-        table, column, value = v["table"], v["column"], str(v["value"])
-        if table in db.tables and column in db.columns[table]:
-            literal = "'" + value.replace("'", "''") + "'"
-            rows, _ = execute(db.path, f"SELECT COUNT(*) FROM {quote(table)} WHERE CAST({quote(column)} AS TEXT) = {literal}")
-            if rows and rows[0][0] >= 2:
-                allowed.add(value.strip().lower())
-    return allowed
-
-
-def check(fact, q, gold, db):
-    """Why the fact must be dropped (free checks, then leakage of q's answer or wording), or None."""
-    reason = check_fact(fact, db)
-    if reason:
-        return reason
-    allowed = leak_exempt(fact, db)
-    # Trigger phrases may reuse the question's wording; only answer values count as leaks there.
-    texts = [(fact.subject, True), (fact.fact, True)] + [(p, False) for p in fact.applies_to]
-    for text, wording in texts:
-        if leak := leaks(text, q.question, q.gold_sql, gold, allowed=allowed, wording=wording):
-            return f"leakage: {leak}"
-    return None

@@ -1,9 +1,10 @@
-"""BIRD data access: questions, schema, column docs, read-only SQL execution and scoring."""
+"""BIRD data access: questions, schema, column descriptions, value profile, read-only SQL execution and scoring."""
 import csv
+import hashlib
 import json
 import sqlite3
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 
 from evosql.files import write_atomic
@@ -15,7 +16,6 @@ class Question:
     db_id: str
     question: str
     gold_sql: str
-    difficulty: str
 
 
 @dataclass
@@ -24,9 +24,8 @@ class Database:
     ddl: str
     tables: list
     columns: dict  # table -> column names
-    docs: dict  # table -> BIRD column descriptions ("" when the CSV is missing)
-    profile: str = ""  # value profile of every column; empty when the profile is off
-    column_notes: dict = field(default_factory=dict)  # table -> {column: docs text}, only when column docs are on
+    notes: dict  # table -> {lowercase column: {"name", "description", "values"}} from the description CSVs
+    profile: str  # value profile of every column, each line ending with its description
 
 
 def quote(name):
@@ -34,66 +33,49 @@ def quote(name):
     return '"' + name.replace('"', '""') + '"'
 
 
-def open_db(data_dir, db_id, with_profile=False, with_column_docs=False, docs_dir=None):
-    """docs_dir: a folder of <table>.csv descriptions to use instead of the database's own (e.g. corrected ones)."""
-    path = db_path(data_dir, db_id)
-    tables = table_names(path)
-    columns = {t: [r[1] for r in execute(path, f"PRAGMA table_info({quote(t)})")[0]] for t in tables}
-    docs = {t: table_docs(data_dir, db_id, t, docs_dir) for t in tables}
-    notes = {t: column_docs(data_dir, db_id, t, docs_dir) for t in tables} if with_column_docs else None
-    profile = value_profile(path, tables, docs=notes) if with_profile else ""
-    return Database(path, schema_ddl(path), tables, columns, docs, profile, notes or {})
-
-
-def _row(path, sql):
-    return execute(path, sql)[0][0]
-
-
-def value_profile(path, tables, max_values=20, docs=None):
-    """One line per column, computed from the data: coded values with counts, numeric/date ranges, null share.
-    With docs ({table: {column: text}}), each line ends with the column's BIRD description after " | "."""
-    lines = ["Database value profile (computed from the data" + ("; after | : column docs):" if docs else "):")]
-    for table in tables:
-        t = quote(table)
-        total = _row(path, f"SELECT COUNT(*) FROM {t}")[0]
-        for _, name, col_type, *_ in execute(path, f"PRAGMA table_info({t})")[0]:
-            c = quote(name)
-            nulls, distinct = _row(path, f"SELECT COUNT(*) - COUNT({c}), COUNT(DISTINCT {c}) FROM {t}")
-            share = f"{nulls / total:.0%}" if nulls / total >= 0.005 else "<1%"
-            head = f"- {table}.{name} {col_type or 'ANY'}" + (f", {share} null" if total and nulls else "")
-            if distinct == 0:
-                lines.append(f"{head}: all null")
-            elif distinct == total - nulls and distinct > max_values:
-                lines.append(f"{head}: unique per row")
-            elif distinct <= max_values:
-                rows = execute(path, f"SELECT {c}, COUNT(*) FROM {t} WHERE {c} IS NOT NULL GROUP BY {c} ORDER BY 2 DESC")[0]
-                lines.append(f"{head}: " + ", ".join(f"{v!r} {n}" for v, n in rows))
-            elif col_type.upper() in ("INTEGER", "REAL"):
-                low, high = _row(path, f"SELECT MIN({c}), MAX({c}) FROM {t}")
-                pick = lambda frac: _row(path, f"SELECT {c} FROM {t} WHERE {c} IS NOT NULL ORDER BY {c} "
-                                               f"LIMIT 1 OFFSET {int((total - nulls - 1) * frac)}")[0]
-                lines.append(f"{head}, range {low} .. {high}, typical {pick(0.05)} .. {pick(0.95)}")
-            else:
-                # Dates get their range; free text only its most common values (min/max of text is noise).
-                low, high = _row(path, f"SELECT MIN({c}), MAX({c}) FROM {t}")
-                span = f", {low!r} .. {high!r}" if col_type.upper() == "DATE" else ""
-                top = execute(path, f"SELECT {c}, COUNT(*) FROM {t} WHERE {c} IS NOT NULL GROUP BY {c} ORDER BY 2 DESC LIMIT 5")[0]
-                lines.append(f"{head}, {distinct} distinct{span}, most common: " + ", ".join(f"{v!r} {n}" for v, n in top))
-            note = {k.lower(): v for k, v in (docs or {}).get(table, {}).items()}.get(name.lower())
-            if note:
-                lines[-1] += f" | {note}"
-    return "\n".join(lines)
+def literal(value):
+    """SQLite string literal."""
+    return "'" + str(value).replace("'", "''") + "'"
 
 
 def load_arcwise(path, db_ids):
     """Questions of the given databases from an Arcwise-Plat file (corrected BIRD Mini-Dev)."""
     items = json.loads(Path(path).read_text())
-    return [Question(int(q["question_id"]), q["db_id"], q["question"], q["SQL"], q.get("difficulty", "unknown"))
-            for q in items if q["db_id"] in db_ids]
+    return [Question(int(q["question_id"]), q["db_id"], q["question"], q["SQL"]) for q in items if q["db_id"] in db_ids]
 
 
 def db_path(data_dir, db_id):
     return Path(data_dir) / db_id / f"{db_id}.sqlite"
+
+
+def open_db(data_dir, db_id, docs_dir):
+    """The database with its schema, column descriptions (from docs_dir/<table>.csv) and value profile."""
+    path = db_path(data_dir, db_id)
+    tables = [r[0] for r in execute(path, "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")[0]]
+    columns = {t: [r[1] for r in execute(path, f"PRAGMA table_info({quote(t)})")[0]] for t in tables}
+    notes = {t: column_notes(Path(docs_dir) / f"{t}.csv") for t in tables}
+    create = execute(path, "SELECT sql FROM sqlite_master WHERE type='table' AND sql IS NOT NULL")[0]
+    ddl = "\n\n".join(r[0] for r in create)
+    return Database(path, ddl, tables, columns, notes, value_profile(path, tables, notes))
+
+
+def column_notes(csv_path):
+    """{lowercase column: {"name", "description", "values"}} from a BIRD description CSV ({} when it is missing)."""
+    if not csv_path.exists():
+        return {}
+    text = csv_path.read_bytes().decode("utf-8", errors="replace").lstrip("﻿")
+    notes = {}
+    for row in csv.DictReader(text.splitlines()):
+        row = {(k or "").strip(): " ".join((v or "").split()) for k, v in row.items()}
+        name = row.get("original_column_name", "")
+        notes[name.lower()] = {"name": name, "description": row.get("column_description", ""),
+                               "values": row.get("value_description", "")}
+    return notes
+
+
+def note_text(note):
+    """One column's description as shown to the agent: "description | values: ..."."""
+    return note["description"] + (f" | values: {note['values']}" if note["values"] else "")
 
 
 def execute(path, sql, timeout=30.0, max_rows=None):
@@ -114,51 +96,75 @@ def execute(path, sql, timeout=30.0, max_rows=None):
         con.close()
 
 
-def exec_match(path, pred_sql, gold, timeout=30.0):
+def value_count(db, table, column, value):
+    """Rows whose column, compared as text, equals the value."""
+    sql = f"SELECT COUNT(*) FROM {quote(table)} WHERE CAST({quote(column)} AS TEXT) = {literal(value)}"
+    rows, _ = execute(db.path, sql)
+    return rows[0][0] if rows else 0
+
+
+def column_stats(path, table, column):
+    """(nulls, distinct, min, max) of one column."""
+    t, c = quote(table), quote(column)
+    return execute(path, f"SELECT COUNT(*) - COUNT({c}), COUNT(DISTINCT {c}), MIN({c}), MAX({c}) FROM {t}")[0][0]
+
+
+def top_values(path, table, column, limit=None):
+    """[(value, count)] of the non-null values, most common first."""
+    t, c = quote(table), quote(column)
+    cap = f" LIMIT {limit}" if limit else ""
+    return execute(path, f"SELECT {c}, COUNT(*) FROM {t} WHERE {c} IS NOT NULL GROUP BY {c} ORDER BY 2 DESC{cap}")[0]
+
+
+def value_profile(path, tables, notes, max_values=20):
+    """One line per column, computed from the data, ending with the column's description after " | "."""
+    lines = ["Database value profile (computed from the data; after | : column docs):"]
+    for table in tables:
+        total = execute(path, f"SELECT COUNT(*) FROM {quote(table)}")[0][0][0]
+        for _, name, col_type, *_ in execute(path, f"PRAGMA table_info({quote(table)})")[0]:
+            line = _column_line(path, table, name, (col_type or "ANY").upper(), total, max_values)
+            note = notes.get(table, {}).get(name.lower())
+            lines.append(line + (f" | {note_text(note)}" if note else ""))
+    return "\n".join(lines)
+
+
+def _column_line(path, table, name, col_type, total, max_values):
+    """Coded values with counts, a numeric or date range, or the most common text values, plus the null share."""
+    nulls, distinct, low, high = column_stats(path, table, name)
+    share = nulls / total if total else 0.0
+    head = f"- {table}.{name} {col_type}" + (f", {share:.0%} null" if share >= 0.005 else ", <1% null" if nulls else "")
+    listed = lambda rows: ", ".join(f"{v!r} {n}" for v, n in rows)
+
+    if distinct == 0:
+        return f"{head}: all null"
+    if distinct == total - nulls and distinct > max_values:
+        return f"{head}: unique per row"
+    if distinct <= max_values:
+        return f"{head}: " + listed(top_values(path, table, name))
+    if col_type in ("INTEGER", "REAL"):
+        c, t = quote(name), quote(table)
+        pick = lambda frac: execute(path, f"SELECT {c} FROM {t} WHERE {c} IS NOT NULL ORDER BY {c} "
+                                          f"LIMIT 1 OFFSET {int((total - nulls - 1) * frac)}")[0][0][0]
+        return f"{head}, range {low} .. {high}, typical {pick(0.05)} .. {pick(0.95)}"
+    # Dates get their range; free text only its most common values (min/max of text is noise).
+    span = f", {low!r} .. {high!r}" if col_type == "DATE" else ""
+    return f"{head}, {distinct} distinct{span}, most common: " + listed(top_values(path, table, name, 5))
+
+
+def exec_match(path, pred_sql, gold):
     """BIRD execution accuracy: the prediction's result set equals the gold result set."""
-    rows, error = execute(path, pred_sql, timeout)
-    if error:
-        return False
-    return set(rows) == set(gold)
+    rows, error = execute(path, pred_sql)
+    return not error and set(rows) == set(gold)
 
 
-def gold_rows(path, q, cache_dir="cache/gold", timeout=120.0):
-    cache = Path(cache_dir) / f"{q.db_id}_{q.qid}.json"
+def gold_rows(path, q, cache_dir="cache/gold"):
+    """Result rows of the gold SQL, cached by a hash of the SQL so a relabelled question never reuses rows."""
+    key = hashlib.sha256(f"{q.db_id}\n{q.gold_sql}".encode()).hexdigest()[:16]
+    cache = Path(cache_dir) / f"{q.db_id}_{q.qid}_{key}.json"
     if cache.exists():
         return [tuple(r) for r in json.loads(cache.read_text())]
-    rows, error = execute(path, q.gold_sql, timeout)
+    rows, error = execute(path, q.gold_sql, timeout=120.0)
     if error:
         raise RuntimeError(f"gold SQL failed for question {q.qid}: {error}")
     write_atomic(cache, json.dumps(rows))
     return [tuple(r) for r in rows]
-
-
-def table_names(path):
-    rows, _ = execute(path, "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
-    return [r[0] for r in rows]
-
-
-def schema_ddl(path):
-    rows, _ = execute(path, "SELECT sql FROM sqlite_master WHERE type='table' AND sql IS NOT NULL")
-    return "\n\n".join(r[0] for r in rows)
-
-
-def column_docs(data_dir, db_id, table, docs_dir=None):
-    """{column: "description | values: ..."} from BIRD's database_description CSV ({} when it is missing)."""
-    path = Path(docs_dir or Path(data_dir) / db_id / "database_description") / f"{table}.csv"
-    if not path.exists():
-        return {}
-    text = path.read_bytes().decode("utf-8", errors="replace").lstrip("\ufeff")
-    docs = {}
-    for row in csv.DictReader(text.splitlines()):
-        row = {(k or "").strip(): " ".join((v or "").split()) for k, v in row.items()}
-        doc = row.get("column_description", "")
-        if row.get("value_description"):
-            doc += f" | values: {row['value_description']}"
-        docs[row.get("original_column_name", "")] = doc
-    return docs
-
-
-def table_docs(data_dir, db_id, table, docs_dir=None):
-    """Column descriptions, one line per column (the describe_table tool shows these)."""
-    return "\n".join(f"- {c}: {d}" for c, d in column_docs(data_dir, db_id, table, docs_dir).items())

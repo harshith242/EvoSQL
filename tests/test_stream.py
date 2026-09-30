@@ -1,26 +1,23 @@
 import json
-import sqlite3
 
 import numpy as np
 
-from evosql.bird import Question, open_db
-from evosql.budget import Budget
+from conftest import RULES, make_db
+from evosql.bird import Question
 from evosql.memory import FactMemory
-from evosql.stream import run_stream
-from test_memory import RULES
+from evosql.stream import Answers, run_stream
 
 GOLD = "SELECT COUNT(*) FROM results WHERE time IS NOT NULL"
 FACT = "A driver finished a race when results.time has a value, even when lapped."
 
 
 class Agent:
-    """Right only when the learned fact is in the system prompt; counts calls."""
+    """Right only when the learned fact is in the system prompt."""
 
     def __init__(self):
-        self.usage, self.calls = {"calls": 0}, 0
+        self.usage = {"calls": 0}
 
-    def chat(self, messages, tools=None, temperature=0.0, sample=0):
-        self.calls += 1
+    def chat(self, messages, tools=None):
         self.usage["calls"] += 1
         sql = GOLD if FACT in messages[0]["content"] else "SELECT COUNT(*) FROM results"
         return {"content": None, "reasoning": None, "tool_calls": [
@@ -37,36 +34,28 @@ class Proposer:
                                        "applies_to": ["finished"], "values": [], "probe": None})}
 
 
-def setup(tmp_path, monkeypatch):
+def stream(tmp_path, monkeypatch, can_precheck):
     monkeypatch.chdir(tmp_path)  # gold rows are cached under ./cache
-    (tmp_path / "f1").mkdir()
-    con = sqlite3.connect(tmp_path / "f1" / "f1.sqlite")
-    con.execute("CREATE TABLE results (raceId INTEGER, driverId INTEGER, time TEXT)")
-    con.executemany("INSERT INTO results VALUES (?, ?, ?)", [(1, 1, "1:30"), (1, 2, None), (1, 3, "1:31")])
-    con.commit()
-    con.close()
-    db = open_db(tmp_path, "f1")
-    qs = [Question(i, "f1", f"How many drivers finished race {i}?", GOLD, "simple") for i in (1, 2, 3)]
-    return db, qs, FactMemory(db, lambda texts: np.ones((len(texts), 2)), RULES)
+    db = make_db(tmp_path, "f1", "CREATE TABLE results (raceId INTEGER, driverId INTEGER, time TEXT); "
+                                 "INSERT INTO results VALUES (1, 1, '1:30'), (1, 2, NULL), (1, 3, '1:31');")
+    order = [Question(i, "f1", f"How many drivers finished race {i}?", GOLD) for i in (1, 2, 3)]
+    memory = FactMemory(db, lambda texts: np.ones((len(texts), 2)), RULES)
+    agent = Agent()
+    run_stream(db, order, Answers(agent, 3), Proposer(), memory, can_precheck, tmp_path / "log.jsonl")
+    return [json.loads(line) for line in open(tmp_path / "log.jsonl")], memory, agent
 
 
 def test_a_fact_is_learned_after_its_question_and_helps_the_next_one(tmp_path, monkeypatch):
-    db, qs, memory = setup(tmp_path, monkeypatch)
-    log = tmp_path / "stream.jsonl"
-    run_stream(db, qs, 0, Agent(), Proposer(), memory, Budget(tmp_path / "spend.json", 1.0), 0.9, 3, log)
-    recs = [json.loads(line) for line in open(log)]
+    recs, memory, agent = stream(tmp_path, monkeypatch, lambda: True)
     first, second = recs[0], recs[1]
     assert first["injected"] == [] and not first["facts_ok"]  # a question never sees the fact learned from it
     assert first["learning"]["outcome"] == "pre-check unmatched"  # no earlier question to check against
     assert second["injected"] == ["f1"] and second["facts_ok"] and not second["none_ok"]
-    assert memory.state["f1"]["proven"] and memory.state["f1"]["score"] == 2  # fixed questions 2 and 3
+    assert memory.state["f1"]["score"] == 2  # fixed questions 2 and 3
+    # With nothing injected, the facts arm replays the none arm's answer instead of asking again: 1 + 2 + 2 calls.
+    assert agent.usage["calls"] == 5 and first["usage"]["facts"] == {}
 
 
-def test_precheck_is_skipped_once_the_order_budget_is_nearly_spent(tmp_path, monkeypatch):
-    db, qs, memory = setup(tmp_path, monkeypatch)
-    budget = Budget(tmp_path / "spend.json", 5.0)
-    budget.total = 0.95  # past this order's pre-check limit of 0.9
-    log = tmp_path / "stream.jsonl"
-    run_stream(db, qs, 0, Agent(), Proposer(), memory, budget, 0.9, 3, log)
-    first = json.loads(open(log).readline())
-    assert first["learning"]["outcome"] == "added unproven (pre-check skipped: order budget)"
+def test_the_precheck_follows_the_budget_rule_it_is_given(tmp_path, monkeypatch):
+    recs, _, _ = stream(tmp_path, monkeypatch, lambda: False)
+    assert recs[0]["learning"]["outcome"] == "added unproven (pre-check skipped: order budget)"

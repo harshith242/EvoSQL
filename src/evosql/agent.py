@@ -1,8 +1,6 @@
 """Tool-loop Text2SQL agent: inspect tables, profile columns, test queries, then submit one SQL.
 Learned knowledge is a text section of the system prompt. Native tool calls or a JSON fallback in the reply text."""
-import json
-
-from evosql.bird import execute, quote
+from evosql.bird import column_stats, execute, note_text, quote, top_values
 from evosql.llm import extract_json
 
 SYSTEM = """You are an expert SQLite analyst. Answer the user's question with ONE SQLite query on the database below.
@@ -30,13 +28,14 @@ def _tool(name, description, **params):
 
 TOOLS = [
     _tool("describe_table", "Show 3 sample rows of a table and its column descriptions.", table="table name"),
-    _tool("profile_column", "Null count, distinct count, min/max and top 10 values of a column.", table="table name", column="column name"),
+    _tool("profile_column", "Null count, distinct count, min/max and top 10 values of a column.",
+          table="table name", column="column name"),
     _tool("run_sql", "Run a read-only SQLite query and see up to 20 rows.", sql="SQLite query"),
     _tool("submit", "Submit the final SQL answer.", sql="final SQLite query"),
 ]
 
 
-def _format_rows(rows, error):
+def _format_rows(rows, error=None):
     if error:
         return f"ERROR: {error}"
     if not rows:
@@ -54,72 +53,58 @@ def run_tool(db, name, args):
     table = args.get("table", "")
     if table not in db.tables:
         return f"ERROR: unknown table {table!r}. Tables: {', '.join(db.tables)}"
+
     if name == "describe_table":
         sample = _format_rows(*execute(db.path, f"SELECT * FROM {quote(table)} LIMIT 3"))
-        docs = db.docs.get(table, "")
+        docs = "\n".join(f"- {n['name']}: {note_text(n)}" for n in db.notes[table].values())
         return f"Sample rows:\n{sample}" + (f"\n\nColumn descriptions:\n{docs}" if docs else "")
+
     column = args.get("column", "")
     # SQLite reads an unknown double-quoted name as a string literal, so check it first.
     if column not in db.columns[table]:
         return f"ERROR: unknown column {column!r} in {table}. Columns: {', '.join(db.columns[table])}"
-    t, c = quote(table), quote(column)
-    stats = execute(db.path, f"SELECT COUNT(*) - COUNT({c}), COUNT(DISTINCT {c}), MIN({c}), MAX({c}) FROM {t}")
-    top = execute(db.path, f"SELECT {c}, COUNT(*) FROM {t} GROUP BY {c} ORDER BY COUNT(*) DESC LIMIT 10")
-    return f"nulls | distinct | min | max\n{_format_rows(*stats)}\n\nTop values (value | count):\n{_format_rows(*top)}"
+    stats = _format_rows([column_stats(db.path, table, column)])
+    top = _format_rows(top_values(db.path, table, column, 10))
+    return f"nulls | distinct | min | max\n{stats}\n\nTop values (value | count):\n{top}"
 
 
-def _parse_json_call(content):
-    """Fallback for models without native tool calls: {"tool": ..., "args": {...}} in the reply text."""
-    obj = extract_json(content)
-    if not isinstance(obj, dict) or "tool" not in obj:
-        return None
-    args = obj.get("args")
-    return {"id": None, "name": obj["tool"], "arguments": json.dumps(args if isinstance(args, dict) else {})}
+def _calls(reply):
+    """[{id, name, args}] from native tool calls, else from a {"tool", "args"} JSON object in the text (id None)."""
+    if reply["tool_calls"]:
+        calls = [(c["id"], c["name"], extract_json(c["arguments"])) for c in reply["tool_calls"]]
+    else:
+        obj = extract_json(reply["content"])
+        calls = [(None, obj["tool"], obj.get("args"))] if isinstance(obj, dict) and "tool" in obj else []
+    return [{"id": i, "name": n, "args": a if isinstance(a, dict) else {}} for i, n, a in calls]
 
 
 def answer(llm, db, question, notes="", max_steps=8):
     """Run the tool loop; return (submitted SQL or None, agent turns). notes: learned knowledge for the prompt."""
-    messages = [
-        # Static parts first (rules, schema, value profile), then knowledge, so the provider's prefix cache hits.
-        {"role": "system", "content": SYSTEM.format(ddl=db.ddl, profile=db.profile + "\n\n" if db.profile else "",
-                                                    notes=notes)},
-        {"role": "user", "content": question},
-    ]
+    # Static parts first (rules, schema, value profile), then knowledge, so the provider's prefix cache hits.
+    system = SYSTEM.format(ddl=db.ddl, profile=db.profile + "\n\n", notes=notes)
+    messages = [{"role": "system", "content": system}, {"role": "user", "content": question}]
+
     for step in range(1, max_steps + 1):
         if step == max_steps:
             messages.append({"role": "user", "content": "Last step: call submit now with your best SQL."})
         reply = llm.chat(messages, tools=TOOLS)
-        calls = reply["tool_calls"]
         # With tools, DeepSeek's thinking mode requires every earlier turn's reasoning to be sent back.
         thought = {"reasoning_content": reply["reasoning"]} if reply.get("reasoning") else {}
-        if calls:
-            messages.append({
-                "role": "assistant",
-                "content": reply["content"],
-                **thought,
-                "tool_calls": [
-                    {"id": c["id"], "type": "function", "function": {"name": c["name"], "arguments": c["arguments"]}}
-                    for c in calls
-                ],
-            })
+        if reply["tool_calls"]:
+            native = [{"id": c["id"], "type": "function", "function": {"name": c["name"], "arguments": c["arguments"]}}
+                      for c in reply["tool_calls"]]
+            messages.append({"role": "assistant", "content": reply["content"], **thought, "tool_calls": native})
         else:
             messages.append({"role": "assistant", "content": reply["content"] or "", **thought})
-            fallback = _parse_json_call(reply["content"])
-            if not fallback:
-                messages.append({"role": "user", "content": "Call a tool (or reply with the JSON object) to continue."})
-                continue
-            calls = [fallback]
 
+        calls = _calls(reply)
+        if not calls:
+            messages.append({"role": "user", "content": "Call a tool (or reply with the JSON object) to continue."})
+            continue
         for call in calls:
-            try:
-                args = json.loads(call["arguments"] or "{}")
-            except json.JSONDecodeError:
-                args = {}
-            if not isinstance(args, dict):
-                args = {}
             if call["name"] == "submit":
-                return args.get("sql"), step
-            result = run_tool(db, call["name"], args)
+                return call["args"].get("sql"), step
+            result = run_tool(db, call["name"], call["args"])
             if call["id"]:
                 messages.append({"role": "tool", "tool_call_id": call["id"], "content": result})
             else:

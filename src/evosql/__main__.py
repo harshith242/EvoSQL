@@ -10,7 +10,7 @@ def main():
     load_dotenv()
     parser = argparse.ArgumentParser(prog="evosql")
     parser.add_argument("--config", default="configs/base.yaml")
-    parser.add_argument("--agent", help="agent profile from the config (default: agent_profile), e.g. deepseek or local")
+    parser.add_argument("--agent", help="agent profile from the config, e.g. deepseek or local")
     sub = parser.add_subparsers(dest="cmd", required=True)
     sub.add_parser("stream", help="run the streaming fact-memory experiment (resumable from cache)")
     sub.add_parser("report", help="write summary.md in the profile's results folder")

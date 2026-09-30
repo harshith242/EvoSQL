@@ -201,8 +201,8 @@ After each question, every fact that was injected gets credit, compared with the
 - **0** otherwise.
 
 Retirement rules (pre-registered). A retired fact is never retrieved again but stays in the log.
-- **Unproven fact** (score below +1): retired on its **first regression**.
-- **Proven fact** (score at least +1): retired when its score falls to **−2**.
+- **A fact that has never reached +1**: retired on its **first regression**.
+- **A fact with a positive record** (it has reached +1 at some point): retired when its score falls to **−2**. The perks of a proven fact (sharing the prompt, the semantic path) need a *current* score of at least +1.
 - **No effect:** retired after **5 uses with score 0**, so neutral facts stop occupying the slot.
 
 Timing: none's answer and the gold are known only after the question is scored, so pruning affects later questions only (test, then train).
@@ -216,7 +216,7 @@ There are two ways a fact can become eligible for a question.
 
 **A. Phrase path (any fact, including unproven):**
 1. **Phrase match:** one of its trigger phrases appears in the question as a whole phrase, with word boundaries (e.g. "age" does not match "average").
-2. **Genericity:** once at least 8 earlier questions exist in the stream, a trigger phrase that matches more than **25%** of them counts as generic. A generic phrase qualifies only together with a second cue: another non-generic trigger of the same fact, or the fact's table or column in the question. It is not dropped outright.
+2. **Genericity:** once at least 8 earlier questions exist in the stream, a trigger phrase that matches more than **25%** of them counts as generic. A generic phrase qualifies only together with a second cue: another non-generic trigger of the same fact, or a word of the fact's table or column *name* in the question (descriptions are too broad for this cue). It is not dropped outright.
 3. **Schema scope by kind:**
    - `grain` and `relation` facts also need the question to mention their table or column, by name or by a content word from the column's description;
    - `mapping`, `encoding`, `constraint` and `meaning` facts do not. Their job is to link wording the schema does not contain ("full name") to columns, and Step 4 already requires them to name real columns.
@@ -230,7 +230,7 @@ This lets a proven fact transfer to new wording ("full name" to "name of the mem
 
 Among eligible, non-retired facts:
 - proven facts rank before unproven ones;
-- ties are broken by hybrid search (BM25 plus embedding similarity, fused with Reciprocal Rank Fusion).
+- ties are broken by embedding similarity to the question.
 
 Injection:
 - **1 unproven fact** at most;
@@ -263,13 +263,12 @@ The claims are sized accordingly.
 
   The headline is the **direction count**: how many of the 8 streams show a positive second-half difference. It comes with the pooled mean difference.
 - **Sensitivity analyses:**
-  - a stream-level block bootstrap of the pooled difference, resampling whole streams;
+  - a bootstrap of the pooled difference that resamples databases, keeping both orders of a database together (they share the none arm);
   - a leave-one-database-out analysis.
 - **Injection rate (pre-registered check):** the share of second-half questions with at least one fact injected, per stream. If it is below **10%**, the report states that the facts arm was mostly inert. A null result then means "the memory was rarely used", not "memory does not help".
 - **Heuristic statistics, labelled as such:**
   - a question-level paired sign-flip test;
-  - a question-clustered bootstrap CI;
-  - the power estimate (about 6–8 points).
+  - a question-clustered bootstrap CI (the two orders of a question form one cluster).
 
   These ignore sequential dependence within a stream and are **not exact tests**.
 - **What the result can and cannot show:** with 8 streams, it can show a consistent late-stream gain. It cannot give a strong frequentist guarantee, or prove that particular facts caused the gain. Per-fact records (Steps 6–7) are descriptive evidence only.
@@ -278,7 +277,7 @@ The claims are sized accordingly.
   - a learning curve per quarter of the stream.
 - **Also reported:**
   - cost ($ per correct answer, learning included);
-  - latency (p50/p95 API time) and agent turns;
+  - latency (p50/p95 of the original API time per answer, also for replayed answers) and agent turns;
   - injected items per question, with their IDs;
   - memory size over time;
   - facts dropped by each check;
@@ -312,7 +311,7 @@ The claims are sized accordingly.
 | Safeguards make the facts arm inert | Scope by fact kind, generic phrases kept with a second cue, a semantic path for proven facts, and the injection-rate check (Section 7) |
 | Order effects and few independent streams | Two pre-registered orders; results per stream; conservative claims (Section 7) |
 | Credit is shared when 2 facts are injected | Only a proven fact may share the prompt; unproven facts are always alone |
-| The effect is too small to detect | Direction count over 8 streams; block bootstrap; heuristic power stated as heuristic |
+| The effect is too small to detect | Direction count over 8 streams; database-level bootstrap; question-level statistics labelled heuristic |
 | Label residue in Arcwise-Plat | Pinned data; known open issues listed; per-question outputs published for audit |
 
 ## 10. Limitations and out of scope
