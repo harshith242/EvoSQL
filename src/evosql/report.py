@@ -12,7 +12,7 @@ from evosql.budget import Budget
 from evosql.files import read_jsonl, write_atomic
 from evosql.llm import usd
 from evosql.probe import ARMS
-from evosql.stream import consolidation_log, facts_file, stream_log
+from evosql.stream import consolidation_log, facts_file, notes_file, stream_log
 
 LEVELS = ("paraphrase", "same_quirk", "new_surface", "control")
 ARM_ORDER = ("none", "facts", "examples", "notes")
@@ -309,7 +309,7 @@ def notes_updates_section(complete, out):
 
     lines += ["", "### Final notes file"]
     for seed, db in complete:
-        path = Path(out) / f"notes_s{seed}_{db}.md"
+        path = notes_file(out, seed, db)
         body = ["```markdown", path.read_text().rstrip(), "```"] if path.exists() else ["not saved"]
         lines += ["", f"Order {seed}, {db}:", ""] + body
     return lines
