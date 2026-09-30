@@ -13,7 +13,7 @@ from tqdm import tqdm
 from evosql.agent import answer
 from evosql.bird import exec_match, gold_rows, load_arcwise, open_db
 from evosql.budget import Budget, BudgetExceeded
-from evosql.facts import check, render
+from evosql.facts import check, check_snippet, render
 from evosql.files import append_jsonl, write_atomic
 from evosql.jev import Jev, JevUnavailable
 from evosql.llm import ProviderExhausted, make_llm, usd
@@ -60,13 +60,17 @@ class Answers:
 def learn(db, q, gold, facts_sql, answers, proposer, memory, precheck):
     """Propose one fact from a failure of the facts arm, check it, and admit it (with a pre-check if allowed)."""
     before = dict(proposer.usage)
-    fact = propose(proposer, db, q, facts_sql, memory.active())
-    if fact:
-        fact.learned_from = q.question
-    reason = "no reusable fact proposed" if fact is None else check(fact, db, q, gold)
+    fact, why = propose(proposer, db, q, facts_sql, memory.active())
+    reason = why or check(fact, db, q, gold)
     usage = {"proposer": usage_since(proposer, before), "precheck": {}}
     if reason:
         return {"outcome": "dropped", "reason": reason, "fact": fact and asdict(fact), "usage": usage}
+
+    snippet = None
+    if fact.sql:
+        snippet = check_snippet(fact.sql, db, q, gold) or "kept"
+        if snippet != "kept":
+            fact.sql = None
 
     def try_fact(f, eq):
         result = answers.get(db, eq, gold_rows(db.path, eq), [f])
@@ -74,7 +78,7 @@ def learn(db, q, gold, facts_sql, answers, proposer, memory, precheck):
         return result["ok"]
 
     record = memory.admit(fact, try_fact if precheck else None)
-    return {**record, "fact": asdict(fact), "usage": usage}
+    return {**record, "fact": asdict(fact), "snippet": snippet, "usage": usage}
 
 
 def run_stream(db, order, answers, proposer, memory, can_precheck, log_path, bar=None):

@@ -1,7 +1,8 @@
 import pytest
 
 from conftest import make_db
-from evosql.facts import Fact, check_fact, leaks, merge
+from evosql.bird import Question
+from evosql.facts import Fact, check_fact, check_snippet, leaks, merge, render
 
 
 @pytest.fixture
@@ -88,3 +89,61 @@ def test_merge_unites_duplicates_and_resolves_mapping_conflicts(db):
     un = fact("Normal Laboratory.UN is below 30.", "Laboratory.UN", "mapping", ["normal urea", "Normal"], id="f2")
     merged, conflicts = merge([rnp, un], db)
     assert [f.applies_to for f in merged] == [["normal RNP"], ["normal urea"]] and conflicts[0]["phrase"] == "normal"
+
+
+def test_render_lists_one_line_per_fact_with_its_snippet():
+    plain = fact("Normal is 'negative'.")
+    with_sql = Fact("f2", "mapping", "status.status", "Finished means a completed race.", ["finished"], None, [2], [],
+                    {"table": "status", "form": "predicate", "sql": "status.status = 'Finished'"})
+    assert render([]) == ""
+    assert render([plain, with_sql]) == (
+        "Learned database knowledge:\n"
+        "- [encoding] Laboratory.RNP: Normal is 'negative'.\n"
+        "- [mapping] status.status: Finished means a completed race. (SQL on status: status.status = 'Finished')")
+
+
+@pytest.fixture
+def sdb(tmp_path):
+    return make_db(tmp_path, "shop", "CREATE TABLE status (statusId INTEGER, status TEXT); "
+                                     "CREATE TABLE results (raceId INTEGER, statusId INTEGER, time TEXT); "
+                                     "INSERT INTO status VALUES (1, 'Finished'), (2, 'Finished'), (3, 'Accident'); "
+                                     "INSERT INTO results VALUES (1, 1, '1:30'), (1, 3, NULL);")
+
+
+GOLD = "SELECT COUNT(*) FROM results JOIN status ON results.statusId = status.statusId WHERE status.status = 'Finished'"
+FINISHED = Question(1, "shop", "How many results have the Finished status?", GOLD)
+
+
+def snippet(sql, table="status", form="predicate"):
+    return {"table": table, "form": form, "sql": sql}
+
+
+def test_a_grounded_one_table_snippet_that_runs_passes(sdb):
+    assert check_snippet(snippet("status.status = 'Finished'"), sdb, FINISHED, [(2,)]) is None
+    assert check_snippet(snippet("UPPER(status.status)", form="expression"), sdb, FINISHED, [(2,)]) is None
+
+
+def test_a_snippet_must_stay_on_one_table_in_the_gold_sql(sdb):
+    check = lambda sql: check_snippet(snippet(sql), sdb, FINISHED, [(2,)])
+    assert check("results.time IS NOT NULL") == "not one table"
+    assert check("status.statusId = results.statusId") == "not one table"
+    assert check("time IS NOT NULL") == "not one table"  # a bare column of another table
+    q = Question(1, "shop", "How many finished?", "SELECT COUNT(*) FROM status WHERE status = 'Finished'")
+    assert check_snippet(snippet("statusId = 1"), sdb, q, [(2,)]) == "not grounded in the gold SQL"
+
+
+def test_a_question_literal_leaks_unless_it_is_a_code_stored_in_two_rows(sdb):
+    q = Question(2, "shop", "How many Finished or Accident results?", GOLD.replace("Finished", "Accident"))
+    leak = check_snippet(snippet("status.status = 'Accident'"), sdb, q, [(1,)])
+    assert leak == "leakage: question literal 'Accident'"  # stored once; 'Finished' is in 2 rows and passes
+    assert check_snippet(snippet("status.status = 'Finished'"), sdb, q, [(1,)]) is None
+
+
+def test_a_snippet_must_run_and_must_be_a_single_expression(sdb):
+    sql = "status.status = 'Finished'"
+    check = lambda *args, **kwargs: check_snippet(snippet(*args, **kwargs), sdb, FINISHED, [(2,)])
+    assert check("status.status = 'Nope'") == "snippet matches no row"
+    assert check("status.statusId IN (SELECT statusId FROM status)") == "not a single short expression"
+    assert check(sql + "; --") == "not a single short expression"
+    assert check(sql, table="nope") == "unknown table"
+    assert check(sql, form="clause") == "malformed snippet"

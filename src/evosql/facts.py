@@ -1,10 +1,10 @@
-"""Facts about one database: typed statements with trigger phrases (applies_to), the stored values they rely on and an
-optional evidence query. check() holds every free check a new fact must pass before it may enter the memory;
-merge() unites duplicates and resolves one phrase mapped to different columns."""
+"""Facts about one database: typed statements with trigger phrases (applies_to), the stored values they rely on, an
+optional evidence query and an optional SQL snippet. check() and check_snippet() hold every free check a new fact
+must pass before it may enter the memory; merge() unites duplicates and resolves one phrase mapped to two columns."""
 import re
 from dataclasses import asdict, dataclass, field
 
-from evosql.bird import execute, note_text, value_count
+from evosql.bird import execute, note_text, quote, value_count
 
 KINDS = ("mapping", "encoding", "constraint", "meaning", "grain", "relation")
 
@@ -25,7 +25,7 @@ class Fact:
     probe: str | None = None  # read-only evidence query, never shown to the agent
     source_qids: list = field(default_factory=list)
     values: list = field(default_factory=list)  # stored values the fact relies on: [{table, column, value}]
-    sql: dict | None = None  # a verified SQL snippet (used from Task 2 on)
+    sql: dict | None = None  # a verified one-table SQL snippet: {table, form, sql}
     learned_from: str = ""  # the question the fact was learned from
 
 
@@ -34,9 +34,9 @@ def render(facts):
     if not facts:
         return ""
     lines = ["Learned database knowledge:"]
-    for subject in dict.fromkeys(f.subject for f in facts):
-        lines.append(subject)
-        lines += [f"  - [{f.kind}] {f.fact}" for f in facts if f.subject == subject]
+    for f in facts:
+        snippet = f" (SQL on {f.sql['table']}: {f.sql['sql']})" if f.sql else ""
+        lines.append(f"- [{f.kind}] {f.subject}: {f.fact}{snippet}")
     return "\n".join(lines)
 
 
@@ -115,6 +115,48 @@ def check(fact, db, q, gold):
         if leak := leaks(text, q.question, q.gold_sql, gold, allowed=codes, wording=wording):
             return f"leakage: {leak}"
     return None
+
+
+def check_snippet(snippet, db, q, gold):
+    """Why a fact's SQL snippet must be dropped (the fact stays), or None."""
+    table, form, sql = snippet.get("table"), snippet.get("form"), snippet.get("sql")
+    if form not in ("predicate", "expression") or not (isinstance(sql, str) and sql.strip()):
+        return "malformed snippet"
+    if len(sql) > 300 or ";" in sql or re.search(r"\bselect\b", sql, re.I):
+        return "not a single short expression"
+    if table not in db.tables:
+        return "unknown table"
+
+    # Work on the SQL without string literals, so quoted words are never taken for columns.
+    bare = re.sub(r"'(?:[^']|'')*'", "", sql)
+    own = {c.lower(): c for c in db.columns[table]}
+    anywhere = {c.lower() for t in db.tables for c in db.columns[t]}
+    qualifiers = re.findall(r"(?<![\w.])([A-Za-z_]\w*)\s*\.\s*[A-Za-z_]\w*", bare)
+    used = {w.lower() for w in re.findall(r"[A-Za-z_]\w*", bare)} & anywhere
+    if any(x.lower() != table.lower() for x in qualifiers) or not used or used - own.keys():
+        return "not one table"
+    if not all(phrase_in(c, q.gold_sql) for c in used):
+        return "not grounded in the gold SQL"
+
+    # A stored code in 2+ rows may be used and may equal the answer; any other literal must not come from q.
+    strings = [s.replace("''", "'") for s in re.findall(r"'((?:[^']|'')*)'", sql)]
+    literals = [x for x in strings + re.findall(r"(?<![\w.])\d+(?:\.\d+)?(?![\w.])", bare) if x.strip()]
+    codes = {x.strip().lower() for x in literals for c in used if value_count(db, table, own[c], x) >= 2}
+    if leak := leaks(sql, q.question, q.gold_sql, gold, allowed=codes, wording=False):
+        return f"leakage: {leak}"
+    for x in literals:
+        if x.strip().lower() not in codes and phrase_in(x, q.question):
+            return f"leakage: question literal {x!r}"
+
+    if form == "predicate":
+        rows, error = execute(db.path, f"SELECT COUNT(*) FROM {quote(table)} WHERE {sql}")
+        found = not error and rows[0][0] > 0
+    else:
+        rows, error = execute(db.path, f"SELECT {sql} FROM {quote(table)} WHERE ({sql}) IS NOT NULL LIMIT 1")
+        found = not error and bool(rows)
+    if error:
+        return f"snippet failed: {error}"
+    return None if found else "snippet matches no row"
 
 
 def _direction(text):

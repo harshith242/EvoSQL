@@ -30,8 +30,8 @@ class Proposer:
 
     def chat(self, messages, tools=None):
         self.usage["calls"] += 1
-        return {"content": json.dumps({"kind": "mapping", "subject": "results.time", "fact": FACT,
-                                       "applies_to": ["finished"], "values": [], "probe": None})}
+        return {"content": json.dumps({"fact": {"kind": "mapping", "subject": "results.time", "statement": FACT,
+                                                "applies_to": ["finished"], "values": [], "probe": None}})}
 
 
 def stream(tmp_path, monkeypatch, can_precheck):

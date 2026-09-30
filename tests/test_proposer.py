@@ -16,23 +16,44 @@ def db(tmp_path):
 class ReplyLLM:
     def __init__(self, reply):
         self.reply = reply
+        self.prompts = []
 
     def chat(self, messages, tools=None):
-        return {"content": json.dumps(self.reply)}
+        self.prompts.append(messages[0]["content"])
+        return {"content": self.reply if isinstance(self.reply, str | None) else json.dumps(self.reply)}
 
 
 def q(qid, text):
     return Question(qid, "toy", text, "SELECT SEX FROM Patient WHERE ID = 1")
 
 
-def test_sloppy_proposer_fields_are_cleaned_and_a_null_fact_means_nothing_reusable(db):
-    reply = {"kind": "encoding", "subject": "Patient.SEX", "fact": "Men are stored in Patient.SEX.",
-             "applies_to": ["men", " "], "values": [{"table": "Patient", "column": "SEX", "value": "M"}, "junk"],
-             "probe": "none"}
-    fact = propose(ReplyLLM(reply), db, q(7, "Men?"), None, [])
-    assert (fact.source_qids, fact.applies_to, fact.probe, len(fact.values)) == ([7], ["men"], None, 1)
-    assert propose(ReplyLLM({**reply, "applies_to": "men"}), db, q(7, "Men?"), None, []).applies_to == []
-    assert propose(ReplyLLM({"fact": None}), db, q(7, "Men?"), None, []) is None
+FACT = {"kind": "encoding", "subject": "Patient.SEX", "statement": "Men are stored in Patient.SEX.",
+        "applies_to": ["men", " "], "values": [{"table": "Patient", "column": "SEX", "value": "M"}, "junk"],
+        "probe": "none", "snippet": {"table": "Patient", "form": "predicate", "sql": "Patient.SEX = 'M'"}}
+
+
+def test_sloppy_proposer_fields_are_cleaned_and_the_snippet_is_parsed(db):
+    llm = ReplyLLM({"fact": FACT})
+    fact, why = propose(llm, db, q(7, "Men?"), None, [])
+    assert why is None and "json" in llm.prompts[0].lower()
+    assert (fact.fact, fact.source_qids, fact.applies_to, fact.probe, len(fact.values)) == (
+        "Men are stored in Patient.SEX.", [7], ["men"], None, 1)
+    assert (fact.sql, fact.learned_from) == (FACT["snippet"], "Men?")
+    assert propose(ReplyLLM({"fact": {**FACT, "applies_to": "men"}}), db, q(7, "Men?"), None, [])[0].applies_to == []
+
+
+def test_a_malformed_snippet_is_dropped_but_the_fact_is_kept(db):
+    for bad in ({"table": "Patient", "form": "predicate"}, {"table": "Patient", "form": 1, "sql": "x"}, "SEX = 'M'"):
+        fact, _ = propose(ReplyLLM({"fact": {**FACT, "snippet": bad}}), db, q(7, "Men?"), None, [])
+        assert fact.sql is None and fact.subject == "Patient.SEX"
+
+
+def test_an_empty_reply_and_a_null_fact_are_told_apart(db):
+    why = "no reusable fact proposed"
+    assert propose(ReplyLLM(None), db, q(7, "Men?"), None, []) == (None, "empty reply")
+    assert propose(ReplyLLM(""), db, q(7, "Men?"), None, []) == (None, "empty reply")
+    assert propose(ReplyLLM({"fact": None}), db, q(7, "Men?"), None, []) == (None, why)
+    assert propose(ReplyLLM({"fact": {"kind": "encoding"}}), db, q(7, "Men?"), None, []) == (None, why)
 
 
 def test_a_code_that_equals_the_answer_is_allowed_but_a_unique_value_is_not(db):
