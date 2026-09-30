@@ -20,6 +20,7 @@ v8 tests memory where recurrence is natural:
   - `annotated.json` (validation split: 1,163 questions, 931 answerable, 134 templates × 7);
   - `postprocessing.py`: the official scorer's SQL post-processing (time and vital-range placeholders).
 - **Stream subset: 119 questions = 17 templates × all 7 of their validation questions.** Candidate templates are those with 7 answerable questions whose post-processed gold SQL runs in under 5 s and returns a non-empty result (128 of 134). Shuffle them with `random.Random(0)` and take the first 17. The chosen question ids are frozen in `data/ehrsql/stream_v8.json`.
+- **Combination questions: 8 more, hand-written, at the end of the stream (positions 120–127).** Each merges two of the 17 chosen templates into one question (e.g. a drug prescribed after a procedure, during the admission with a given care-unit stay), so no single earlier example shows the whole pattern; this is where facts may add value over examples. Gold SQL follows the EHRSQL style of each part, runs, returns rows and is deterministic. Each entry has `components` (its two templates). They are reviewed by the user, then frozen in `data/ehrsql/combos_v8.json` and pinned in the manifest. Placing them last means everything is learned before them and nothing learned from them affects other questions.
 - **Current time:** EHRSQL fixes "now" at `2100-12-31 23:59:00`. Gold SQL writes `current_time` and the official scorer replaces it. v8:
   - post-processes gold SQL at load time (official `post_process_sql`);
   - tells the agent the current time and asks it to write that literal, never `current_time` or `'now'` (an extra line appended to the database's value profile, so no agent code changes);
@@ -28,7 +29,7 @@ v8 tests memory where recurrence is natural:
 
 ## 3. Stream
 
-One order (seed 0) over the 119 questions. Test, then train, as in v7. Three arms:
+One order: the 119 template questions shuffled with seed 0, then the 8 combination questions in file order (127 in total). Test, then train, as in v7. Three arms:
 
 | Arm | Memory section |
 |---|---|
@@ -54,6 +55,7 @@ v7's report, with one arm added: per-stream second-half results, learning curve 
 
 - **First occurrences:** accuracy of each arm (none, facts, examples) on the 17 questions that are the first of their template in the stream, reported on its own; the main results cover all questions.
 - **Examples by template match:** the examples arm's fixes and regressions against none, split by whether at least one shown example came from the same template.
+- **Combination questions:** accuracy of each arm on the 8 combination questions, fixes and regressions against none, and for examples whether a shown example came from one of the two component templates.
 
 ## 6. Budget
 
