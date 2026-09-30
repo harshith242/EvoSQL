@@ -2,8 +2,9 @@ import json
 
 from evosql.files import write_atomic
 from evosql.probe import ARMS
-from evosql.report import (combination_section, consolidation_section, first_occurrences, pooled_diff,
-                           probe_section, report, stream_stats, template_match_split)
+from evosql.report import (combination_section, consolidation_section, cost_section, first_occurrences,
+                           notes_updates_section, pooled_diff, probe_section, report, stream_stats,
+                           template_match_split)
 from evosql.stream import consolidation_log, stream_log
 
 
@@ -93,6 +94,64 @@ def test_consolidation_section_counts_passes_and_edits(tmp_path):
     assert "Not run yet" in consolidation_section(tmp_path / "missing", [(0, "f1")])[-1]
 
 
+def test_notes_arm_is_compared_with_examples_when_the_baseline_is_examples():
+    def rec(pos, examples_ok, notes_ok):
+        return {"pos": pos, "examples_ok": examples_ok, "notes_ok": notes_ok, "notes_lines": 5, "memory_size": 0}
+
+    # Second half (pos 3, 4): one fix and one regression of notes against examples.
+    recs = [rec(1, 0, 1), rec(2, 1, 1), rec(3, 0, 1), rec(4, 1, 0)]
+
+    s = stream_stats(recs, 0.10, arm="notes", baseline="examples")
+
+    assert (s["fixes_late"], s["regressions_late"], s["fixes_all"], s["regressions_all"]) == (1, 1, 2, 1)
+    assert s["examples_late"] == 0.5 and s["notes_late"] == 0.5 and s["notes_all"] == 0.75
+    assert s["curve"][0] == (0.0, 1.0) and s["injection_rate"] == 1.0
+
+
+def test_notes_updates_section_counts_outcomes_edits_and_fix_rate_and_prints_the_file(tmp_path):
+    def edit(valid, reason=""):
+        return {"op": "add", "valid": valid, "reason": reason}
+
+    def update(outcome, edits, fixes_source):
+        return {"edits": edits, "outcome": outcome, "checked": [], "broke": None, "fixes_source": fixes_source}
+
+    updates = [update("applied", [edit(True), edit(True), edit(False, "unknown section")], True),
+               update("rejected: regression", [edit(True)], False),
+               update("no edits", [], None),
+               update("applied unchecked", [edit(False, "unknown section"), edit(True)], True)]
+    records = [{"notes_update": u, "notes_lines": 7} for u in updates] + [{"notes_update": None, "notes_lines": 9}]
+    (tmp_path / "notes_s0_d.md").write_text("Working notes\n## Traps\n- use strftime\n")
+
+    text = "\n".join(notes_updates_section({(0, "d"): records}, tmp_path))
+
+    assert "triggered an update: 4." in text and "proposed 6, valid 4, applied 3" in text
+    assert "'applied': 1" in text and "'rejected: regression': 1" in text and "'no edits': 1" in text
+    assert "{'unknown section': 2}" in text and "2 of 3" in text and "9 (order 0, d)" in text
+    assert "### Final notes file" in text and "```markdown\nWorking notes\n## Traps\n- use strftime\n```" in text
+    assert "not saved" in "\n".join(notes_updates_section({(0, "d"): records}, tmp_path / "missing"))
+    assert notes_updates_section({(0, "d"): [{"notes_update": None}]}, tmp_path) == []
+
+
+def test_turns_and_latency_are_read_by_arm_name_for_four_arms_and_for_three():
+    price = {"cache_hit": 1, "cache_miss": 1, "output": 1}
+    cfg = {"agent": {"usd_per_million": price}, "proposer": {"usd_per_million": price}}
+    usage = {"prompt_tokens": 1_000_000}
+    update = {"usage": {"proposer": usage, "check": usage}}
+    base = {"none_ok": 1, "facts_ok": 1, "examples_ok": 1, "learning": None,
+            "usage": {"none": {}, "facts": {}, "examples": {}, "notes": {}}}
+    four = dict(base, notes_ok=1, turns=[1, 2, 3, 4], latency_s=[1.0, 2.0, 3.0, 4.0], notes_update=update)
+    three = dict(base, turns=[1, 2, 3], latency_s=[1.0, 2.0, 3.0])
+
+    with_notes = "\n".join(cost_section([four], cfg, 1.0, 0.0, arms=("facts", "examples", "notes")))
+    without = "\n".join(cost_section([three], cfg, 1.0, 0.0, arms=("facts", "examples")))
+
+    assert "none 1.0, facts 2.0, examples 3.0, examples + notes 4.0" in with_notes
+    assert "examples + notes 4.0 / 4.0" in with_notes and "examples 3.0 / 3.0" in with_notes
+    assert "notes proposer $1.000, notes checks $1.000" in with_notes
+    assert "examples + notes $2.0000 (updates included)" in with_notes
+    assert "none 1.0, facts 2.0, examples 3.0." in without and "notes" not in without
+
+
 def test_combination_questions_are_counted_per_arm_against_none():
     combo = lambda none, facts, examples, same: {"components": ["a", "b"], "none_ok": none, "facts_ok": facts,
                                                   "examples_ok": examples, "examples_same_template": same}
@@ -104,19 +163,25 @@ def test_combination_questions_are_counted_per_arm_against_none():
     assert "shown for 2 of 3" in text
 
 
-def test_report_runs_end_to_end_on_a_small_v8_stream(tmp_path):
+def test_report_runs_end_to_end_on_a_small_v9_stream(tmp_path):
     usage = {"input": 100, "output": 10}
     stream = [{"qid": i, "db_id": "d", "template": "a" if i < 3 else "b" if i == 3 else None} for i in range(1, 5)]
     (tmp_path / "stream_v8.json").write_text(json.dumps(stream))
     (tmp_path / "manifest.json").write_text(json.dumps({
         "repo": "r/x", "commit": "abc", "files": {"f.json": "0123456789abcdef" * 4},
         "stream": {"path": "stream_v8.json", "sha256": "f" * 64, "templates": 2, "questions": 4}}))
-    log = [{"pos": i, "qid": i, "none_ok": i % 2, "facts_ok": 1, "examples_ok": 1, "injected": [], "memory_size": 0,
+    update = {"edits": [{"op": "add", "valid": True, "reason": ""}], "outcome": "applied", "checked": [],
+              "broke": None, "fixes_source": True, "usage": {"proposer": usage, "check": usage}}
+    log = [{"pos": i, "qid": i, "none_ok": i % 2, "facts_ok": 1, "examples_ok": 1, "notes_ok": i % 3 == 0,
+            "notes_lines": i, "notes_update": update if i % 3 else None, "injected": [], "memory_size": 0,
             "examples_used": [i - 1] if i > 1 else [], "examples_same_template": [i == 2] if i > 1 else [],
-            "template": stream[i - 1]["template"], "components": ["a", "b"] if i == 4 else None, "turns": [2, 2, 2], "latency_s": [1.0, 1.0, 1.0],
-            "usage": {"none": usage, "facts": usage, "examples": usage}, "learning": None, "jev_usd": 0}
+            "template": stream[i - 1]["template"], "components": ["a", "b"] if i == 4 else None,
+            "turns": [2, 2, 2, 2], "latency_s": [1.0, 1.0, 1.0, 1.0],
+            "usage": {"none": usage, "facts": usage, "examples": usage, "notes": usage}, "learning": None,
+            "jev_usd": 0}
            for i in range(1, 5)]
     out = tmp_path / "runs"
+    write_atomic(out / "notes_s0_d.md", "## Traps\n- use strftime\n")
     write_atomic(stream_log(out, 0, "d"), "".join(json.dumps(r) + "\n" for r in log))
     price = {"cache_hit": 1, "cache_miss": 1, "output": 1}
     cfg = {"runs_dir": str(out), "results_dir": str(tmp_path / "results"),
@@ -127,9 +192,12 @@ def test_report_runs_end_to_end_on_a_small_v8_stream(tmp_path):
     report(cfg)
 
     text = (tmp_path / "results" / "summary.md").read_text()
-    for heading in ("# EvoSQL v8 results", "(examples vs none)", "One database", "## First occurrences",
-                    "## Examples by template match", "## Combination questions", "commit `abc`"):
+    for heading in ("# EvoSQL v9 results", "## Primary: examples + notes vs examples", "(examples vs none)",
+                    "(examples + notes vs none)", "One database", "## First occurrences",
+                    "## Examples by template match", "## Combination questions", "## Notes updates",
+                    "### Final notes file", "- use strftime", "commit `abc`"):
         assert heading in text
+    assert text.index("vs examples") < text.index("(examples vs none)")
     assert "## Probe" not in text
     html = (tmp_path / "results" / "summary.html").read_text()
     assert html.startswith("<!doctype html>") and "<table>" in html and "<h2>Combination questions</h2>" in html
