@@ -12,10 +12,8 @@ from evosql.bird import load_arcwise
 from evosql.budget import Budget
 from evosql.files import read_jsonl, write_atomic
 from evosql.llm import usd
-from evosql.probe import ARMS
 from evosql.stream import consolidation_log, facts_file, notes_file, stream_log
 
-LEVELS = ("paraphrase", "same_quirk", "new_surface", "control")
 ARM_ORDER = ("none", "facts", "examples", "notes")
 LABELS = {"notes": "examples + notes"}
 SHOWN = {"facts": "injected", "examples": "examples_used", "notes": "notes_lines"}
@@ -381,28 +379,6 @@ def snippet_section(complete, out):
             f"- Injections of a fact with SQL: {sql_injections} of {injections}."]
 
 
-def probe_section(out):
-    """Level by arm table of correct/n, with fixes and regressions against the none arm."""
-    recs = read_jsonl(Path(out) / "probe_v7.jsonl")
-    if not recs:
-        return ["", "## Probe", "", "Not run yet."]
-
-    lines = ["", "## Probe (frozen memory, level by arm: correct / questions, +fixes / -regressions vs none)", "",
-             "| Level | " + " | ".join(ARMS) + " |", "|---|" + "---|" * len(ARMS)]
-    for level in (*LEVELS, "all"):
-        rows = [r for r in recs if level == "all" or r["level"] == level]
-        cells = []
-        for arm in ARMS:
-            cell = f"{sum(r['arms'][arm]['ok'] for r in rows)}/{len(rows)}"
-            if arm != "none":
-                fixes = sum(r["arms"][arm]["ok"] and not r["arms"]["none"]["ok"] for r in rows)
-                regressions = sum(r["arms"]["none"]["ok"] and not r["arms"][arm]["ok"] for r in rows)
-                cell += f" (+{fixes} / -{regressions})"
-            cells.append(cell)
-        lines.append(f"| {level} | " + " | ".join(cells) + " |")
-    return lines + ["", "A controlled check with 6-8 questions per level: raw counts, no p-values."]
-
-
 def learning_section(complete, out):
     """Learning outcomes, then each stream's facts with score, uses and retirement."""
     events = [r["learning"] for recs in complete.values() for r in recs if r["learning"]]
@@ -496,8 +472,6 @@ def report(cfg):
     lines += jev_section(complete, sc["rules"]["cutoff"])
     lines += consolidation_section(out, seeds_dbs)
     lines += snippet_section(complete, out)
-    if "probe" in cfg:
-        lines += probe_section(out)
     lines += cost_section([r for rs in complete.values() for r in rs], cfg, sc["budget_usd"], spend, passes, arms)
     lines += learning_section(complete, out)
 

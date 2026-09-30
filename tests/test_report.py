@@ -1,10 +1,8 @@
 import json
 
 from evosql.files import write_atomic
-from evosql.probe import ARMS
 from evosql.report import (combination_section, consolidation_section, cost_section, first_occurrences,
-                           notes_updates_section, pooled_diff, probe_section, report, stream_stats,
-                           template_match_split)
+                           notes_updates_section, pooled_diff, report, stream_stats, template_match_split)
 from evosql.stream import consolidation_log, stream_log
 
 
@@ -57,23 +55,6 @@ def test_template_match_split_counts_fixes_and_regressions_per_group():
     assert split["same template shown"] == {"n": 3, "fixes": 2, "regressions": 1, "none_ok": 1, "examples_ok": 2}
     assert split["other templates only"] == {"n": 2, "fixes": 0, "regressions": 1, "none_ok": 1, "examples_ok": 0}
     assert split["no examples shown"] == {"n": 1, "fixes": 0, "regressions": 0, "none_ok": 0, "examples_ok": 0}
-
-
-def test_probe_table_counts_fixes_and_regressions_against_none(tmp_path):
-    def rec(level, *oks):
-        return {"id": "p", "db_id": "f1", "level": level, "source_qid": 1,
-                "arms": {a: {"ok": ok, "sql": "", "injected": []} for a, ok in zip(ARMS, oks)}}
-
-    # oks are in ARMS order: none, v6_facts, v7_prose, v7_sql, examples
-    log = [rec("paraphrase", 0, 0, 1, 1, 1), rec("paraphrase", 1, 1, 0, 1, 1), rec("control", 1, 1, 1, 0, 1)]
-    write_atomic(tmp_path / "probe_v7.jsonl", "".join(json.dumps(r) + "\n" for r in log))
-
-    rows = {line.split(" | ")[0].strip("| "): line for line in probe_section(tmp_path) if line.startswith("| ")}
-
-    assert rows["paraphrase"] == "| paraphrase | 1/2 | 1/2 (+0 / -0) | 1/2 (+1 / -1) | 2/2 (+1 / -0) | 2/2 (+1 / -0) |"
-    assert rows["control"] == "| control | 1/1 | 1/1 (+0 / -0) | 1/1 (+0 / -0) | 0/1 (+0 / -1) | 1/1 (+0 / -0) |"
-    assert rows["all"] == "| all | 2/3 | 2/3 (+0 / -0) | 2/3 (+1 / -1) | 2/3 (+1 / -1) | 3/3 (+1 / -0) |"
-    assert "Not run yet" in probe_section(tmp_path / "missing")[-1]
 
 
 def test_consolidation_section_counts_passes_and_edits(tmp_path):

@@ -1,7 +1,7 @@
 [project]
 name = "evosql"
-version = "0.1.0"
-description = "Add your description here"
+version = "0.9.0"
+description = "A Text-to-SQL agent that learns from its mistakes on one database: facts, past examples and a working-notes file, measured online"
 authors = [
     { name = "harshith242", email = "v.harshith2000@gmail.com" }
 ]

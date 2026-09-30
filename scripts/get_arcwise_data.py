@@ -1,6 +1,6 @@
 """Set up the data: 4 BIRD dev SQLite databases, Arcwise-Plat questions and corrected column descriptions, pinned in
 data/arcwise/manifest.json by commit and SHA-256. A rerun reuses the pinned commit and checks the hashes instead of
-overwriting. Usage: python scripts/get_v6_data.py"""
+overwriting. Usage: python scripts/get_arcwise_data.py"""
 import hashlib
 import json
 import os

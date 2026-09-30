@@ -258,7 +258,7 @@ def check_pinned(questions_path):
     manifest = json.loads((Path(questions_path).parent / "manifest.json").read_text())
     digest = hashlib.sha256(Path(questions_path).read_bytes()).hexdigest()
     if manifest["sha256"].get(str(questions_path)) != digest:
-        raise SystemExit(f"{questions_path} does not match its manifest: rerun scripts/get_v6_data.py")
+        raise SystemExit(f"{questions_path} does not match its manifest: rerun scripts/get_arcwise_data.py")
 
 
 def load_testbed(cfg):
