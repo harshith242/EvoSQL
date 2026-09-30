@@ -25,6 +25,8 @@ class Fact:
     probe: str | None = None  # read-only evidence query, never shown to the agent
     source_qids: list = field(default_factory=list)
     values: list = field(default_factory=list)  # stored values the fact relies on: [{table, column, value}]
+    sql: dict | None = None  # a verified SQL snippet (used from Task 2 on)
+    learned_from: str = ""  # the question the fact was learned from
 
 
 def render(facts):

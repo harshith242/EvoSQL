@@ -2,7 +2,7 @@ import json
 
 import numpy as np
 
-from conftest import RULES, make_db
+from conftest import RULES, FakeJev, make_db
 from evosql.bird import Question
 from evosql.memory import FactMemory
 from evosql.stream import Answers, run_stream
@@ -39,7 +39,7 @@ def stream(tmp_path, monkeypatch, can_precheck):
     db = make_db(tmp_path, "f1", "CREATE TABLE results (raceId INTEGER, driverId INTEGER, time TEXT); "
                                  "INSERT INTO results VALUES (1, 1, '1:30'), (1, 2, NULL), (1, 3, '1:31');")
     order = [Question(i, "f1", f"How many drivers finished race {i}?", GOLD) for i in (1, 2, 3)]
-    memory = FactMemory(db, lambda texts: np.ones((len(texts), 2)), RULES)
+    memory = FactMemory(db, FakeJev(lambda state, key: 3.0), lambda texts: np.ones((len(texts), 2)), RULES, "f1 (test)")
     agent = Agent()
     run_stream(db, order, Answers(agent, 3), Proposer(), memory, can_precheck, tmp_path / "log.jsonl")
     return [json.loads(line) for line in open(tmp_path / "log.jsonl")], memory, agent
@@ -58,4 +58,4 @@ def test_a_fact_is_learned_after_its_question_and_helps_the_next_one(tmp_path, m
 
 def test_the_precheck_follows_the_budget_rule_it_is_given(tmp_path, monkeypatch):
     recs, _, _ = stream(tmp_path, monkeypatch, lambda: False)
-    assert recs[0]["learning"]["outcome"] == "added unproven (pre-check skipped: order budget)"
+    assert recs[0]["learning"]["outcome"] == "added unproven (pre-check skipped: budget)"

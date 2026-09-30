@@ -3,8 +3,19 @@ import sqlite3
 
 from evosql.bird import open_db
 
-RULES = {"generic_min_questions": 8, "generic_share": 0.25, "semantic_min": 0.75, "semantic_margin": 0.05,
-         "idle_uses": 5, "precheck_max": 2}
+RULES = {"cutoff": 2.75, "max_facts": 2, "idle_uses": 5, "precheck_pool": 8, "precheck_max": 2}
+
+
+class FakeJev:
+    """Scores every question with score(state, key) and records each call."""
+
+    def __init__(self, score):
+        self.score, self.calls = score, []
+        self.usage = {"calls": 0, "usd": 0.0}
+
+    def decide(self, state, questions):
+        self.calls.append((state, questions))
+        return {k: {"type": "score", "score": self.score(state, k)} for k in questions}
 
 
 def make_db(root, name, script, notes=None):

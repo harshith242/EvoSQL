@@ -1,99 +1,72 @@
-"""Per-database fact memory for one stream: which facts a question may see, credit and retirement after each answer,
-and admission of new facts (pre-check on earlier questions, then merge). It keeps the revealed questions itself;
-unproven facts are only ever injected alone, so their credit is attributable."""
-import re
+"""Per-database fact memory for one stream: JEV picks the facts a question sees, credit and retirement follow each
+answer, and a new fact is admitted after a pre-check on the earlier questions JEV matches to it, then merged.
+Unproven facts are only ever injected alone, so their credit is attributable."""
 from itertools import count
 
 import numpy as np
 
-from evosql.facts import fact_columns, fact_key, fact_tables, merge, phrase_in
-from evosql.search import words
-
-STRUCTURAL = ("grain", "relation")  # kinds that must be scoped to the schema the question mentions
+from evosql.facts import fact_key, merge
+from evosql.jev import fact_scores, question_scores
 
 
-def _name_words(name):
-    # "fastestLapTime" -> fastest lap time; "first_name" -> first name
-    return " ".join(re.findall(r"[A-Z]?[a-z]+|[A-Z]+(?![a-z])|\d+", name))
-
-
-def fact_text(fact):
-    """What a fact is embedded as for semantic matching."""
-    return f"{'; '.join(fact.applies_to)}. {fact.subject}: {fact.fact}"
+def pick(facts, scores, rules, is_proven):
+    """Facts scoring at least the cutoff, best first (input order breaks ties), at most max_facts; unproven alone."""
+    ranked = sorted((f for f in facts if scores[f.id] >= rules["cutoff"]), key=lambda f: -scores[f.id])
+    picked = ranked[:rules["max_facts"]]
+    if any(not is_proven(f) for f in picked):
+        picked = picked[:1]
+    return picked
 
 
 class FactMemory:
-    def __init__(self, db, embed, rules):
-        self.db, self.embed, self.rules = db, embed, rules
+    def __init__(self, db, jev, embed, rules, database):
+        self.db, self.jev, self.embed, self.rules, self.database = db, jev, embed, rules, database
         self.facts, self.state = {}, {}  # id -> Fact (active and retired); id -> {"score", "best", "uses", "retired"}
         self.history = []  # (question, none_ok) of the revealed questions, in stream order
         self.ids = count(1)
-        self._scope, self._vectors = {}, {}  # per fact id: (column-name words, description words); unit vector
 
     def active(self):
         return [f for f in self.facts.values() if not self.state[f.id]["retired"]]
 
     def proven(self, fact):
-        """Proven while its score is at least +1: only then may it share the prompt or match by meaning."""
+        """Proven while its score is at least +1: only then may it share the prompt."""
         return self.state[fact.id]["score"] >= 1
 
     def observe(self, q, none_ok):
-        """Reveal a question: it becomes an earlier question for genericity and pre-checks."""
+        """Reveal a question: it becomes an earlier question for pre-checks."""
         self.history.append((q, none_ok))
 
-    def scope(self, fact):
-        """(words of the fact's table and column names, words of its columns' descriptions); cached per fact."""
-        if fact.id not in self._scope:
-            cols = fact_columns(self.db, fact)
-            names = [_name_words(t) for t in fact_tables(self.db, fact)] + [_name_words(c) for _, c in cols]
-            docs = [self.db.notes[t].get(c.lower(), {}).get("description", "") for t, c in cols]
-            self._scope[fact.id] = set(words(" ".join(names))), set(words(" ".join(docs)))
-        return self._scope[fact.id]
-
-    def generic(self, phrase):
-        r, h = self.rules, self.history
-        return len(h) >= r["generic_min_questions"] and \
-            sum(phrase_in(phrase, q.question) for q, _ in h) / len(h) > r["generic_share"]
-
-    def phrase_hit(self, fact, question):
-        """Phrase path: a whole-phrase trigger match, plus a schema cue for generic triggers and grain/relation."""
-        hits = [p for p in fact.applies_to if phrase_in(p, question)]
-        if not hits:
-            return False
-        names, docs = self.scope(fact)
-        asked = set(words(question))
-        if fact.kind in STRUCTURAL:
-            return bool(asked & (names | docs))
-        return any(not self.generic(p) for p in hits) or bool(asked & names)
-
-    def similarity(self, question, facts):
-        """Cosine similarity of the question to each fact (fact vectors are cached)."""
-        for f in facts:
-            if f.id not in self._vectors:
-                v = self.embed([fact_text(f)])[0]
-                self._vectors[f.id] = v / np.linalg.norm(v)
-        q = self.embed([question])[0]
-        return {f.id: float(self._vectors[f.id] @ q / np.linalg.norm(q)) for f in facts}
-
     def select(self, question):
-        """Facts to inject: up to 2 proven facts, else at most 1 unproven fact (alone), else none."""
-        facts = self.active()
-        eligible = [f for f in facts if self.phrase_hit(f, question)]
-        if not any(self.proven(f) for f in facts) and len(eligible) < 2:
-            return eligible
+        """(facts to inject, JEV score of every active fact); ties go to the higher memory score."""
+        facts = sorted(self.active(), key=lambda f: -self.state[f.id]["score"])
+        scores = fact_scores(self.jev, self.database, question, facts)
+        return pick(facts, scores, self.rules, self.proven), scores
 
-        sim = self.similarity(question, facts)
-        # Semantic path, proven facts only: the fact must clearly beat every other and be in the question's scope.
-        ranked = sorted(facts, key=lambda f: -sim[f.id])
-        best, margin = ranked[0], sim[ranked[0].id] - (sim[ranked[1].id] if len(ranked) > 1 else 0.0)
-        in_scope = bool(set(words(question)) & set().union(*self.scope(best)))
-        if (self.proven(best) and best not in eligible and sim[best.id] >= self.rules["semantic_min"]
-                and margin >= self.rules["semantic_margin"] and in_scope):
-            eligible.append(best)
+    def matches(self, fact):
+        """Up to precheck_max earlier (question, none_ok) pairs JEV scores at or above the cutoff for this fact."""
+        if not self.history:
+            return []
 
-        rank = lambda f: (-self.state[f.id]["score"], -sim[f.id])
-        proven = sorted((f for f in eligible if self.proven(f)), key=rank)
-        return proven[:2] if proven else sorted(eligible, key=rank)[:1]
+        vectors = self.embed([f"{fact.fact} {fact.learned_from}"] + [q.question for q, _ in self.history])
+        vectors = vectors / np.linalg.norm(vectors, axis=1, keepdims=True)
+        nearest = np.argsort(-(vectors[1:] @ vectors[0]), kind="stable")[:self.rules["precheck_pool"]]
+        pool = [self.history[i] for i in nearest]
+
+        scores = question_scores(self.jev, self.database, fact, [q for q, _ in pool])
+        hits = [(q, ok) for q, ok in pool if scores[q.qid] >= self.rules["cutoff"]]
+        return sorted(hits, key=lambda pair: -scores[pair[0].qid])[:self.rules["precheck_max"]]
+
+    def precheck(self, fact, pairs, try_fact):
+        """(record, fixes): re-answer each pair with only this fact; any regression rejects it."""
+        outcome = "pre-check passed" if pairs else "pre-check unmatched"
+        record = {"outcome": outcome, "checked": [q.qid for q, _ in pairs]}
+        fixes = 0
+        for q, none_ok in pairs:
+            ok = try_fact(fact, q)
+            if none_ok and not ok:
+                return {**record, "outcome": "pre-check rejected", "fixes": fixes}, fixes
+            fixes += int(ok and not none_ok)
+        return {**record, "fixes": fixes}, fixes
 
     def credit(self, ids, facts_ok, none_ok):
         """+1 fix / -1 regression vs the none arm; retire at a regression before any +1, at -2 after, or when idle."""
@@ -111,21 +84,14 @@ class FactMemory:
                 s["retired"] = f"no effect in {s['uses']} uses"
 
     def admit(self, fact, try_fact):
-        """Pre-check on earlier matches (try_fact None skips it), merge the fact in, return the learning record."""
+        """Pre-check on JEV-matched earlier questions (try_fact None skips it), merge the fact in, return the record."""
         fact.id = f"f{next(self.ids)}"
         if try_fact is None:
-            record, fixes = {"outcome": "added unproven (pre-check skipped: order budget)"}, 0
+            record, fixes = {"outcome": "added unproven (pre-check skipped: budget)"}, 0
         else:
-            matched = [(q, ok) for q, ok in self.history if self.phrase_hit(fact, q.question)]
-            matched = matched[-self.rules["precheck_max"]:]
-            record, fixes = {"outcome": "pre-check unmatched" if not matched else "pre-check passed",
-                             "checked": [q.qid for q, _ in matched]}, 0
-            for q, none_ok in matched:
-                ok = try_fact(fact, q)
-                if none_ok and not ok:
-                    return {**record, "outcome": "pre-check rejected", "fixes": fixes}
-                fixes += int(ok and not none_ok)
-            record["fixes"] = fixes
+            record, fixes = self.precheck(fact, self.matches(fact), try_fact)
+            if record["outcome"] == "pre-check rejected":
+                return record
 
         pool = self.active() + [fact]
         merged, conflicts = merge(pool, self.db)
@@ -139,7 +105,4 @@ class FactMemory:
         else:
             twin = next((f.id for f in merged if fact_key(f) == fact_key(fact)), None)
             record["merge"] = f"merged into {twin}" if twin else "dropped: lost its phrases in a merge conflict"
-        for f in merged:  # a merge may change a fact's phrases: recompute its cached scope and vector lazily
-            self._scope.pop(f.id, None)
-            self._vectors.pop(f.id, None)
         return {**record, "conflicts": conflicts} if conflicts else record

@@ -1,11 +1,10 @@
 import numpy as np
 import pytest
 
-from conftest import RULES, make_db
+from conftest import RULES, FakeJev, make_db
 from evosql.bird import Question
 from evosql.facts import Fact
 from evosql.memory import FactMemory
-
 
 
 @pytest.fixture
@@ -17,11 +16,12 @@ def db(tmp_path):
 
 
 def fact(text, subject="results.time", kind="mapping", phrases=("finished",)):
-    return Fact("", kind, subject, text, list(phrases), None, [1], [])
+    return Fact("", kind, subject, text, list(phrases), None, [1], [], learned_from="Who finished race 1?")
 
 
-def memory(db, embed=None):
-    return FactMemory(db, embed or (lambda texts: np.ones((len(texts), 2))), RULES)
+def memory(db, score=lambda state, key: 0.0, embed=None, rules=RULES):
+    embed = embed or (lambda texts: np.ones((len(texts), 2)))
+    return FactMemory(db, FakeJev(score), embed, rules, "f1 (racing)")
 
 
 def add(memory, new_fact):
@@ -29,52 +29,41 @@ def add(memory, new_fact):
     return new_fact
 
 
-def test_phrase_path_is_word_bounded_and_structural_facts_need_schema_scope(db):
-    m = memory(db)
-    add(m, fact("A driver finished when results.time has a value."))
-    add(m, fact("Patient age is computed from the birth year in races.year.", "races.year", "meaning", ["age"]))
-    add(m, fact("One results row is one driver in one race.", "results", "grain", ["how many drivers"]))
-
-    assert [f.id for f in m.select("Which drivers finished race 5?")] == ["f1"]
-    assert m.select("What is the average points?") == []
-    assert m.select("How many drivers are there?") == []
-    assert [f.id for f in m.select("How many drivers have results in 2009?")] == ["f3"]
+def by_key(scores):
+    """A JEV score function that looks each score up by the question key (a fact or question id)."""
+    return lambda state, key: scores[key]
 
 
-def test_generic_trigger_needs_a_second_cue(db):
-    m = memory(db)
-    add(m, fact("A win means the highest results.points in a race.", "results.points", phrases=["win"]))
-    for i in range(8):
-        m.observe(Question(i, "f1", f"Which win number {i}?", "SELECT 1"), False)
+def test_only_facts_at_the_cutoff_are_picked_best_first_and_at_most_two(db):
+    m = memory(db, by_key({"f1": 2.5, "f2": 2.75, "f3": 3.0, "f4": 2.9}))
+    facts = [add(m, fact(f"Finished fact {name} about results.time.")) for name in "abcd"]
+    for f in facts:
+        m.credit([f.id], True, False)
 
-    assert m.select("Which driver had a win?") == []
-    assert [f.id for f in m.select("Which win gave the most points?")] == ["f1"]
+    picked, scores = m.select("Who finished?")
+    assert [f.id for f in picked] == ["f3", "f4"]
+    assert scores == {"f1": 2.5, "f2": 2.75, "f3": 3.0, "f4": 2.9}
+    assert m.jev.calls[0][0]["database"] == "f1 (racing)" and len(m.jev.calls) == 1
 
 
-def test_unproven_facts_go_alone_and_proven_facts_take_two_slots(db):
-    m = memory(db)
+def test_an_unproven_fact_goes_alone_and_proven_facts_share_the_prompt(db):
+    m = memory(db, lambda state, key: 3.0)
     facts = [add(m, fact(f"Finished fact {name} about results.time.")) for name in "abc"]
 
-    assert [f.id for f in m.select("Who finished?")] == ["f1"]
+    assert [f.id for f in m.select("Who finished?")[0]] == ["f1"]
     m.credit([facts[1].id], True, False)
     m.credit([facts[2].id], True, False)
-    assert [f.id for f in m.select("Who finished?")] == ["f2", "f3"]
+    assert [f.id for f in m.select("Who finished?")[0]] == ["f2", "f3"]
 
 
-def test_semantic_path_only_for_a_clear_proven_winner_in_scope(db):
-    vec = {"q": [1, 0], "a": [1, 0.1], "b": [0, 1]}
-    embed = lambda texts: np.array([vec["q"] if t.startswith("Name") else vec["a"] if "full" in t else vec["b"]
-                                    for t in texts], float)
-    m = memory(db, embed)
-    first = add(m, fact("The full name of a driver comes from results.driverId lookups.", "results.driverId",
-                        phrases=["full name"]))
-    add(m, fact("Points are summed per race in results.points.", "results.points", phrases=["total points"]))
+def test_ties_go_to_the_higher_memory_score(db):
+    m = memory(db, lambda state, key: 3.0)
+    facts = [add(m, fact(f"Finished fact {name} about results.time.")) for name in "abc"]
+    for f, delta in zip(facts, (1, 3, 2)):
+        for _ in range(delta):
+            m.credit([f.id], True, False)
 
-    question = "Name each driver with results in 2010."
-    assert m.select(question) == []
-    m.credit([first.id], True, False)
-    assert [f.id for f in m.select(question)] == ["f1"]
-    assert m.select("Name each person.") == []
+    assert [f.id for f in m.select("Who finished?")[0]] == ["f2", "f3"]
 
 
 def test_retirement_rules(db):
@@ -92,29 +81,44 @@ def test_retirement_rules(db):
     assert m.state[third.id]["retired"] == "no effect in 5 uses"
 
 
+def test_matches_are_the_embedding_shortlist_that_jev_scores_at_the_cutoff(db):
+    # JEV finds 3.0 for questions 2 and 3, 1.0 for question 1; question 4 is too far to be shortlisted.
+    jev_scores = {"q1": 1.0, "q2": 3.0, "q3": 3.0, "q4": 3.0}
+    vec = {"Oldest race?": [0, 1]}
+    embed = lambda texts: np.array([vec.get(t, [1, 0]) for t in texts], float)
+    m = memory(db, by_key(jev_scores), embed, dict(RULES, precheck_pool=3))
+    for i, none_ok in [(1, False), (2, True), (3, False)]:
+        m.observe(Question(i, "f1", f"Which drivers finished race {i}?", ""), none_ok)
+    m.observe(Question(4, "f1", "Oldest race?", ""), True)
+
+    assert [(q.qid, ok) for q, ok in m.matches(fact("A driver finished."))] == [(2, True), (3, False)]
+    assert [k for k in m.jev.calls[0][1]] == ["q1", "q2", "q3"]
+    assert memory(db).matches(fact("A driver finished.")) == []
+
+
 def test_precheck_rejects_on_any_regression_and_counts_fixes(db):
-    question = lambda i: Question(i, "f1", f"Which drivers finished race {i}?", "SELECT 1")
-    earlier = [(question(1), False), (question(2), True), (question(3), False),
-               (Question(4, "f1", "Oldest race?", ""), True)]
-
-    passing = lambda _fact, _question: True
-    m = memory(db)
-    for q, none_ok in earlier:
-        m.observe(q, none_ok)
-    result = m.admit(fact("A driver finished when results.time has a value."), passing)
-    assert result["outcome"] == "pre-check passed"
-    assert result["fixes"] == 1 and result["checked"] == [2, 3]
+    def pairs(m):
+        return [(Question(i, "f1", f"Which drivers finished race {i}?", ""), ok) for i, ok in [(2, True), (3, False)]]
 
     m = memory(db)
-    for q, none_ok in earlier:
-        m.observe(q, none_ok)
-    result = m.admit(fact("A driver finished when results.time has a value."), lambda _fact, q: q.qid != 2)
-    assert result["outcome"] == "pre-check rejected"
+    record, fixes = m.precheck(fact("A driver finished."), pairs(m), lambda _fact, _q: True)
+    assert record == {"outcome": "pre-check passed", "checked": [2, 3], "fixes": 1} and fixes == 1
 
-    m = memory(db)
-    m.observe(earlier[-1][0], earlier[-1][1])
-    result = m.admit(fact("A driver finished when results.time has a value."), passing)
-    assert result["outcome"] == "pre-check unmatched"
+    record, _ = m.precheck(fact("A driver finished."), pairs(m), lambda _fact, q: q.qid != 2)
+    assert record["outcome"] == "pre-check rejected" and record["fixes"] == 0
+
+    record, _ = m.precheck(fact("A driver finished."), [], lambda _fact, _q: True)
+    assert record["outcome"] == "pre-check unmatched"
+
+
+def test_admit_rejects_a_fact_that_regresses_a_matched_question(db):
+    m = memory(db, lambda state, key: 3.0)
+    m.observe(Question(1, "f1", "Which drivers finished race 1?", ""), True)
+
+    assert m.admit(fact("A driver finished."), lambda _fact, _q: False)["outcome"] == "pre-check rejected"
+    assert m.facts == {}
+    assert m.admit(fact("A driver finished."), lambda _fact, _q: True)["outcome"] == "pre-check passed"
+    assert m.admit(fact("Another finished."), None)["outcome"] == "added unproven (pre-check skipped: budget)"
 
 
 def test_admit_records_duplicates_and_merge_conflicts(db):

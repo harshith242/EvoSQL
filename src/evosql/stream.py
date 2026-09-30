@@ -1,8 +1,9 @@
-"""The v6 stream: for each order and database, the none and facts arms answer each question, then the memory learns
+"""The v7 stream: for each order and database, the none and facts arms answer each question, then the memory learns
 from the correct SQL (test, then train). Answers are memoised by prompt within a run and every LLM reply is cached on
 disk, so the none arm is shared by both orders and a rerun replays finished work for free and identically."""
 import hashlib
 import json
+import os
 import random
 from dataclasses import asdict
 from pathlib import Path
@@ -14,6 +15,7 @@ from evosql.bird import exec_match, gold_rows, load_arcwise, open_db
 from evosql.budget import Budget, BudgetExceeded
 from evosql.facts import check, render
 from evosql.files import append_jsonl, write_atomic
+from evosql.jev import Jev, JevUnavailable
 from evosql.llm import ProviderExhausted, make_llm, usd
 from evosql.memory import FactMemory
 from evosql.proposer import propose
@@ -59,6 +61,8 @@ def learn(db, q, gold, facts_sql, answers, proposer, memory, precheck):
     """Propose one fact from a failure of the facts arm, check it, and admit it (with a pre-check if allowed)."""
     before = dict(proposer.usage)
     fact = propose(proposer, db, q, facts_sql, memory.active())
+    if fact:
+        fact.learned_from = q.question
     reason = "no reusable fact proposed" if fact is None else check(fact, db, q, gold)
     usage = {"proposer": usage_since(proposer, before), "precheck": {}}
     if reason:
@@ -81,7 +85,7 @@ def run_stream(db, order, answers, proposer, memory, can_precheck, log_path, bar
 
         # Both arms answer before anything about q is revealed; with no fact injected, facts replays none.
         none = answers.get(db, q, gold, [])
-        picked = memory.select(q.question)
+        picked, _ = memory.select(q.question)
         facts = answers.get(db, q, gold, picked)
 
         # Reveal the correct answer: credit the injected facts, learn from a failure, then remember q.
@@ -123,21 +127,22 @@ def run(cfg):
     proposer = make_llm(cfg["proposer"], cfg["cache_dir"], budget.spend)
     answers = Answers(agent, cfg["max_steps"])
     embed = Embedder(cfg["embed"]["model"], cfg["embed"]["url"])
+    jev = Jev(cfg["jev"]["model"], cfg["jev"]["url"], os.environ[cfg["jev"]["api_key_env"]], on_spend=budget.spend)
     logical = lambda: usd(agent.usage, cfg["agent"].get("usd_per_million")) + \
-        usd(proposer.usage, cfg["proposer"].get("usd_per_million"))
+        usd(proposer.usage, cfg["proposer"].get("usd_per_million")) + jev.usage["usd"]
 
     try:
         for seed, allocation in zip(sc["seeds"], sc["order_budget_usd"]):
             for db_id, db in dbs.items():
                 order = sorted((q for q in questions if q.db_id == db_id), key=lambda q: q.qid)
                 random.Random(seed).shuffle(order)
-                memory = FactMemory(db, embed, sc["rules"])
+                memory = FactMemory(db, jev, embed, sc["rules"], f"{db_id} ({sc['databases'][db_id]})")
                 can_precheck = lambda: logical() < allocation - sc["precheck_reserve_usd"]
                 with tqdm(total=len(order), desc=f"order {seed} {db_id}", unit="q", dynamic_ncols=True) as bar:
                     run_stream(db, order, answers, proposer, memory, can_precheck, stream_log(out, seed, db_id), bar)
                 write_atomic(facts_file(out, seed, db_id), json.dumps(
                     [{**asdict(f), **memory.state.get(f.id, {})} for f in memory.facts.values()], indent=1))
-    except (BudgetExceeded, ProviderExhausted) as e:
+    except (BudgetExceeded, ProviderExhausted, JevUnavailable) as e:
         print(f"stopped: {e}. Rerun `stream` to continue; finished calls replay from cache for free.")
         return
     print(f"done: logical cost ${logical():.3f}, real spend ${budget.total:.3f}")

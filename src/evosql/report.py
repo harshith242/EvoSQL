@@ -156,7 +156,7 @@ def report(cfg):
     if all((sc["seeds"][0], d) in complete for d in sc["databases"]):
         lines += primary_section(stats, complete, sc["inert_below"])
     else:
-        lines += ["No primary claim: order 1 has not completed for every database."]
+        lines += ["No primary claim: the first order has not completed for every database."]
 
     lines += ["", "## Whole stream, learning curve and memory size", "",
               "| Order | Database | None (all) | Facts (all) | Quarters none / facts | Active facts at each quarter |",
