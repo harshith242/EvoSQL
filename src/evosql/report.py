@@ -1,13 +1,11 @@
-"""v7 report. Each complete (order, database) stream is one unit of evidence: the primary result is second-half accuracy
-of facts vs none per stream, the direction count, and a bootstrap that resamples databases (both orders together).
-Question-level statistics ignore the dependence within a stream and are labelled heuristic."""
+"""v8 report: second-half results of the facts and examples arms against no memory on one stream, the learning curve,
+first occurrences of each template, and examples by template match. Question-level statistics are labelled heuristic."""
 import json
 from collections import Counter
 from pathlib import Path
 
 import numpy as np
 
-from evosql.bird import load_arcwise
 from evosql.budget import Budget
 from evosql.files import read_jsonl, write_atomic
 from evosql.llm import usd
@@ -17,20 +15,23 @@ from evosql.stream import consolidation_log, facts_file, stream_log
 LEVELS = ("paraphrase", "same_quirk", "new_surface", "control")
 
 
-def stream_stats(recs, inert_below):
-    """Second-half and whole-stream results of one complete stream (records in stream order)."""
+def stream_stats(recs, inert_below, arm="facts"):
+    """Second-half and whole-stream results of one complete stream (records in stream order) for an arm vs none."""
     n = len(recs)
     late = [r for r in recs if r["pos"] > n / 2]
-    acc = lambda rs, arm: sum(r[f"{arm}_ok"] for r in rs) / len(rs) if rs else 0.0
+    acc = lambda rs, a: sum(r[f"{a}_ok"] for r in rs) / len(rs) if rs else 0.0
     quarters = [recs[i * n // 4:(i + 1) * n // 4] for i in range(4)]
-    injected = sum(bool(r["injected"]) for r in late) / len(late) if late else 0.0
+
+    # Memory in the prompt: injected facts, or the examples shown.
+    shown = {"facts": "injected", "examples": "examples_used"}[arm]
+    injected = sum(bool(r[shown]) for r in late) / len(late) if late else 0.0
     return {
-        "late_n": len(late), "none_late": acc(late, "none"), "facts_late": acc(late, "facts"),
-        "diff_late": acc(late, "facts") - acc(late, "none"),
-        "fixes_late": sum(r["facts_ok"] and not r["none_ok"] for r in late),
-        "regressions_late": sum(r["none_ok"] and not r["facts_ok"] for r in late),
-        "none_all": acc(recs, "none"), "facts_all": acc(recs, "facts"),
-        "curve": [(acc(q, "none"), acc(q, "facts")) for q in quarters],
+        "late_n": len(late), "none_late": acc(late, "none"), f"{arm}_late": acc(late, arm),
+        "diff_late": acc(late, arm) - acc(late, "none"),
+        "fixes_late": sum(r[f"{arm}_ok"] and not r["none_ok"] for r in late),
+        "regressions_late": sum(r["none_ok"] and not r[f"{arm}_ok"] for r in late),
+        "none_all": acc(recs, "none"), f"{arm}_all": acc(recs, arm),
+        "curve": [(acc(q, "none"), acc(q, arm)) for q in quarters],
         "memory": [q[-1]["memory_size"] if q else 0 for q in quarters],
         "injection_rate": injected, "inert": injected < inert_below,
     }
@@ -59,72 +60,149 @@ def sign_flip_p(diffs, iters=20000, seed=0):
     return float((flips >= abs(d.sum())).mean())
 
 
-def primary_section(stats, runs, inert_below):
-    """Per-stream second-half table, direction count, database-level bootstrap and heuristic question-level tests."""
-    lines = ["## Primary: second half of each stream (facts vs none)", "",
-             "| Order | Database | Questions (2nd half) | None | Facts | Diff | Fixes / regressions | Injection rate |",
+def primary_section(stats, runs, inert_below, arm="facts"):
+    """Per-stream second-half table for one arm vs none, direction count, and the tests that fit the number of databases."""
+    shown = {"facts": "facts injected", "examples": "examples shown"}[arm]
+    lines = [f"## Primary: second half of each stream ({arm} vs none)", "",
+             f"| Order | Database | Questions (2nd half) | None | {arm.title()} | Diff | Fixes / regressions | Injection rate |",
              "|---|---|---|---|---|---|---|---|"]
     for (seed, db), s in stats.items():
-        lines.append(f"| {seed} | {db} | {s['late_n']} | {s['none_late']:.3f} | {s['facts_late']:.3f} | "
+        lines.append(f"| {seed} | {db} | {s['late_n']} | {s['none_late']:.3f} | {s[f'{arm}_late']:.3f} | "
                      f"{s['diff_late']:+.3f} | +{s['fixes_late']} / -{s['regressions_late']} | "
                      f"{s['injection_rate']:.0%}{' (inert)' if s['inert'] else ''} |")
 
     streams = list(stats.values())
     up, down = sum(s["diff_late"] > 0 for s in streams), sum(s["diff_late"] < 0 for s in streams)
+    lines += ["", f"- **Direction count:** {up} of {len(streams)} streams positive, {down} negative, "
+                  f"{len(streams) - up - down} tied."]
+
     dbs = list(dict.fromkeys(d for _, d in stats))
-    lo, hi = bootstrap_ci([[s for (_, d), s in stats.items() if d == db] for db in dbs], pooled_diff)
-    without = [f"without {db} {pooled_diff([s for (_, d), s in stats.items() if d != db]):+.3f}" for db in dbs]
+    if len(dbs) > 1:
+        lo, hi = bootstrap_ci([[s for (_, d), s in stats.items() if d == db] for db in dbs], pooled_diff)
+        without = [f"without {db} {pooled_diff([s for (_, d), s in stats.items() if d != db]):+.3f}" for db in dbs]
+        lines += [f"- **Pooled second-half difference:** {pooled_diff(streams):+.3f} (95% CI {lo:+.3f} to {hi:+.3f}, "
+                  "resampling databases with both orders together).",
+                  f"- **Leave one database out:** {', '.join(without)}."]
+    else:
+        lines += ["- **One database:** question-level counts and the learning curve carry the result."]
 
     # Heuristic: questions as units, the two orders of a question kept together as one cluster.
     clusters = {}
     for (_, db), recs in runs.items():
         for r in recs:
             if r["pos"] > len(recs) / 2:
-                clusters.setdefault((db, r["qid"]), []).append(int(r["facts_ok"]) - int(r["none_ok"]))
+                clusters.setdefault((db, r["qid"]), []).append(int(r[f"{arm}_ok"]) - int(r["none_ok"]))
     diffs = list(clusters.values())
     q_lo, q_hi = bootstrap_ci(diffs, lambda xs: float(np.mean(xs)) if xs else 0.0)
 
     return lines + [
-        "",
-        f"- **Direction count:** {up} of {len(streams)} streams positive, {down} negative, "
-        f"{len(streams) - up - down} tied.",
-        f"- **Pooled second-half difference:** {pooled_diff(streams):+.3f} (95% CI {lo:+.3f} to {hi:+.3f}, resampling "
-        "databases with both orders together).",
-        f"- **Leave one database out:** {', '.join(without)}.",
         f"- **Heuristic, not exact (ignores dependence within a stream):** question-level sign-flip "
         f"p = {sign_flip_p([x for d in diffs for x in d]):.3f}; question-clustered 95% CI {q_lo:+.3f} to {q_hi:+.3f}.",
-        f"- **Injection check:** {sum(s['inert'] for s in streams)} of {len(streams)} streams inert (facts injected on "
+        f"- **Injection check:** {sum(s['inert'] for s in streams)} of {len(streams)} streams inert ({shown} on "
         f"fewer than {inert_below:.0%} of second-half questions). Where the arm is inert, a null result means the "
         "memory was rarely used, not that memory cannot help.",
     ]
 
 
-def cost_section(recs, cfg, budget_usd, spend, passes=()):
+def whole_stream_section(stats, arms):
+    """Whole-stream accuracies and the quarter-by-quarter learning curve of none and each arm."""
+    heads = ["None (all)"] + [f"{a.title()} (all)" for a in arms]
+    lines = ["", "## Whole stream, learning curve and memory size", "",
+             f"| Order | Database | {' | '.join(heads)} | Quarters {' / '.join(['none', *arms])} | "
+             "Active facts at each quarter |", "|---|---|" + "---|" * (len(heads) + 2)]
+    for key, first in stats["facts"].items():
+        accs = [f"{first['none_all']:.3f}"] + [f"{stats[a][key][f'{a}_all']:.3f}" for a in arms]
+        quarters = [(first["curve"][i][0], *(stats[a][key]["curve"][i][1] for a in arms)) for i in range(4)]
+        curve = " · ".join("/".join(f"{x:.2f}" for x in q) for q in quarters)
+        lines.append(f"| {key[0]} | {key[1]} | {' | '.join(accs)} | {curve} | {' · '.join(map(str, first['memory']))} |")
+    return lines
+
+
+def first_occurrences(recs):
+    """The first record of each template, in stream order."""
+    seen, firsts = set(), []
+    for r in recs:
+        if r.get("template") is not None and r["template"] not in seen:
+            seen.add(r["template"])
+            firsts.append(r)
+    return firsts
+
+
+def first_occurrence_section(complete, arms):
+    """Accuracy of each arm on the first question of every template, before any same-template question is revealed."""
+    firsts = [r for recs in complete.values() for r in first_occurrences(recs)]
+    if not firsts:
+        return []
+
+    lines = ["", "## First occurrences", "",
+             f"Accuracy on the {len(firsts)} questions that are the first of their template in the stream.", "",
+             "| Arm | Correct | Accuracy |", "|---|---|---|"]
+    for arm in ("none", *arms):
+        correct = sum(r[f"{arm}_ok"] for r in firsts)
+        lines.append(f"| {arm} | {correct}/{len(firsts)} | {correct / len(firsts):.3f} |")
+    return lines + ["", "The main results include all questions."]
+
+
+def template_match_split(recs):
+    """Examples vs none per group: a shown example had the question's template, only other templates, or none shown."""
+    groups = {"same template shown": [], "other templates only": [], "no examples shown": []}
+    for r in recs:
+        if not r["examples_used"]:
+            groups["no examples shown"].append(r)
+        elif any(r["examples_same_template"]):
+            groups["same template shown"].append(r)
+        else:
+            groups["other templates only"].append(r)
+
+    return {g: {"n": len(rs), "fixes": sum(r["examples_ok"] and not r["none_ok"] for r in rs),
+                "regressions": sum(r["none_ok"] and not r["examples_ok"] for r in rs),
+                "none_ok": sum(r["none_ok"] for r in rs), "examples_ok": sum(r["examples_ok"] for r in rs)}
+            for g, rs in groups.items()}
+
+
+def template_match_section(complete):
+    """Examples arm fixes and regressions against none, by whether a shown example came from the same template."""
+    recs = [r for rs in complete.values() for r in rs]
+    lines = ["", "## Examples by template match", "",
+             "| Group | Questions | Fixes | Regressions | None accuracy | Examples accuracy |", "|---|---|---|---|---|---|"]
+    for group, g in template_match_split(recs).items():
+        n = max(1, g["n"])
+        lines.append(f"| {group} | {g['n']} | {g['fixes']} | {g['regressions']} | {g['none_ok'] / n:.3f} | "
+                     f"{g['examples_ok'] / n:.3f} |")
+    return lines
+
+
+def cost_section(recs, cfg, budget_usd, spend, passes=(), arms=("facts",)):
     """Logical cost per part, $ per correct answer, original API latency and agent turns."""
     agent_p, prop_p = cfg["agent"].get("usd_per_million"), cfg["proposer"].get("usd_per_million")
     events = [r["learning"] for r in recs if r["learning"]]
-    cost = {"none": sum(usd(r["usage"]["none"], agent_p) for r in recs),
-            "facts": sum(usd(r["usage"]["facts"], agent_p) for r in recs),
-            "proposer": sum(usd(e["usage"]["proposer"], prop_p) for e in events),
-            "pre-check": sum(usd(e["usage"]["precheck"], agent_p) for e in events),
-            "consolidation proposer": sum(usd(p["usage"]["proposer"], prop_p) for p in passes if "usage" in p),
-            "consolidation pre-check": sum(usd(p["usage"]["precheck"], agent_p) for p in passes if "usage" in p),
-            "JEV": sum(r.get("jev_usd", 0) for r in recs) + sum(p.get("jev_usd", 0) for p in passes)}
-    correct = {arm: max(1, sum(r[f"{arm}_ok"] for r in recs)) for arm in ("none", "facts")}
-    facts_total = sum(v for k, v in cost.items() if k != "none")
-    p50, p95 = {}, {}
-    for i, arm in enumerate(("none", "facts")):
-        p50[arm], p95[arm] = np.percentile([r["latency_s"][i] for r in recs] or [0], [50, 95])
+    cost = {arm: sum(usd(r["usage"][arm], agent_p) for r in recs) for arm in ("none", *arms)}
+    cost |= {"proposer": sum(usd(e["usage"]["proposer"], prop_p) for e in events),
+             "pre-check": sum(usd(e["usage"]["precheck"], agent_p) for e in events),
+             "consolidation proposer": sum(usd(p["usage"]["proposer"], prop_p) for p in passes if "usage" in p),
+             "consolidation pre-check": sum(usd(p["usage"]["precheck"], agent_p) for p in passes if "usage" in p),
+             "JEV": sum(r.get("jev_usd", 0) for r in recs) + sum(p.get("jev_usd", 0) for p in passes)}
+    correct = {arm: max(1, sum(r[f"{arm}_ok"] for r in recs)) for arm in ("none", *arms)}
+
+    # Learning, pre-checks and JEV belong to the facts arm; the examples arm has no learning call.
+    totals = {"none": cost["none"], "examples": cost.get("examples", 0.0),
+              "facts": sum(v for k, v in cost.items() if k not in ("none", "examples"))}
+    per_correct = [f"{arm} ${totals[arm] / correct[arm]:.4f}" + (" (learning included)" if arm == "facts" else "")
+                   for arm in ("none", *arms)]
+
+    column = {"none": 0, "facts": 1, "examples": 2}
+    latency, turns = [], []
+    for arm in ("none", *arms):
+        p50, p95 = np.percentile([r["latency_s"][column[arm]] for r in recs] or [0], [50, 95])
+        latency.append(f"{arm} {p50:.1f} / {p95:.1f}")
+        turns.append(f"{arm} {np.mean([r['turns'][column[arm]] for r in recs] or [0]):.1f}")
 
     return ["", "## Cost, latency, turns", "",
             "- Logical cost (peak prices; a prompt answered once per run is counted once): "
             + ", ".join(f"{k} ${v:.3f}" for k, v in cost.items()) + ".",
-            f"- $ per correct answer: none ${cost['none'] / correct['none']:.4f}, facts (learning included) "
-            f"${facts_total / correct['facts']:.4f}. Real API spend: ${spend:.3f} of ${budget_usd:.2f}.",
-            f"- Latency (original API time per answer) p50 / p95 s: none {p50['none']:.1f} / {p95['none']:.1f}, "
-            f"facts {p50['facts']:.1f} / {p95['facts']:.1f}.",
-            f"- Agent turns: none {np.mean([r['turns'][0] for r in recs] or [0]):.1f}, "
-            f"facts {np.mean([r['turns'][1] for r in recs] or [0]):.1f}."]
+            f"- $ per correct answer: {', '.join(per_correct)}. Real API spend: ${spend:.3f} of ${budget_usd:.2f}.",
+            f"- Latency (original API time per answer) p50 / p95 s: {', '.join(latency)}.",
+            f"- Agent turns: {', '.join(turns)}."]
 
 
 def jev_section(complete, cutoff):
@@ -235,30 +313,33 @@ def learning_section(complete, out):
 
 def report(cfg):
     sc, out = cfg["stream"], Path(cfg["runs_dir"])
-    sizes = Counter(q.db_id for q in load_arcwise(sc["questions"], set(sc["databases"])))
+    sizes = Counter(entry["db_id"] for entry in json.loads(Path(sc["questions"]).read_text()))
     runs = {(s, d): read_jsonl(stream_log(out, s, d)) for s in sc["seeds"] for d in sc["databases"]}
     complete = {k: r for k, r in runs.items() if len(r) == sizes[k[1]]}
-    stats = {k: stream_stats(r, sc["inert_below"]) for k, r in complete.items()}
 
-    lines = ["# EvoSQL v7 results", "",
-             "Online per-database fact memory vs no memory on Arcwise-Plat (corrected BIRD Mini-Dev), with the correct "
-             "SQL revealed after each answer. Facts are selected by JEV, consolidated during the stream and may carry "
-             "verified SQL snippets. Each complete (order, database) stream is one unit of evidence.", ""]
+    has_examples = any("examples_ok" in r for rs in complete.values() for r in rs)
+    arms = ["facts", "examples"] if has_examples else ["facts"]
+    stats = {arm: {k: stream_stats(r, sc["inert_below"], arm) for k, r in complete.items()} for arm in arms}
+
+    lines = ["# EvoSQL v8 results", "",
+             "Online memory on EHRSQL (MIMIC-IV demo): 119 questions from 17 recurring templates, with the correct SQL "
+             "revealed after each answer. Facts (JEV selection, consolidation, SQL snippets, DeepSeek V4 Pro proposer) "
+             "and examples (the 2 most similar earlier questions with their correct SQL) are each compared with no "
+             "memory.", ""]
     partial = [f"order {s} {d} ({len(r)}/{sizes[d]})" for (s, d), r in runs.items() if r and (s, d) not in complete]
     if partial:
         lines += [f"**Incomplete streams, not analysed:** {', '.join(partial)}.", ""]
     if all((sc["seeds"][0], d) in complete for d in sc["databases"]):
-        lines += primary_section(stats, complete, sc["inert_below"])
+        for arm in arms:
+            lines += ([""] if arm != "facts" else []) + primary_section(stats[arm], complete, sc["inert_below"], arm)
     else:
         lines += ["No primary claim: the first order has not completed for every database."]
 
-    lines += ["", "## Whole stream, learning curve and memory size", "",
-              "| Order | Database | None (all) | Facts (all) | Quarters none / facts | Active facts at each quarter |",
-              "|---|---|---|---|---|---|"]
-    for (seed, db), s in stats.items():
-        curve = " · ".join(f"{a:.2f}/{b:.2f}" for a, b in s["curve"])
-        lines.append(f"| {seed} | {db} | {s['none_all']:.3f} | {s['facts_all']:.3f} | {curve} | "
-                     f"{' · '.join(map(str, s['memory']))} |")
+    lines += whole_stream_section(stats, arms)
+    if any(r.get("template") for rs in complete.values() for r in rs):
+        lines += first_occurrence_section(complete, arms)
+    if has_examples:
+        lines += template_match_section(complete)
 
     seeds_dbs = [(s, d) for s in sc["seeds"] for d in sc["databases"]]
     passes = [p for ps in read_consolidation(out, seeds_dbs).values() for p in ps]
@@ -266,15 +347,19 @@ def report(cfg):
     lines += jev_section(complete, sc["rules"]["cutoff"])
     lines += consolidation_section(out, seeds_dbs)
     lines += snippet_section(complete, out)
-    lines += probe_section(out)
-    lines += cost_section([r for rs in complete.values() for r in rs], cfg, sc["budget_usd"], spend, passes)
+    if "probe" in cfg:
+        lines += probe_section(out)
+    lines += cost_section([r for rs in complete.values() for r in rs], cfg, sc["budget_usd"], spend, passes, arms)
     lines += learning_section(complete, out)
 
     manifest = Path(sc["questions"]).parent / "manifest.json"
     if manifest.exists():
         m = json.loads(manifest.read_text())
-        lines += ["", "## Pinned data", "", f"Arcwise commit `{m['arcwise_commit']}`; questions per database "
-                  f"{m['questions_per_db']}.", "", "```"] + [f"{h[:16]}  {p}" for p, h in m["sha256"].items()] + ["```"]
+        stream = m["stream"]
+        lines += ["", "## Pinned data", "", f"`{m['repo']}` at commit `{m['commit']}`. Stream: {stream['questions']} "
+                  f"questions from {stream['templates']} templates.", "", "```",
+                  f"{stream['sha256'][:16]}  {stream['path']}"]
+        lines += [f"{h[:16]}  {p}" for p, h in m["files"].items()] + ["```"]
 
     write_atomic(Path(cfg["results_dir"]) / "summary.md", "\n".join(lines) + "\n")
     print("\n".join(lines))
