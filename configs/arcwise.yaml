@@ -1,5 +1,6 @@
-# EvoSQL settings: a streaming per-database memory (facts, examples, notes) on EHRSQL (spec docs/specs/2026-09-30-evosql-v9-design.md).
-data_dir: data/ehrsql
+# EvoSQL settings: the v9 arms (none, facts, examples, examples + notes) on Arcwise-Plat formula_1 (spec docs/specs/2026-09-30-evosql-v9-design.md).
+# none and facts replay the v7 cache (same agent, proposer and JEV settings as v7); examples and examples + notes are new.
+data_dir: data/bird_dev
 cache_dir: cache/llm
 max_steps: 8
 
@@ -14,8 +15,8 @@ agents:
     api_key_env: DEEPSEEK_API_KEY
     options: {extra_body: {thinking: {type: disabled}}}
     usd_per_million: {cache_hit: 0.006, cache_miss: 0.30, output: 1.20}  # peak list prices: an upper bound (off-peak is half)
-    runs_dir: runs_v9
-    results_dir: results_v9
+    runs_dir: runs_v9_arcwise
+    results_dir: results_v9_arcwise
   # Optional free fallback: local Ollama alias with a 32k context (see ollama/qwen3.5-9b-32k.Modelfile).
   local:
     model: qwen3.5-9b-32k
@@ -25,13 +26,13 @@ agents:
     runs_dir: runs_local
     results_dir: results_local
 
-# Proposer: one call per failure of the facts arm and per consolidation pass; thinking on, JSON output.
+# Proposer: one call per failure of the facts arm and per consolidation pass; thinking on, JSON output (as in v7).
 proposer:
   model: deepseek-flash
   base_url: https://api.deepseek.com
   api_key_env: DEEPSEEK_API_KEY
-  options: {extra_body: {thinking: {type: enabled}}, reasoning_effort: high, response_format: {type: json_object}}
-  usd_per_million: {cache_hit: 0.006, cache_miss: 0.30, output: 1.20}  # peak list prices: an upper bound
+  options: {extra_body: {thinking: {type: enabled}}, reasoning_effort: medium, response_format: {type: json_object}}
+  usd_per_million: {cache_hit: 0.006, cache_miss: 0.30, output: 1.20}
 
 # JEV (TypeSafe's decision model on OpenRouter) scores how directly each fact applies to a question.
 jev:
@@ -45,14 +46,15 @@ embed:
   url: http://localhost:11434/v1
 
 stream:
-  source: ehrsql                # ehrsql or arcwise
-  questions: data/ehrsql/stream_v8.json
-  replay_reference: runs_v8     # --replay-check compares the old arms with this run's logs
-  databases:  # id: one-line description for JEV's state
-    mimic_iv: "MIMIC-IV hospital records demo (100 patients): admissions, diagnoses, procedures, prescriptions, labs, microbiology, ICU stays and charted vitals"
+  source: arcwise                # ehrsql or arcwise
+  questions: data/arcwise/arcwise_plat_full_with_diff.json
+  docs_root: data/arcwise/schemas  # corrected column descriptions: <root>/<db>/database_description/<table>.csv
+  replay_reference: runs_v7     # --replay-check compares the old arms with this run's logs
+  databases:  # id: one-line description for JEV's state (as in v7, so its requests replay)
+    formula_1: Formula 1 racing results
   seeds: [0]
-  budget_usd: 1.0
-  order_budget_usd: [1.0]       # cumulative spend allowed by the end of each order
+  budget_usd: 0.8
+  order_budget_usd: [0.8]       # cumulative spend allowed by the end of each order
   precheck_reserve_usd: 0.10    # pre-checks are skipped once an order is this close to its allocation
   inert_below: 0.10             # report: a stream injecting facts on fewer second-half questions is "inert"
   notes: {max_lines: 100, max_words: 40}  # the working-notes file: lines with headings, words per bullet

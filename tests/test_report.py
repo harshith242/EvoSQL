@@ -201,3 +201,33 @@ def test_report_runs_end_to_end_on_a_small_v9_stream(tmp_path):
     assert "## Probe" not in text
     html = (tmp_path / "results" / "summary.html").read_text()
     assert html.startswith("<!doctype html>") and "<table>" in html and "<h2>Combination questions</h2>" in html
+
+
+def test_report_runs_on_an_arcwise_stream_without_templates(tmp_path):
+    usage = {"input": 100, "output": 10}
+    items = [{"question_id": i, "db_id": "d", "question": f"Q{i}?", "SQL": "SELECT 1"} for i in range(1, 5)]
+    (tmp_path / "questions.json").write_text(json.dumps(items))
+    (tmp_path / "manifest.json").write_text(json.dumps({
+        "arcwise_repo": "r/x", "arcwise_commit": "abc", "questions_per_db": {"d": 4, "other": 9},
+        "sha256": {str(tmp_path / "questions.json"): "0123456789abcdef" * 4}}))
+    log = [{"pos": i, "qid": i, "template": None, "components": None, "none_ok": i % 2, "facts_ok": 1,
+            "examples_ok": 1, "notes_ok": 1, "notes_lines": 0, "notes_update": None, "injected": [],
+            "memory_size": 0, "examples_used": [i - 1] if i > 1 else [], "examples_same_template": [False] * (i > 1),
+            "turns": [2, 2, 2, 2], "latency_s": [1.0] * 4, "learning": None, "jev_usd": 0,
+            "usage": {"none": usage, "facts": usage, "examples": usage, "notes": usage}} for i in range(1, 5)]
+    out = tmp_path / "runs"
+    write_atomic(stream_log(out, 0, "d"), "".join(json.dumps(r) + "\n" for r in log))
+    price = {"cache_hit": 1, "cache_miss": 1, "output": 1}
+    cfg = {"runs_dir": str(out), "results_dir": str(tmp_path / "results"),
+           "agent": {"usd_per_million": price}, "proposer": {"usd_per_million": price},
+           "stream": {"source": "arcwise", "questions": str(tmp_path / "questions.json"), "databases": {"d": "x"},
+                      "seeds": [0], "inert_below": 0.1, "budget_usd": 3.0, "rules": {"cutoff": 2.75}}}
+
+    report(cfg)
+
+    text = (tmp_path / "results" / "summary.md").read_text()
+    for heading in ("# EvoSQL v9 results (Arcwise-Plat d)", "## Primary: examples + notes vs examples",
+                    "(examples + notes vs none)", "## Whole stream", "commit `abc`", "{'d': 4}"):
+        assert heading in text
+    for missing in ("## First occurrences", "## Examples by template match", "## Combination questions"):
+        assert missing not in text

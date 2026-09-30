@@ -1,5 +1,5 @@
-"""The v9 stream on EHRSQL: the none, facts and examples arms of v8 (replay-only, free) plus a live examples + notes arm
-whose working-notes file is edited after each failure and checked against earlier questions. Every reply is cached."""
+"""The v9 stream on EHRSQL or Arcwise-Plat: the old arms replay from cache (free) and a live examples + notes arm has
+a working-notes file edited after each failure and checked against earlier questions. Every reply is cached."""
 import hashlib
 import json
 import os
@@ -10,7 +10,7 @@ from pathlib import Path
 from tqdm import tqdm
 
 from evosql.agent import answer
-from evosql.bird import exec_match, gold_rows
+from evosql.bird import exec_match, gold_rows, load_arcwise, open_db
 from evosql.budget import Budget, BudgetExceeded
 from evosql.consolidate import consolidate
 from evosql.ehrsql import load_stream, open_mimic, score_sql
@@ -236,40 +236,62 @@ def run_stream(db, order, answers, proposer, memory, can_precheck, log_path, con
     return notes if live else None
 
 
-REPLAY_ARMS = [f"{arm}_{k}" for arm in ("none", "facts", "examples") for k in ("ok", "sql")]
+OLD_ARMS = ("none", "facts", "examples")
 
 
 def replay_differences(new_path, old_path):
     """(differences of the old arms' answers between two logs, records identical): a replay must equal the old run."""
     read = lambda path: [json.loads(line) for line in Path(path).read_text().splitlines()]
     new, old = read(new_path), read(old_path)
-    diffs = [f"pos {o['pos']} {k}: {o[k]!r} became {n.get(k)!r}" for n, o in zip(new, old) for k in REPLAY_ARMS
+    # An old run may lack an arm (v7 has no examples), which is then not compared.
+    arms = lambda o: [f"{arm}_{k}" for arm in OLD_ARMS if f"{arm}_ok" in o for k in ("ok", "sql")]
+    diffs = [f"pos {o['pos']} {k}: {o[k]!r} became {n.get(k)!r}" for n, o in zip(new, old) for k in arms(o)
              if n.get(k) != o[k]]
     diffs += [f"{len(new)} records instead of {len(old)}"] * (len(new) != len(old))
-    return diffs, sum(all(n.get(k) == o[k] for k in REPLAY_ARMS) for n, o in zip(new, old))
+    return diffs, sum(all(n.get(k) == o[k] for k in arms(o)) for n, o in zip(new, old))
+
+
+def check_pinned(questions_path):
+    """Stop if the question file differs from the one pinned in the data manifest next to it."""
+    manifest = json.loads((Path(questions_path).parent / "manifest.json").read_text())
+    digest = hashlib.sha256(Path(questions_path).read_bytes()).hexdigest()
+    if manifest["sha256"].get(str(questions_path)) != digest:
+        raise SystemExit(f"{questions_path} does not match its manifest: rerun scripts/get_v6_data.py")
+
+
+def load_testbed(cfg):
+    """(questions, templates, components, {db_id: Database}, score) of the configured source (ehrsql or arcwise)."""
+    sc = cfg["stream"]
+    if sc.get("source", "ehrsql") == "arcwise":
+        check_pinned(sc["questions"])
+        questions = sorted(load_arcwise(sc["questions"], set(sc["databases"])), key=lambda q: q.qid)
+        docs = lambda d: Path(sc["docs_root"]) / d / "database_description"
+        return questions, {}, {}, {d: open_db(cfg["data_dir"], d, docs(d)) for d in sc["databases"]}, None
+
+    pinned = json.loads((Path(cfg["data_dir"]) / "manifest.json").read_text())["stream"]["sha256"]
+    if pinned != hashlib.sha256(Path(sc["questions"]).read_bytes()).hexdigest():
+        raise SystemExit(f"{sc['questions']} does not match its manifest: rerun scripts/get_ehrsql_data.py")
+    questions, templates, components = load_stream(sc["questions"])
+    return questions, templates, components, {d: open_mimic(cfg["data_dir"], d) for d in sc["databases"]}, score_sql
 
 
 def run(cfg, replay_check=False):
     """All streams, order by order; the old arms only replay. replay_check runs them alone into <runs_dir>_replay."""
     sc = cfg["stream"]
     out = Path(cfg["runs_dir"] + "_replay" if replay_check else cfg["runs_dir"])
-    pinned = json.loads((Path(cfg["data_dir"]) / "manifest.json").read_text())["stream"]["sha256"]
-    if pinned != hashlib.sha256(Path(sc["questions"]).read_bytes()).hexdigest():
-        raise SystemExit(f"{sc['questions']} does not match its manifest: rerun scripts/get_ehrsql_data.py")
-    questions, templates, components = load_stream(sc["questions"])
-    dbs = {d: open_mimic(cfg["data_dir"], d) for d in sc["databases"]}
+    questions, templates, components, dbs, score = load_testbed(cfg)
 
     budget = Budget(out / "spend.json", sc["budget_usd"])
     agent = make_llm(cfg["agent"], cfg["cache_dir"], replay_only=True)
     proposer = make_llm(cfg["proposer"], cfg["cache_dir"], replay_only=True)
-    answers = Answers(agent, cfg["max_steps"], score_sql)
+    answers = Answers(agent, cfg["max_steps"], score)
     embed = Embedder(cfg["embed"]["model"], cfg["embed"]["url"])
     jev = Jev(cfg["jev"]["model"], cfg["jev"]["url"], os.environ[cfg["jev"]["api_key_env"]], replay_only=True)
     priced = [(agent, cfg["agent"]), (proposer, cfg["proposer"])]
     if not replay_check:
         agent_live = make_llm(cfg["agent"], cfg["cache_dir"], budget.spend)
         notes_proposer = make_llm(cfg["proposer"], cfg["cache_dir"], budget.spend)
-        answers_live = Answers(agent_live, cfg["max_steps"], score_sql)
+        answers_live = Answers(agent_live, cfg["max_steps"], score)
         priced += [(agent_live, cfg["agent"]), (notes_proposer, cfg["proposer"])]
     cost = lambda pairs: sum(usd(llm.usage, role.get("usd_per_million")) for llm, role in pairs)
     logical = lambda: cost(priced) + jev.usage["usd"]
@@ -287,16 +309,19 @@ def run(cfg, replay_check=False):
                 live = None if replay_check else Live(
                     answers_live, notes_proposer, lambda: cost(priced[2:]) < allocation - sc["precheck_reserve_usd"],
                     sc["notes"])
+                reference = stream_log(sc["replay_reference"], seed, db_id)
+                # A reference without an examples arm (v7): show no examples, so no new call is needed to replay.
+                k_examples = sc["examples"] if not replay_check or "examples_ok" in reference.read_text() else 0
                 with tqdm(total=len(order), desc=f"order {seed} {db_id}", unit="q", dynamic_ncols=True) as bar:
                     notes = run_stream(db, order, answers, proposer, memory, can_precheck, stream_log(out, seed, db_id),
                                        consolidation_log(out, seed, db_id), sc["consolidate_every"], templates,
-                                       components, sc["examples"], live, bar)
+                                       components, k_examples, live, bar)
                 write_atomic(facts_file(out, seed, db_id), json.dumps(
                     [{**asdict(f), **memory.state.get(f.id, {})} for f in memory.facts.values()], indent=1))
                 if notes is not None:
                     write_atomic(notes_file(out, seed, db_id), notes.to_markdown())
                 if replay_check:
-                    diffs, same = replay_differences(stream_log(out, seed, db_id), stream_log("runs_v8", seed, db_id))
+                    diffs, same = replay_differences(stream_log(out, seed, db_id), reference)
                     print(f"replay {'identical' if not diffs else 'DIFFERS'}: {same}/{len(order)}")
                     if diffs:
                         print("\n".join(diffs[:10]))

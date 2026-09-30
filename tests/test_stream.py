@@ -1,12 +1,14 @@
+import hashlib
 import json
 
 import numpy as np
+import pytest
 
 from conftest import RULES, FakeJev, make_db
 from evosql.bird import Question
 from evosql.memory import FactMemory
 from evosql.notes import Notes
-from evosql.stream import Answers, Live, replay_differences, run_stream, update_notes
+from evosql.stream import Answers, Live, load_testbed, replay_differences, run_stream, update_notes
 
 GOLD = "SELECT COUNT(*) FROM results WHERE time IS NOT NULL"
 FACT = "A driver finished a race when results.time has a value, even when lapped."
@@ -227,3 +229,36 @@ def test_replay_differences_names_the_arm_answers_that_changed(tmp_path):
 
     assert replay_differences(tmp_path / "old", tmp_path / "old") == ([], 2)
     assert replay_differences(tmp_path / "new", tmp_path / "old") == (["pos 2 none_ok: True became False"], 1)
+
+
+def test_replay_differences_compares_only_the_arms_the_old_run_has(tmp_path):
+    old = {"pos": 1, "none_ok": True, "none_sql": "a", "facts_ok": True, "facts_sql": "b"}  # like v7: no examples
+    (tmp_path / "old").write_text(json.dumps(old))
+    (tmp_path / "new").write_text(json.dumps({**old, "examples_ok": False, "examples_sql": "c"}))
+
+    assert replay_differences(tmp_path / "new", tmp_path / "old") == ([], 1)
+
+
+def arcwise_cfg(tmp_path, digest=None):
+    """A config for a tiny Arcwise-Plat testbed whose question file is listed out of qid order."""
+    make_db(tmp_path, "f1", "CREATE TABLE results (time TEXT);")  # no description CSVs are needed
+    items = [{"question_id": i, "db_id": db, "question": f"Q{i}?", "SQL": "SELECT 1"}
+             for i, db in ((3, "f1"), (1, "f1"), (2, "other"))]
+    path = tmp_path / "questions.json"
+    path.write_text(json.dumps(items))
+    manifest = {"sha256": {str(path): digest or hashlib.sha256(path.read_bytes()).hexdigest()}}
+    (tmp_path / "manifest.json").write_text(json.dumps(manifest))
+    return {"data_dir": str(tmp_path), "stream": {"source": "arcwise", "questions": str(path),
+                                                  "docs_root": str(tmp_path / "docs"), "databases": {"f1": "test"}}}
+
+
+def test_the_arcwise_testbed_has_no_templates_no_scoring_and_questions_in_qid_order(tmp_path):
+    questions, templates, components, dbs, score = load_testbed(arcwise_cfg(tmp_path))
+
+    assert [q.qid for q in questions] == [1, 3]  # only the configured database, sorted as v7 sorted before shuffling
+    assert templates == {} and components == {} and score is None and list(dbs) == ["f1"]
+
+
+def test_the_arcwise_testbed_stops_when_the_question_file_is_not_the_pinned_one(tmp_path):
+    with pytest.raises(SystemExit, match="does not match its manifest"):
+        load_testbed(arcwise_cfg(tmp_path, digest="0" * 64))

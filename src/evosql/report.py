@@ -1,6 +1,6 @@
 """v9 report: examples + notes against examples and no memory on one stream (second half, learning curve, first
 occurrences, template match, combination questions), notes updates and the final notes file; summary.md and .html.
-Question-level statistics are labelled heuristic."""
+Runs on EHRSQL or Arcwise-Plat; question-level statistics are labelled heuristic."""
 import json
 from collections import Counter
 from pathlib import Path
@@ -8,6 +8,7 @@ from pathlib import Path
 import markdown
 import numpy as np
 
+from evosql.bird import load_arcwise
 from evosql.budget import Budget
 from evosql.files import read_jsonl, write_atomic
 from evosql.llm import usd
@@ -421,20 +422,52 @@ def learning_section(complete, out):
     return lines
 
 
+INTROS = {
+    "ehrsql": "The v8 stream (EHRSQL on MIMIC-IV demo: 119 questions from 17 recurring templates, then 8 combination "
+              "questions, correct SQL revealed after each answer) with a fourth arm: examples plus a working-memory "
+              "notes file (max 100 lines, updated after its failures with regression-checked edits). The none, facts "
+              "and examples arms replay v8 from cache.",
+    "arcwise": "The v7 stream (Arcwise-Plat formula_1, correct SQL revealed after each answer) with four arms: none, "
+               "facts, examples, and examples plus a working-memory notes file (max 100 lines, updated after its "
+               "failures with regression-checked edits). The none and facts arms replay v7 from cache.",
+}
+
+
+def question_counts(sc):
+    """{db_id: questions} of the configured source."""
+    if sc.get("source", "ehrsql") == "arcwise":
+        return Counter(q.db_id for q in load_arcwise(sc["questions"], set(sc["databases"])))
+    return Counter(entry["db_id"] for entry in json.loads(Path(sc["questions"]).read_text()))
+
+
+def pinned_section(sc):
+    """The pinned data: repo, commit and file hashes from the manifest next to the question file (if it exists)."""
+    manifest = Path(sc["questions"]).parent / "manifest.json"
+    if not manifest.exists():
+        return []
+    m = json.loads(manifest.read_text())
+    if sc.get("source", "ehrsql") == "arcwise":
+        counts = {d: n for d, n in m["questions_per_db"].items() if d in sc["databases"]}
+        return ["", "## Pinned data", "", f"`{m['arcwise_repo']}` at commit `{m['arcwise_commit']}`. Questions per "
+                f"database: {counts}.", "", "```", f"{m['sha256'][sc['questions']][:16]}  {sc['questions']}", "```"]
+    stream = m["stream"]
+    lines = ["", "## Pinned data", "", f"`{m['repo']}` at commit `{m['commit']}`. Stream: {stream['questions']} "
+             f"questions from {stream['templates']} templates.", "", "```", f"{stream['sha256'][:16]}  {stream['path']}"]
+    return lines + [f"{h[:16]}  {p}" for p, h in m["files"].items()] + ["```"]
+
+
 def report(cfg):
     sc, out = cfg["stream"], Path(cfg["runs_dir"])
-    sizes = Counter(entry["db_id"] for entry in json.loads(Path(sc["questions"]).read_text()))
+    sizes = question_counts(sc)
     runs = {(s, d): read_jsonl(stream_log(out, s, d)) for s in sc["seeds"] for d in sc["databases"]}
     complete = {k: r for k, r in runs.items() if len(r) == sizes[k[1]]}
 
     arms = [a for a in ARM_ORDER[1:] if a == "facts" or any(f"{a}_ok" in r for rs in complete.values() for r in rs)]
     stats = {arm: {k: stream_stats(r, sc["inert_below"], arm) for k, r in complete.items()} for arm in arms}
 
-    lines = ["# EvoSQL v9 results", "",
-             "The v8 stream (EHRSQL on MIMIC-IV demo: 119 questions from 17 recurring templates, then 8 combination "
-             "questions, correct SQL revealed after each answer) with a fourth arm: examples plus a working-memory "
-             "notes file (max 100 lines, updated after its failures with regression-checked edits). The none, facts "
-             "and examples arms replay v8 from cache.", ""]
+    source = sc.get("source", "ehrsql")
+    testbed = "Arcwise-Plat " + ", ".join(sc["databases"]) if source == "arcwise" else "EHRSQL"
+    lines = [f"# EvoSQL v9 results ({testbed})", "", INTROS[source], ""]
     partial = [f"order {s} {d} ({len(r)}/{sizes[d]})" for (s, d), r in runs.items() if r and (s, d) not in complete]
     if partial:
         lines += [f"**Incomplete streams, not analysed:** {', '.join(partial)}.", ""]
@@ -449,9 +482,10 @@ def report(cfg):
         lines += ["No primary claim: the first order has not completed for every database."]
 
     lines += whole_stream_section(stats, arms)
-    if any(r.get("template") for rs in complete.values() for r in rs):
+    has_templates = any(r.get("template") for rs in complete.values() for r in rs)
+    if has_templates:
         lines += first_occurrence_section(complete, arms)
-    if "examples" in arms:
+    if "examples" in arms and has_templates:
         lines += template_match_section(complete)
     lines += combination_section(complete, arms)
     lines += notes_updates_section(complete, out)
@@ -467,14 +501,7 @@ def report(cfg):
     lines += cost_section([r for rs in complete.values() for r in rs], cfg, sc["budget_usd"], spend, passes, arms)
     lines += learning_section(complete, out)
 
-    manifest = Path(sc["questions"]).parent / "manifest.json"
-    if manifest.exists():
-        m = json.loads(manifest.read_text())
-        stream = m["stream"]
-        lines += ["", "## Pinned data", "", f"`{m['repo']}` at commit `{m['commit']}`. Stream: {stream['questions']} "
-                  f"questions from {stream['templates']} templates.", "", "```",
-                  f"{stream['sha256'][:16]}  {stream['path']}"]
-        lines += [f"{h[:16]}  {p}" for p, h in m["files"].items()] + ["```"]
+    lines += pinned_section(sc)
 
     text = "\n".join(lines) + "\n"
     write_atomic(Path(cfg["results_dir"]) / "summary.md", text)
