@@ -5,7 +5,6 @@ import numpy as np
 import pytest
 
 from conftest import RULES, FakeJev, make_db
-from evosql import stream
 from evosql.bird import Question
 from evosql.facts import Fact
 from evosql.probe import check_probe, examples, load_facts, run_items
@@ -44,9 +43,6 @@ def fact(text, sql=None):
 
 def test_every_item_is_answered_in_five_arms_and_only_v7_sql_sees_the_snippet(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)  # gold rows are cached under ./cache
-    # Stand-in for the SQL rendering of facts.render (the snippet appears in the prompt only when the fact has one).
-    monkeypatch.setattr(stream, "render", lambda facts: "\n".join(
-        f.fact + (f" (SQL: {f.sql['sql']})" if f.sql else "") for f in facts))
     db = make_db(tmp_path, "f1", "CREATE TABLE results (raceId INTEGER, driverId INTEGER, time TEXT); "
                                  "INSERT INTO results VALUES (1, 1, '1:30'), (1, 2, NULL), (1, 3, '1:31');")
     sql = {"table": "results", "form": "predicate", "sql": SNIPPET}
