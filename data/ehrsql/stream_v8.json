@@ -1069,5 +1069,109 @@
   "question": "Compute the number of times patient 10016810 was prescribed famotidine in their last hospital visit.",
   "query": "SELECT COUNT(*) FROM prescriptions WHERE prescriptions.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10016810 AND admissions.dischtime IS NOT NULL ORDER BY admissions.admittime DESC LIMIT 1 ) AND prescriptions.drug = 'famotidine'",
   "gold_sql": "SELECT COUNT(*) FROM prescriptions WHERE prescriptions.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10016810 AND admissions.dischtime IS NOT NULL ORDER BY admissions.admittime DESC LIMIT 1 ) AND prescriptions.drug = 'famotidine'"
+ },
+ {
+  "qid": 120,
+  "id": "c1",
+  "db_id": "mimic_iv",
+  "template": null,
+  "components": [
+   "Count the number of hospital visits of patient {patient_id} [time_filter_global1].",
+   "Has_verb patient {patient_id} been to an emergency room [time_filter_global1]?"
+  ],
+  "question": "How many of patient 10016742's hospital visits in 2100 began in the emergency room?",
+  "query": "SELECT COUNT( DISTINCT admissions.hadm_id ) FROM admissions WHERE admissions.subject_id = 10016742 AND admissions.admission_location = 'emergency room' AND strftime('%Y',admissions.admittime) = '2100'",
+  "gold_sql": "SELECT COUNT( DISTINCT admissions.hadm_id ) FROM admissions WHERE admissions.subject_id = 10016742 AND admissions.admission_location = 'emergency room' AND strftime('%Y',admissions.admittime) = '2100'"
+ },
+ {
+  "qid": 121,
+  "id": "c2",
+  "db_id": "mimic_iv",
+  "template": null,
+  "components": [
+   "Count the number of times that patient {patient_id} were prescribed {drug_name} [time_filter_global1].",
+   "When was the [time_filter_exact1] time that patient {patient_id} was prescribed a medication via {drug_route} route [time_filter_global1]?"
+  ],
+  "question": "How many times was patient 10007795 prescribed a medication via the iv route in 2100?",
+  "query": "SELECT COUNT(*) FROM prescriptions WHERE prescriptions.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10007795 ) AND prescriptions.route = 'iv' AND strftime('%Y',prescriptions.starttime) = '2100'",
+  "gold_sql": "SELECT COUNT(*) FROM prescriptions WHERE prescriptions.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10007795 ) AND prescriptions.route = 'iv' AND strftime('%Y',prescriptions.starttime) = '2100'"
+ },
+ {
+  "qid": 122,
+  "id": "c3",
+  "db_id": "mimic_iv",
+  "template": null,
+  "components": [
+   "Has_verb patient {patient_id} received any lab test [time_filter_global1]?",
+   "When was patient {patient_id}'s [time_filter_exact1] {spec_name} microbiology test [time_filter_global1]?"
+  ],
+  "question": "Has patient 10016150 had a urine microbiology test since 06/2100?",
+  "query": "SELECT COUNT(*)>0 FROM microbiologyevents WHERE microbiologyevents.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10016150 ) AND microbiologyevents.spec_type_desc = 'urine' AND strftime('%Y-%m',microbiologyevents.charttime) >= '2100-06'",
+  "gold_sql": "SELECT COUNT(*)>0 FROM microbiologyevents WHERE microbiologyevents.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10016150 ) AND microbiologyevents.spec_type_desc = 'urine' AND strftime('%Y-%m',microbiologyevents.charttime) >= '2100-06'"
+ },
+ {
+  "qid": 123,
+  "id": "c4",
+  "db_id": "mimic_iv",
+  "template": null,
+  "components": [
+   "What was the name of the diagnosis that patient {patient_id} [time_filter_exact1] received [time_filter_global1]?",
+   "Has_verb patient {patient_id} been to an emergency room [time_filter_global1]?"
+  ],
+  "question": "What was the name of the diagnosis that patient 10020740 last received during their first hospital visit?",
+  "query": "SELECT DISTINCT d_icd_diagnoses.long_title FROM d_icd_diagnoses WHERE d_icd_diagnoses.icd_code IN ( SELECT diagnoses_icd.icd_code FROM diagnoses_icd WHERE diagnoses_icd.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10020740 AND admissions.dischtime IS NOT NULL ORDER BY admissions.admittime ASC LIMIT 1 ) AND diagnoses_icd.charttime = ( SELECT DISTINCT diagnoses_icd.charttime FROM diagnoses_icd WHERE diagnoses_icd.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10020740 AND admissions.dischtime IS NOT NULL ORDER BY admissions.admittime ASC LIMIT 1 ) ORDER BY diagnoses_icd.charttime DESC LIMIT 1 ) )",
+  "gold_sql": "SELECT DISTINCT d_icd_diagnoses.long_title FROM d_icd_diagnoses WHERE d_icd_diagnoses.icd_code IN ( SELECT diagnoses_icd.icd_code FROM diagnoses_icd WHERE diagnoses_icd.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10020740 AND admissions.dischtime IS NOT NULL ORDER BY admissions.admittime ASC LIMIT 1 ) AND diagnoses_icd.charttime = ( SELECT DISTINCT diagnoses_icd.charttime FROM diagnoses_icd WHERE diagnoses_icd.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10020740 AND admissions.dischtime IS NOT NULL ORDER BY admissions.admittime ASC LIMIT 1 ) ORDER BY diagnoses_icd.charttime DESC LIMIT 1 ) )"
+ },
+ {
+  "qid": 124,
+  "id": "c5",
+  "db_id": "mimic_iv",
+  "template": null,
+  "components": [
+   "What is_verb the [agg_function] total hospital cost that involves a procedure named {procedure_name} [time_filter_global1]?",
+   "Count the number of hospital visits of patient {patient_id} [time_filter_global1]."
+  ],
+  "question": "What was the total hospital cost of patient 10020740's hospital visits in 2100?",
+  "query": "SELECT SUM(cost.cost) FROM cost WHERE cost.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10020740 ) AND strftime('%Y',cost.chargetime) = '2100'",
+  "gold_sql": "SELECT SUM(cost.cost) FROM cost WHERE cost.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10020740 ) AND strftime('%Y',cost.chargetime) = '2100'"
+ },
+ {
+  "qid": 125,
+  "id": "c6",
+  "db_id": "mimic_iv",
+  "template": null,
+  "components": [
+   "Count the number of patients who were prescribed {drug_name} [time_filter_within] after having received a {procedure_name} procedure [time_filter_global1].",
+   "Count the number of patients who were diagnosed with {diagnosis_name2} [time_filter_within] after having been diagnosed with {diagnosis_name1} [time_filter_global1]."
+  ],
+  "question": "How many patients were prescribed metoprolol tartrate within 2 months after having been diagnosed with atrial fibrillation?",
+  "query": "SELECT COUNT( DISTINCT T1.subject_id ) FROM ( SELECT admissions.subject_id, diagnoses_icd.charttime FROM diagnoses_icd JOIN admissions ON diagnoses_icd.hadm_id = admissions.hadm_id WHERE diagnoses_icd.icd_code = ( SELECT d_icd_diagnoses.icd_code FROM d_icd_diagnoses WHERE d_icd_diagnoses.long_title = 'atrial fibrillation' ) ) AS T1 JOIN ( SELECT admissions.subject_id, prescriptions.starttime FROM prescriptions JOIN admissions ON prescriptions.hadm_id = admissions.hadm_id WHERE prescriptions.drug = 'metoprolol tartrate' ) AS T2 ON T1.subject_id = T2.subject_id WHERE T1.charttime < T2.starttime AND datetime(T2.starttime) BETWEEN datetime(T1.charttime) AND datetime(T1.charttime,'+2 month')",
+  "gold_sql": "SELECT COUNT( DISTINCT T1.subject_id ) FROM ( SELECT admissions.subject_id, diagnoses_icd.charttime FROM diagnoses_icd JOIN admissions ON diagnoses_icd.hadm_id = admissions.hadm_id WHERE diagnoses_icd.icd_code = ( SELECT d_icd_diagnoses.icd_code FROM d_icd_diagnoses WHERE d_icd_diagnoses.long_title = 'atrial fibrillation' ) ) AS T1 JOIN ( SELECT admissions.subject_id, prescriptions.starttime FROM prescriptions JOIN admissions ON prescriptions.hadm_id = admissions.hadm_id WHERE prescriptions.drug = 'metoprolol tartrate' ) AS T2 ON T1.subject_id = T2.subject_id WHERE T1.charttime < T2.starttime AND datetime(T2.starttime) BETWEEN datetime(T1.charttime) AND datetime(T1.charttime,'+2 month')"
+ },
+ {
+  "qid": 126,
+  "id": "c7",
+  "db_id": "mimic_iv",
+  "template": null,
+  "components": [
+   "What are_verb the top [n_rank] frequent diagnoses that patients were diagnosed [time_filter_within] after having received a {procedure_name} procedure [time_filter_global1]?",
+   "What are_verb the top [n_rank] frequent drugs that patients were prescribed [time_filter_within] after having been prescribed with {drug_name} [time_filter_global1]?"
+  ],
+  "question": "What are the top three most frequent diagnoses that patients received within 2 months after having been prescribed heparin?",
+  "query": "SELECT d_icd_diagnoses.long_title FROM d_icd_diagnoses WHERE d_icd_diagnoses.icd_code IN ( SELECT T3.icd_code FROM ( SELECT T2.icd_code, DENSE_RANK() OVER ( ORDER BY COUNT(*) DESC ) AS C1 FROM ( SELECT admissions.subject_id, prescriptions.starttime FROM prescriptions JOIN admissions ON prescriptions.hadm_id = admissions.hadm_id WHERE prescriptions.drug = 'heparin' ) AS T1 JOIN ( SELECT admissions.subject_id, diagnoses_icd.icd_code, diagnoses_icd.charttime FROM diagnoses_icd JOIN admissions ON diagnoses_icd.hadm_id = admissions.hadm_id ) AS T2 ON T1.subject_id = T2.subject_id WHERE T1.starttime < T2.charttime AND datetime(T2.charttime) BETWEEN datetime(T1.starttime) AND datetime(T1.starttime,'+2 month') GROUP BY T2.icd_code ) AS T3 WHERE T3.C1 <= 3 )",
+  "gold_sql": "SELECT d_icd_diagnoses.long_title FROM d_icd_diagnoses WHERE d_icd_diagnoses.icd_code IN ( SELECT T3.icd_code FROM ( SELECT T2.icd_code, DENSE_RANK() OVER ( ORDER BY COUNT(*) DESC ) AS C1 FROM ( SELECT admissions.subject_id, prescriptions.starttime FROM prescriptions JOIN admissions ON prescriptions.hadm_id = admissions.hadm_id WHERE prescriptions.drug = 'heparin' ) AS T1 JOIN ( SELECT admissions.subject_id, diagnoses_icd.icd_code, diagnoses_icd.charttime FROM diagnoses_icd JOIN admissions ON diagnoses_icd.hadm_id = admissions.hadm_id ) AS T2 ON T1.subject_id = T2.subject_id WHERE T1.starttime < T2.charttime AND datetime(T2.charttime) BETWEEN datetime(T1.starttime) AND datetime(T1.starttime,'+2 month') GROUP BY T2.icd_code ) AS T3 WHERE T3.C1 <= 3 )"
+ },
+ {
+  "qid": 127,
+  "id": "c8",
+  "db_id": "mimic_iv",
+  "template": null,
+  "components": [
+   "What was the total volume of output that patient {patient_id} had [time_filter_global1]?",
+   "What is the change in the {vital_name} of patient {patient_id} from the [time_filter_exact2] value measured [time_filter_global2] compared to the [time_filter_exact1] value measured [time_filter_global1]?"
+  ],
+  "question": "What was the total volume of output that patient 10029291 had during their first ICU visit?",
+  "query": "SELECT SUM(outputevents.value) FROM outputevents WHERE outputevents.stay_id IN ( SELECT icustays.stay_id FROM icustays WHERE icustays.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10029291 ) AND icustays.outtime IS NOT NULL ORDER BY icustays.intime ASC LIMIT 1 )",
+  "gold_sql": "SELECT SUM(outputevents.value) FROM outputevents WHERE outputevents.stay_id IN ( SELECT icustays.stay_id FROM icustays WHERE icustays.hadm_id IN ( SELECT admissions.hadm_id FROM admissions WHERE admissions.subject_id = 10029291 ) AND icustays.outtime IS NOT NULL ORDER BY icustays.intime ASC LIMIT 1 )"
  }
 ]

@@ -8,8 +8,13 @@
  },
  "stream": {
   "path": "data/ehrsql/stream_v8.json",
-  "sha256": "3a99b0933548c517bff4b68f6928b65150d49bbd00b6ffe1f0de7f9fb62a50cb",
+  "sha256": "0984b949a5d8f6d5b86105870d11dcea06fade462adf47e374e7ea03ff991187",
   "templates": 17,
-  "questions": 119
+  "questions": 127
+ },
+ "combos": {
+  "path": "data/ehrsql/combos_v8.json",
+  "sha256": "dccd8f1cee84175d1af134b1dc156fac9a88569d450a4a3c91a313587a1c3378",
+  "questions": 8
  }
 }

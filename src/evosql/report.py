@@ -1,9 +1,11 @@
 """v8 report: second-half results of the facts and examples arms against no memory on one stream, the learning curve,
-first occurrences of each template, and examples by template match. Question-level statistics are labelled heuristic."""
+first occurrences, examples by template match and the combination questions; written as summary.md and summary.html.
+Question-level statistics are labelled heuristic."""
 import json
 from collections import Counter
 from pathlib import Path
 
+import markdown
 import numpy as np
 
 from evosql.budget import Budget
@@ -162,7 +164,7 @@ def template_match_split(recs):
 
 def template_match_section(complete):
     """Examples arm fixes and regressions against none, by whether a shown example came from the same template."""
-    recs = [r for rs in complete.values() for r in rs]
+    recs = [r for rs in complete.values() for r in rs if not r.get("components")]
     lines = ["", "## Examples by template match", "",
              "| Group | Questions | Fixes | Regressions | None accuracy | Examples accuracy |", "|---|---|---|---|---|---|"]
     for group, g in template_match_split(recs).items():
@@ -170,6 +172,42 @@ def template_match_section(complete):
         lines.append(f"| {group} | {g['n']} | {g['fixes']} | {g['regressions']} | {g['none_ok'] / n:.3f} | "
                      f"{g['examples_ok'] / n:.3f} |")
     return lines
+
+
+def combination_section(complete, arms):
+    """Each arm on the combination questions (two templates in one question), against none."""
+    combos = [r for rs in complete.values() for r in rs if r.get("components")]
+    if not combos:
+        return []
+
+    n = len(combos)
+    lines = ["", "## Combination questions", "",
+             f"{n} questions that each merge two of the templates, asked at the end of the stream.", "",
+             "| Arm | Correct | Fixes vs none | Regressions vs none |", "|---|---|---|---|",
+             f"| none | {sum(r['none_ok'] for r in combos)}/{n} | | |"]
+    for arm in arms:
+        fixes = sum(r[f"{arm}_ok"] and not r["none_ok"] for r in combos)
+        regressions = sum(r["none_ok"] and not r[f"{arm}_ok"] for r in combos)
+        lines.append(f"| {arm} | {sum(r[f'{arm}_ok'] for r in combos)}/{n} | +{fixes} | -{regressions} |")
+    if "examples" in arms:
+        shown = sum(any(r["examples_same_template"]) for r in combos)
+        lines += ["", f"An example from one of the two component templates was shown for {shown} of {n}."]
+    return lines
+
+
+HTML = """<!doctype html><html><head><meta charset="utf-8"><title>EvoSQL results</title><style>
+body {{ font: 15px/1.55 -apple-system, "Segoe UI", sans-serif; max-width: 1000px; margin: 32px auto; padding: 0 16px;
+       color: #1f2328; }}
+h1 {{ border-bottom: 2px solid #d0d7de; padding-bottom: 8px; }} h2 {{ margin-top: 36px; color: #0b5cad; }}
+table {{ border-collapse: collapse; margin: 12px 0; }} th, td {{ border: 1px solid #d0d7de; padding: 6px 10px; }}
+th {{ background: #f6f8fa; }} tr:nth-child(even) td {{ background: #fbfbfc; }}
+pre {{ background: #f6f8fa; padding: 12px; overflow-x: auto; font-size: 13px; }} code {{ font-size: 13px; }}
+</style></head><body>{body}</body></html>"""
+
+
+def write_html(md_text, path):
+    """The markdown report as a self-contained HTML page (tables, lists, code blocks)."""
+    write_atomic(path, HTML.format(body=markdown.markdown(md_text, extensions=["tables", "fenced_code"])))
 
 
 def cost_section(recs, cfg, budget_usd, spend, passes=(), arms=("facts",)):
@@ -322,8 +360,8 @@ def report(cfg):
     stats = {arm: {k: stream_stats(r, sc["inert_below"], arm) for k, r in complete.items()} for arm in arms}
 
     lines = ["# EvoSQL v8 results", "",
-             "Online memory on EHRSQL (MIMIC-IV demo): 119 questions from 17 recurring templates, with the correct SQL "
-             "revealed after each answer. Facts (JEV selection, consolidation, SQL snippets, DeepSeek V4 Pro proposer) "
+             "Online memory on EHRSQL (MIMIC-IV demo): 119 questions from 17 recurring templates, then 8 questions "
+             "that each combine two templates, with the correct SQL revealed after each answer. Facts (JEV selection, consolidation, SQL snippets, DeepSeek V4 Pro proposer) "
              "and examples (the 2 most similar earlier questions with their correct SQL) are each compared with no "
              "memory.", ""]
     partial = [f"order {s} {d} ({len(r)}/{sizes[d]})" for (s, d), r in runs.items() if r and (s, d) not in complete]
@@ -340,6 +378,7 @@ def report(cfg):
         lines += first_occurrence_section(complete, arms)
     if has_examples:
         lines += template_match_section(complete)
+    lines += combination_section(complete, arms)
 
     seeds_dbs = [(s, d) for s in sc["seeds"] for d in sc["databases"]]
     passes = [p for ps in read_consolidation(out, seeds_dbs).values() for p in ps]
@@ -361,5 +400,7 @@ def report(cfg):
                   f"{stream['sha256'][:16]}  {stream['path']}"]
         lines += [f"{h[:16]}  {p}" for p, h in m["files"].items()] + ["```"]
 
-    write_atomic(Path(cfg["results_dir"]) / "summary.md", "\n".join(lines) + "\n")
+    text = "\n".join(lines) + "\n"
+    write_atomic(Path(cfg["results_dir"]) / "summary.md", text)
+    write_html(text, Path(cfg["results_dir"]) / "summary.html")
     print("\n".join(lines))

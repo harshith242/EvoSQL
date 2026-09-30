@@ -2,8 +2,8 @@ import json
 
 from evosql.files import write_atomic
 from evosql.probe import ARMS
-from evosql.report import (consolidation_section, first_occurrences, pooled_diff, probe_section, report,
-                           stream_stats, template_match_split)
+from evosql.report import (combination_section, consolidation_section, first_occurrences, pooled_diff,
+                           probe_section, report, stream_stats, template_match_split)
 from evosql.stream import consolidation_log, stream_log
 
 
@@ -93,16 +93,27 @@ def test_consolidation_section_counts_passes_and_edits(tmp_path):
     assert "Not run yet" in consolidation_section(tmp_path / "missing", [(0, "f1")])[-1]
 
 
+def test_combination_questions_are_counted_per_arm_against_none():
+    combo = lambda none, facts, examples, same: {"components": ["a", "b"], "none_ok": none, "facts_ok": facts,
+                                                  "examples_ok": examples, "examples_same_template": same}
+    records = [{"components": None, "none_ok": 0, "facts_ok": 1, "examples_ok": 1, "examples_same_template": []},
+               combo(0, 1, 0, [True]), combo(1, 1, 0, [False]), combo(0, 0, 1, [True, False])]
+    text = "\n".join(combination_section({(0, "d"): records}, ["facts", "examples"]))
+    assert "3 questions" in text and "| none | 1/3 | | |" in text
+    assert "| facts | 2/3 | +1 | -0 |" in text and "| examples | 1/3 | +1 | -1 |" in text
+    assert "shown for 2 of 3" in text
+
+
 def test_report_runs_end_to_end_on_a_small_v8_stream(tmp_path):
     usage = {"input": 100, "output": 10}
-    stream = [{"qid": i, "db_id": "d", "template": "a" if i < 3 else "b"} for i in range(1, 5)]
+    stream = [{"qid": i, "db_id": "d", "template": "a" if i < 3 else "b" if i == 3 else None} for i in range(1, 5)]
     (tmp_path / "stream_v8.json").write_text(json.dumps(stream))
     (tmp_path / "manifest.json").write_text(json.dumps({
         "repo": "r/x", "commit": "abc", "files": {"f.json": "0123456789abcdef" * 4},
         "stream": {"path": "stream_v8.json", "sha256": "f" * 64, "templates": 2, "questions": 4}}))
     log = [{"pos": i, "qid": i, "none_ok": i % 2, "facts_ok": 1, "examples_ok": 1, "injected": [], "memory_size": 0,
             "examples_used": [i - 1] if i > 1 else [], "examples_same_template": [i == 2] if i > 1 else [],
-            "template": stream[i - 1]["template"], "turns": [2, 2, 2], "latency_s": [1.0, 1.0, 1.0],
+            "template": stream[i - 1]["template"], "components": ["a", "b"] if i == 4 else None, "turns": [2, 2, 2], "latency_s": [1.0, 1.0, 1.0],
             "usage": {"none": usage, "facts": usage, "examples": usage}, "learning": None, "jev_usd": 0}
            for i in range(1, 5)]
     out = tmp_path / "runs"
@@ -117,6 +128,8 @@ def test_report_runs_end_to_end_on_a_small_v8_stream(tmp_path):
 
     text = (tmp_path / "results" / "summary.md").read_text()
     for heading in ("# EvoSQL v8 results", "(examples vs none)", "One database", "## First occurrences",
-                    "## Examples by template match", "commit `abc`"):
+                    "## Examples by template match", "## Combination questions", "commit `abc`"):
         assert heading in text
     assert "## Probe" not in text
+    html = (tmp_path / "results" / "summary.html").read_text()
+    assert html.startswith("<!doctype html>") and "<table>" in html and "<h2>Combination questions</h2>" in html

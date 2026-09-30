@@ -10,17 +10,18 @@ def test_score_sql_fixes_the_current_time_and_leaves_a_missing_sql_alone():
     assert score_sql(None) is None
 
 
-def test_load_stream_gives_questions_in_file_order_and_their_templates(tmp_path):
+def test_load_stream_gives_questions_in_file_order_their_templates_and_combination_components(tmp_path):
     items = [{"qid": q, "id": f"h{q}", "db_id": "mimic_iv", "template": t, "question": f"Question {q}?",
               "query": f"SELECT {q}", "gold_sql": f"SELECT {q} -- processed"} for q, t in ((1, "A"), (2, "B"))]
+    items.append({**items[0], "qid": 3, "template": None, "components": ["A", "B"]})
     path = tmp_path / "stream.json"
     path.write_text(json.dumps(items))
 
-    questions, templates = load_stream(path)
+    questions, templates, components = load_stream(path)
 
-    assert questions == [Question(1, "mimic_iv", "Question 1?", "SELECT 1 -- processed"),
-                         Question(2, "mimic_iv", "Question 2?", "SELECT 2 -- processed")]
-    assert templates == {1: "A", 2: "B"}
+    assert questions[:2] == [Question(1, "mimic_iv", "Question 1?", "SELECT 1 -- processed"),
+                             Question(2, "mimic_iv", "Question 2?", "SELECT 2 -- processed")]
+    assert templates == {1: "A", 2: "B", 3: None} and components == {3: ["A", "B"]}
 
 
 def test_open_mimic_has_no_docs_and_appends_the_time_note_to_the_profile(tmp_path):

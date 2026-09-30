@@ -12,10 +12,12 @@ TIME_NOTE = (f"The current time is {NOW}. For \"now\", \"this year\", \"last mon
 
 
 def load_stream(path):
-    """(questions in file order, {qid: template}) from a frozen stream file."""
+    """(questions in file order, {qid: template}, {qid: component templates} of the combination questions)."""
     items = json.loads(Path(path).read_text())
     questions = [Question(i["qid"], i["db_id"], i["question"], i["gold_sql"]) for i in items]
-    return questions, {i["qid"]: i["template"] for i in items}
+    templates = {i["qid"]: i["template"] for i in items}
+    components = {i["qid"]: i["components"] for i in items if i.get("components")}
+    return questions, templates, components
 
 
 def open_mimic(data_dir, db_id):

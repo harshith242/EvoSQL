@@ -1,6 +1,6 @@
 """Set up the EHRSQL data: the MIMIC-IV demo database, validation questions and official post-processing, pinned in
-data/ehrsql/manifest.json by commit and SHA-256, and the frozen 119-question stream (17 templates x 7 questions).
-A rerun only verifies the hashes. Usage: python scripts/get_ehrsql_data.py"""
+data/ehrsql/manifest.json by commit and SHA-256, and the frozen stream: 17 templates x 7 questions, then the 8
+hand-written combination questions of data/ehrsql/combos_v8.json. A rerun only verifies the hashes. Usage: python scripts/get_ehrsql_data.py"""
 import hashlib
 import json
 import os
@@ -20,7 +20,7 @@ FILES = {  # local path -> path in the repo
     DATA_DIR / "annotated.json": "data/mimic_iv/valid/annotated.json",
     DATA_DIR / "postprocessing.py": "scoring_program/postprocessing.py",
 }
-MANIFEST, STREAM = DATA_DIR / "manifest.json", DATA_DIR / "stream_v8.json"
+MANIFEST, STREAM, COMBOS = DATA_DIR / "manifest.json", DATA_DIR / "stream_v8.json", DATA_DIR / "combos_v8.json"
 TEMPLATES, PER_TEMPLATE, MAX_SECONDS = 17, 7, 5.0
 
 
@@ -39,7 +39,7 @@ def download(url, path):
 
 
 def build_stream():
-    """The first 17 shuffled candidate templates, all 7 of their questions each, with post-processed gold SQL."""
+    """The first 17 shuffled candidate templates with all 7 questions each, then the combination questions."""
     db = DATA_DIR / "mimic_iv" / "mimic_iv.sqlite"
     by_template = defaultdict(list)
     for item in json.loads((DATA_DIR / "annotated.json").read_text()):
@@ -65,6 +65,15 @@ def build_stream():
             stream.append({"qid": len(stream) + 1, "id": item["id"], "db_id": "mimic_iv", "template": template,
                            "question": item["question"], "query": item["query"],
                            "gold_sql": post_process_sql(item["query"])})
+
+    # Each combination question merges two chosen templates, numbered 1-17 in stream order.
+    for combo in json.loads(COMBOS.read_text()):
+        rows, error = execute(db, post_process_sql(combo["gold_sql"]), timeout=MAX_SECONDS)
+        if error or rows in ([], [(None,)]):
+            raise SystemExit(f"combination question {combo['cid']} returns nothing: {error or rows}")
+        stream.append({"qid": len(stream) + 1, "id": combo["cid"], "db_id": "mimic_iv", "template": None,
+                       "components": [chosen[i - 1] for i in combo["components"]], "question": combo["question"],
+                       "query": combo["gold_sql"], "gold_sql": post_process_sql(combo["gold_sql"])})
     return stream
 
 
@@ -75,7 +84,8 @@ def main():
 
     if MANIFEST.exists():
         manifest = json.loads(MANIFEST.read_text())
-        hashes = {**manifest["files"], manifest["stream"]["path"]: manifest["stream"]["sha256"]}
+        hashes = {**manifest["files"], manifest["stream"]["path"]: manifest["stream"]["sha256"],
+                  manifest["combos"]["path"]: manifest["combos"]["sha256"]}
         changed = [p for p, h in hashes.items() if sha256(p) != h]
         if changed:
             raise SystemExit(f"files differ from the pinned manifest: {changed}")
@@ -87,6 +97,7 @@ def main():
     manifest = {
         "repo": REPO, "commit": COMMIT, "files": {str(p): sha256(p) for p in FILES},
         "stream": {"path": str(STREAM), "sha256": sha256(STREAM), "templates": TEMPLATES, "questions": len(stream)},
+        "combos": {"path": str(COMBOS), "sha256": sha256(COMBOS), "questions": len(json.loads(COMBOS.read_text()))},
     }
     MANIFEST.write_text(json.dumps(manifest, indent=1))
     print(f"pinned {len(stream)} questions at {COMMIT[:12]}")

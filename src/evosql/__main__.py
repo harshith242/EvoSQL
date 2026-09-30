@@ -1,4 +1,4 @@
-"""CLI: python -m evosql stream | probe | report   (settings in configs/base.yaml; data from scripts/get_v6_data.py)"""
+"""CLI: python -m evosql stream | probe | report   (settings in configs/base.yaml; data from scripts/get_ehrsql_data.py)"""
 import argparse
 
 from dotenv import load_dotenv

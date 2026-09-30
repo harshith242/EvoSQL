@@ -56,7 +56,7 @@ def stream(tmp_path, monkeypatch, can_precheck):
     memory = FactMemory(db, jev, lambda texts: np.ones((len(texts), 2)), RULES, "f1 (test)")
     agent = Agent()
     run_stream(db, order, Answers(agent, 3), Proposer(), memory, can_precheck, tmp_path / "log.jsonl",
-               tmp_path / "consolidation.jsonl", 2, {1: "A", 2: "B", 3: "A"}, 2)
+               tmp_path / "consolidation.jsonl", 2, {1: "A", 2: "B", 3: None}, {3: ["A", "B"]}, 2)
     read = lambda name: [json.loads(line) for line in open(tmp_path / name)]
     return read("log.jsonl"), read("consolidation.jsonl"), memory, agent
 
@@ -76,8 +76,9 @@ def test_the_examples_arm_shows_earlier_questions_and_never_learns(tmp_path, mon
     recs, _, memory, agent = stream(tmp_path, monkeypatch, lambda: True)
     assert [r["examples_ok"] for r in recs] == [False, True, True]  # question 1 replays none
     assert [r["examples_used"] for r in recs] == [[], [1], [1, 2]]
-    assert [r["examples_same_template"] for r in recs] == [[], [False], [True, False]]
-    assert [r["template"] for r in recs] == ["A", "B", "A"]
+    # Question 3 combines templates A and B, so examples of either count as its own template.
+    assert [r["examples_same_template"] for r in recs] == [[], [False], [True, True]]
+    assert [r["template"] for r in recs] == ["A", "B", None] and recs[2]["components"] == ["A", "B"]
     assert recs[1]["examples_sql"] == GOLD and recs[0]["examples_sql"] == recs[0]["none_sql"]
     assert all(len(r["turns"]) == len(r["latency_s"]) == 3 for r in recs)
     assert set(recs[1]["usage"]) == {"none", "facts", "examples"} and recs[1]["usage"]["examples"] == {"calls": 1}
