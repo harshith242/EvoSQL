@@ -43,11 +43,10 @@ One order: the 119 template questions shuffled with seed 0, then the 8 combinati
 - The facts arm learns only from its own failures, as in v7. The examples arm does not affect the facts arm, and vice versa.
 - No `facts + examples` arm and no second order (decided).
 
-## 4. Proposer: DeepSeek V4 Pro
+## 4. Proposer: DeepSeek Flash, thinking high
 
-- Model `deepseek-v4-pro`, thinking on, `reasoning_effort: medium`, JSON output. Used for learning and consolidation.
-- Peak prices per 1M tokens (upper bound): cache hit $0.044, cache miss $1.32, output $3.96.
-- A 2-call smoke test checks JSON mode with thinking on before the run.
+- Model `deepseek-flash`, thinking on, `reasoning_effort: high`, JSON output. Used for learning and consolidation.
+- DeepSeek V4 Pro was tried first: a 2-call smoke test worked (JSON mode with thinking), but each call took about 76 s and $0.04, which would put the run at about $3.6 and 2–2.5 hours. Flash with high thinking was chosen instead.
 
 ## 5. Report
 
@@ -59,7 +58,7 @@ v7's report, with one arm added: per-stream second-half results, learning curve 
 
 ## 6. Budget
 
-`runs_v8/spend.json`, cap **$3.0**. Expected: none about $0.25, facts about $0.25, examples about $0.25, proposer and consolidation (Pro) about $1.0, pre-checks about $0.1, JEV about $0.02. Total about $1.9.
+`runs_v8/spend.json`, cap **$3.0**. Expected: none about $0.25, facts about $0.25, examples about $0.25, proposer and consolidation (Flash, thinking high) about $0.5, pre-checks about $0.1, JEV about $0.02. Total about $1.4.
 
 ## 7. Out of scope
 

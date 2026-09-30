@@ -27,11 +27,11 @@ agents:
 
 # Proposer: one call per failure of the facts arm and per consolidation pass; thinking on, JSON output.
 proposer:
-  model: deepseek-v4-pro
+  model: deepseek-flash
   base_url: https://api.deepseek.com
   api_key_env: DEEPSEEK_API_KEY
-  options: {extra_body: {thinking: {type: enabled}}, reasoning_effort: medium, response_format: {type: json_object}}
-  usd_per_million: {cache_hit: 0.044, cache_miss: 1.32, output: 3.96}  # peak list prices: an upper bound
+  options: {extra_body: {thinking: {type: enabled}}, reasoning_effort: high, response_format: {type: json_object}}
+  usd_per_million: {cache_hit: 0.006, cache_miss: 0.30, output: 1.20}  # peak list prices: an upper bound
 
 # JEV (TypeSafe's decision model on OpenRouter) scores how directly each fact applies to a question.
 jev:

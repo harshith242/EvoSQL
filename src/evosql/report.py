@@ -361,7 +361,7 @@ def report(cfg):
 
     lines = ["# EvoSQL v8 results", "",
              "Online memory on EHRSQL (MIMIC-IV demo): 119 questions from 17 recurring templates, then 8 questions "
-             "that each combine two templates, with the correct SQL revealed after each answer. Facts (JEV selection, consolidation, SQL snippets, DeepSeek V4 Pro proposer) "
+             "that each combine two templates, with the correct SQL revealed after each answer. Facts (JEV selection, consolidation, SQL snippets, DeepSeek Flash proposer with high thinking) "
              "and examples (the 2 most similar earlier questions with their correct SQL) are each compared with no "
              "memory.", ""]
     partial = [f"order {s} {d} ({len(r)}/{sizes[d]})" for (s, d), r in runs.items() if r and (s, d) not in complete]
