@@ -37,7 +37,10 @@ One order (seed 0) over the 119 questions. Test, then train, as in v7. Three arm
 | **examples** | the 2 earlier stream questions most similar to this one (local embeddings), each with its correct SQL; none before the first revealed question |
 
 - Examples need no learning call: after each question its correct SQL joins the pool (it is already revealed in every arm).
+- Examples are always shown (top 2 by similarity), with no JEV gating: that is how examples are normally used.
+- Every record logs the qids of the examples shown and whether each comes from the **same template** as the question, so the report can separate copying a same-template example from transfer across templates.
 - The facts arm learns only from its own failures, as in v7. The examples arm does not affect the facts arm, and vice versa.
+- No `facts + examples` arm and no second order (decided).
 
 ## 4. Proposer: DeepSeek V4 Pro
 
@@ -47,7 +50,10 @@ One order (seed 0) over the 119 questions. Test, then train, as in v7. Three arm
 
 ## 5. Report
 
-v7's report, with one arm added: per-stream second-half results, learning curve and costs for **facts vs none** and **examples vs none**. With one stream there is no between-database bootstrap; question-level counts (fixes / regressions) and the learning curve by quarter carry the result, plus a per-template breakdown: accuracy of each arm on a template's first occurrence vs its later occurrences.
+v7's report, with one arm added: per-stream second-half results, learning curve and costs for **facts vs none** and **examples vs none**. With one stream there is no between-database bootstrap; question-level counts (fixes / regressions) and the learning curve by quarter carry the result. Two new sections:
+
+- **First occurrences:** accuracy of each arm (none, facts, examples) on the 17 questions that are the first of their template in the stream, reported on its own; the main results cover all questions.
+- **Examples by template match:** the examples arm's fixes and regressions against none, split by whether at least one shown example came from the same template.
 
 ## 6. Budget
 
