@@ -43,8 +43,8 @@ stream:
   docs_root: data/arcwise/schemas  # corrected column descriptions: <root>/<db>/database_description/<table>.csv
   databases: [formula_1, superhero, card_games, european_football_2]
   seeds: [0, 1]
-  budget_usd: 2.0
-  order_budget_usd: [1.0, 2.0]  # cumulative spend allowed by the end of each order
+  budget_usd: 3.0
+  order_budget_usd: [1.5, 3.0]  # cumulative spend allowed by the end of each order
   precheck_reserve_usd: 0.10    # pre-checks are skipped once an order is this close to its allocation
   inert_below: 0.10             # report: a stream injecting facts on fewer second-half questions is "inert"
   rules:
