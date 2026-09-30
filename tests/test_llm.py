@@ -3,7 +3,7 @@ from types import SimpleNamespace
 import openai
 import pytest
 
-from evosql.llm import LLM, ProviderExhausted, usd
+from evosql.llm import LLM, ProviderExhausted, ReplayMiss, usd
 
 
 class FakeTransport:
@@ -91,3 +91,14 @@ def test_on_spend_reports_real_calls_only(tmp_path):
     llm.chat([{"role": "user", "content": "hi"}])
     llm.chat([{"role": "user", "content": "hi"}])  # cache hit: no new spend
     assert spent == [pytest.approx(100 / 1e6)]
+
+
+def test_replay_only_replays_a_cached_call_and_a_miss_raises_without_calling(tmp_path):
+    transport = FakeTransport()
+    LLM("m", cache_dir=tmp_path, client=transport).chat([{"role": "user", "content": "hi"}])
+
+    replay = LLM("m", cache_dir=tmp_path, client=transport, replay_only=True)
+    assert replay.chat([{"role": "user", "content": "hi"}])["content"] == "SELECT 1"
+    with pytest.raises(ReplayMiss, match="cache miss"):
+        replay.chat([{"role": "user", "content": "new"}])
+    assert transport.calls == 1

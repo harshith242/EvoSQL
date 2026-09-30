@@ -8,6 +8,7 @@ from pathlib import Path
 import httpx
 
 from evosql.files import write_atomic
+from evosql.llm import ReplayMiss
 
 LEVELS = [
     "Unrelated: the rule is about columns or phrases {question} does not use.",
@@ -23,9 +24,11 @@ class JevUnavailable(Exception):
 
 
 class Jev:
-    def __init__(self, model, url, api_key, cache_dir="cache/jev", on_spend=None, post=None, max_tries=5):
+    def __init__(self, model, url, api_key, cache_dir="cache/jev", on_spend=None, post=None, max_tries=5,
+                 replay_only=False):
         self.model, self.url, self.api_key = model, url, api_key
         self.cache_dir, self.on_spend, self.max_tries = Path(cache_dir), on_spend, max_tries
+        self.replay_only = replay_only  # a cache miss raises ReplayMiss instead of calling JEV
         self.post = post or httpx.post
         self.usage = {"calls": 0, "usd": 0.0}
 
@@ -38,6 +41,8 @@ class Jev:
         if path.exists():
             reply = json.loads(path.read_text())
         else:
+            if self.replay_only:
+                raise ReplayMiss(f"{self.model}: an old arm needed a new call (cache miss); nothing was spent")
             reply = self._call(body)
             write_atomic(path, json.dumps(reply))
             if self.on_spend:

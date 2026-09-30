@@ -3,6 +3,7 @@ import pytest
 from evosql import jev as jev_module
 from evosql.facts import Fact
 from evosql.jev import Jev, JevUnavailable, fact_scores
+from evosql.llm import ReplayMiss
 
 
 class Reply:
@@ -70,3 +71,14 @@ def test_fact_scores_builds_the_validated_wording_and_maps_answers_to_fact_ids(t
     assert ask["criteria"][-1] == ("Directly applies: `question` uses the exact phrase, value or measure the rule "
                                    "defines, in the same sense as `facts.f1`.learned_from.")
     assert fact_scores(jev, "d", "q", []) == {}
+
+
+def test_replay_only_replays_a_cached_decide_and_a_miss_raises_without_calling(tmp_path):
+    jev, calls = make(tmp_path, [ok(a=3.0)])
+    jev.decide({"s": 1}, {"a": {}})
+
+    replay = Jev("m", "http://jev", "key", tmp_path / "jev", post=jev.post, replay_only=True)
+    assert replay.decide({"s": 1}, {"a": {}})["a"]["score"] == 3.0
+    with pytest.raises(ReplayMiss, match="cache miss"):
+        replay.decide({"s": 2}, {"a": {}})
+    assert len(calls) == 1

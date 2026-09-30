@@ -22,6 +22,10 @@ class ProviderExhausted(Exception):
     pass
 
 
+class ReplayMiss(Exception):
+    pass
+
+
 def usd(usage, prices):
     """Dollar cost of a usage record; prices are USD per 1M tokens (missing prices = free, e.g. local)."""
     if not prices:
@@ -52,13 +56,14 @@ def _cache_hit_tokens(usage):
 
 class LLM:
     def __init__(self, model, base_url=None, api_key=None, cache_dir="cache/llm", client=None, max_tries=10,
-                 options=None, prices=None, on_spend=None):
+                 options=None, prices=None, on_spend=None, replay_only=False):
         self.model = model
         self.client = client or openai.OpenAI(base_url=base_url, api_key=api_key, max_retries=0, timeout=600)
         self.cache_dir = Path(cache_dir)
         self.max_tries = max_tries
         self.options = options or {}  # extra request params, e.g. {"reasoning_effort": "low"}
         self.prices, self.on_spend = prices, on_spend  # on_spend(usd) runs after every real (non-cached) call
+        self.replay_only = replay_only  # a cache miss raises ReplayMiss instead of calling the API
         self.usage = {"calls": 0, **dict.fromkeys(USAGE_KEYS, 0)}
         self.seen = set()  # cache keys already counted in this process: in-run replays are free
 
@@ -72,6 +77,8 @@ class LLM:
             if key in self.seen:
                 return reply
         else:
+            if self.replay_only:
+                raise ReplayMiss(f"{self.model}: an old arm needed a new call (cache miss); nothing was spent")
             reply = self._call(messages, tools)
             write_atomic(path, json.dumps(reply))
             if self.on_spend:
@@ -123,9 +130,9 @@ class LLM:
         raise ProviderExhausted(f"{self.model}: {last}")
 
 
-def make_llm(role_cfg, cache_dir, on_spend=None):
+def make_llm(role_cfg, cache_dir, on_spend=None, replay_only=False):
     """LLM for a config role (agent profile or proposer); a role without api_key_env is a local server."""
     key_env = role_cfg.get("api_key_env")
     api_key = os.environ[key_env] if key_env else "local"
     return LLM(role_cfg["model"], role_cfg["base_url"], api_key, cache_dir, options=role_cfg.get("options"),
-               prices=role_cfg.get("usd_per_million"), on_spend=on_spend)
+               prices=role_cfg.get("usd_per_million"), on_spend=on_spend, replay_only=replay_only)
