@@ -1,4 +1,4 @@
-"""v6 report. Each complete (order, database) stream is one unit of evidence: the primary result is second-half accuracy
+"""v7 report. Each complete (order, database) stream is one unit of evidence: the primary result is second-half accuracy
 of facts vs none per stream, the direction count, and a bootstrap that resamples databases (both orders together).
 Question-level statistics ignore the dependence within a stream and are labelled heuristic."""
 import json
@@ -11,7 +11,10 @@ from evosql.bird import load_arcwise
 from evosql.budget import Budget
 from evosql.files import read_jsonl, write_atomic
 from evosql.llm import usd
-from evosql.stream import facts_file, stream_log
+from evosql.probe import ARMS
+from evosql.stream import consolidation_log, facts_file, stream_log
+
+LEVELS = ("paraphrase", "same_quirk", "new_surface", "control")
 
 
 def stream_stats(recs, inert_below):
@@ -96,16 +99,19 @@ def primary_section(stats, runs, inert_below):
     ]
 
 
-def cost_section(recs, cfg, budget_usd, spend):
+def cost_section(recs, cfg, budget_usd, spend, passes=()):
     """Logical cost per part, $ per correct answer, original API latency and agent turns."""
     agent_p, prop_p = cfg["agent"].get("usd_per_million"), cfg["proposer"].get("usd_per_million")
     events = [r["learning"] for r in recs if r["learning"]]
     cost = {"none": sum(usd(r["usage"]["none"], agent_p) for r in recs),
             "facts": sum(usd(r["usage"]["facts"], agent_p) for r in recs),
             "proposer": sum(usd(e["usage"]["proposer"], prop_p) for e in events),
-            "pre-check": sum(usd(e["usage"]["precheck"], agent_p) for e in events)}
+            "pre-check": sum(usd(e["usage"]["precheck"], agent_p) for e in events),
+            "consolidation proposer": sum(usd(p["usage"]["proposer"], prop_p) for p in passes if "usage" in p),
+            "consolidation pre-check": sum(usd(p["usage"]["precheck"], agent_p) for p in passes if "usage" in p),
+            "JEV": sum(r.get("jev_usd", 0) for r in recs) + sum(p.get("jev_usd", 0) for p in passes)}
     correct = {arm: max(1, sum(r[f"{arm}_ok"] for r in recs)) for arm in ("none", "facts")}
-    facts_total = cost["facts"] + cost["proposer"] + cost["pre-check"]
+    facts_total = sum(v for k, v in cost.items() if k != "none")
     p50, p95 = {}, {}
     for i, arm in enumerate(("none", "facts")):
         p50[arm], p95[arm] = np.percentile([r["latency_s"][i] for r in recs] or [0], [50, 95])
@@ -119,6 +125,93 @@ def cost_section(recs, cfg, budget_usd, spend):
             f"facts {p50['facts']:.1f} / {p95['facts']:.1f}.",
             f"- Agent turns: none {np.mean([r['turns'][0] for r in recs] or [0]):.1f}, "
             f"facts {np.mean([r['turns'][1] for r in recs] or [0]):.1f}."]
+
+
+def jev_section(complete, cutoff):
+    """How many facts JEV let through: questions with a fact, facts per question, cutoff hits and JEV cost."""
+    recs = [r for rs in complete.values() for r in rs]
+    if not recs:
+        return ["", "## JEV selection", "", "Not run yet."]
+    scores = [x for r in recs for x in r.get("jev_scores", {}).values()]
+    hits = sum(x >= cutoff for x in scores)
+    return ["", "## JEV selection", "",
+            f"- Questions with at least one injected fact: {sum(bool(r['injected']) for r in recs)} of {len(recs)}; "
+            f"mean facts injected per question {np.mean([len(r['injected']) for r in recs]):.2f}.",
+            f"- Fact scores at or above the cutoff {cutoff}: {hits} of {len(scores)}.",
+            f"- JEV cost in the stream: ${sum(r.get('jev_usd', 0) for r in recs):.4f}."]
+
+
+def read_consolidation(out, seeds_dbs):
+    """{(seed, db): pass records} of the consolidation logs that exist."""
+    return {(s, d): read_jsonl(consolidation_log(out, s, d)) for s, d in seeds_dbs}
+
+
+def consolidation_section(out, seeds_dbs):
+    """Passes run and skipped, edits proposed / applied / rejected by op, and the applied edits."""
+    passes = {k: ps for k, ps in read_consolidation(out, seeds_dbs).items() if ps}
+    if not passes:
+        return ["", "## Consolidation", "", "Not run yet."]
+
+    everything = [p for ps in passes.values() for p in ps]
+    edits = [(k, e) for k, ps in passes.items() for p in ps for e in p.get("edits", [])]
+    applied = [(k, e) for k, e in edits if e["applied"]]
+    lines = ["", "## Consolidation", "",
+             f"- Passes: {sum('skipped' not in p for p in everything)} run, "
+             f"{sum('skipped' in p for p in everything)} skipped for budget.",
+             f"- Edits proposed {dict(Counter(e['op'] for _, e in edits))}, applied "
+             f"{dict(Counter(e['op'] for _, e in applied))}, rejected "
+             f"{dict(Counter(e['op'] for _, e in edits if e.get('rejected')))}.",
+             f"- Rejection reasons: {dict(Counter(str(e['rejected']) for _, e in edits if e.get('rejected')))}."]
+    for (seed, db), e in applied[:10]:
+        target = e["fact"].get("id", "new fact") if e["fact"] else "dropped"
+        lines.append(f"- Applied (order {seed}, {db}): {e['op']} {', '.join(e['ids'])} -> {target}: {e['reason']}")
+    if len(applied) > 10:
+        lines.append(f"- ... and {len(applied) - 10} more applied edits.")
+    return lines
+
+
+def snippet_section(complete, out):
+    """Snippets kept or dropped when facts were learned, and how often facts with SQL were injected."""
+    events = [r["learning"] for rs in complete.values() for r in rs if r["learning"]]
+    if not events:
+        return ["", "## Snippets", "", "Not run yet."]
+
+    outcomes = Counter(e["snippet"] for e in events if e.get("snippet") is not None)
+
+    with_sql, total, injections, sql_injections = 0, 0, 0, 0
+    for (seed, db), recs in complete.items():
+        path = facts_file(out, seed, db)
+        facts = json.loads(path.read_text()) if path.exists() else []
+        sql_ids = {f["id"] for f in facts if f.get("sql")}
+        with_sql, total = with_sql + len(sql_ids), total + len(facts)
+        ids = [i for r in recs for i in r["injected"]]
+        injections, sql_injections = injections + len(ids), sql_injections + sum(i in sql_ids for i in ids)
+    return ["", "## Snippets", "",
+            f"- Snippets by outcome: {dict(outcomes) or 'none proposed'}.",
+            f"- Facts with SQL in the final facts files: {with_sql} of {total}.",
+            f"- Injections of a fact with SQL: {sql_injections} of {injections}."]
+
+
+def probe_section(out):
+    """Level by arm table of correct/n, with fixes and regressions against the none arm."""
+    recs = read_jsonl(Path(out) / "probe_v7.jsonl")
+    if not recs:
+        return ["", "## Probe", "", "Not run yet."]
+
+    lines = ["", "## Probe (frozen memory, level by arm: correct / questions, +fixes / -regressions vs none)", "",
+             "| Level | " + " | ".join(ARMS) + " |", "|---|" + "---|" * len(ARMS)]
+    for level in (*LEVELS, "all"):
+        rows = [r for r in recs if level == "all" or r["level"] == level]
+        cells = []
+        for arm in ARMS:
+            cell = f"{sum(r['arms'][arm]['ok'] for r in rows)}/{len(rows)}"
+            if arm != "none":
+                fixes = sum(r["arms"][arm]["ok"] and not r["arms"]["none"]["ok"] for r in rows)
+                regressions = sum(r["arms"]["none"]["ok"] and not r["arms"][arm]["ok"] for r in rows)
+                cell += f" (+{fixes} / -{regressions})"
+            cells.append(cell)
+        lines.append(f"| {level} | " + " | ".join(cells) + " |")
+    return lines + ["", "A controlled check with 6-8 questions per level: raw counts, no p-values."]
 
 
 def learning_section(complete, out):
@@ -147,9 +240,10 @@ def report(cfg):
     complete = {k: r for k, r in runs.items() if len(r) == sizes[k[1]]}
     stats = {k: stream_stats(r, sc["inert_below"]) for k, r in complete.items()}
 
-    lines = ["# EvoSQL v6 results", "",
+    lines = ["# EvoSQL v7 results", "",
              "Online per-database fact memory vs no memory on Arcwise-Plat (corrected BIRD Mini-Dev), with the correct "
-             "SQL revealed after each answer. Each complete (order, database) stream is one unit of evidence.", ""]
+             "SQL revealed after each answer. Facts are selected by JEV, consolidated during the stream and may carry "
+             "verified SQL snippets. Each complete (order, database) stream is one unit of evidence.", ""]
     partial = [f"order {s} {d} ({len(r)}/{sizes[d]})" for (s, d), r in runs.items() if r and (s, d) not in complete]
     if partial:
         lines += [f"**Incomplete streams, not analysed:** {', '.join(partial)}.", ""]
@@ -166,8 +260,14 @@ def report(cfg):
         lines.append(f"| {seed} | {db} | {s['none_all']:.3f} | {s['facts_all']:.3f} | {curve} | "
                      f"{' · '.join(map(str, s['memory']))} |")
 
+    seeds_dbs = [(s, d) for s in sc["seeds"] for d in sc["databases"]]
+    passes = [p for ps in read_consolidation(out, seeds_dbs).values() for p in ps]
     spend = Budget(out / "spend.json", sc["budget_usd"]).total
-    lines += cost_section([r for rs in complete.values() for r in rs], cfg, sc["budget_usd"], spend)
+    lines += jev_section(complete, sc["rules"]["cutoff"])
+    lines += consolidation_section(out, seeds_dbs)
+    lines += snippet_section(complete, out)
+    lines += probe_section(out)
+    lines += cost_section([r for rs in complete.values() for r in rs], cfg, sc["budget_usd"], spend, passes)
     lines += learning_section(complete, out)
 
     manifest = Path(sc["questions"]).parent / "manifest.json"

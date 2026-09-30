@@ -1,4 +1,4 @@
-"""CLI: python -m evosql stream | report   (settings in configs/base.yaml; data from scripts/get_v6_data.py)"""
+"""CLI: python -m evosql stream | probe | report   (settings in configs/base.yaml; data from scripts/get_v6_data.py)"""
 import argparse
 
 from dotenv import load_dotenv
@@ -13,6 +13,7 @@ def main():
     parser.add_argument("--agent", help="agent profile from the config, e.g. deepseek or local")
     sub = parser.add_subparsers(dest="cmd", required=True)
     sub.add_parser("stream", help="run the streaming fact-memory experiment (resumable from cache)")
+    sub.add_parser("probe", help="answer the frozen probe set with frozen memory in 5 arms")
     sub.add_parser("report", help="write summary.md in the profile's results folder")
     args = parser.parse_args()
 
@@ -21,6 +22,9 @@ def main():
     if args.cmd == "stream":
         from evosql.stream import run
         run(cfg)
+    elif args.cmd == "probe":
+        from evosql.probe import run_probe
+        run_probe(cfg)
     else:
         from evosql.report import report
         report(cfg)

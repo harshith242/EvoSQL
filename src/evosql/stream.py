@@ -30,6 +30,10 @@ def facts_file(out, seed, db_id):
     return Path(out) / f"facts_s{seed}_{db_id}.json"
 
 
+def consolidation_log(out, seed, db_id):
+    return Path(out) / f"consolidation_s{seed}_{db_id}.jsonl"
+
+
 def usage_since(llm, before):
     return {k: llm.usage[k] - before.get(k, 0) for k in llm.usage}
 
@@ -44,8 +48,8 @@ class Answers:
     def __init__(self, agent, max_steps):
         self.agent, self.max_steps, self.memo = agent, max_steps, {}
 
-    def get(self, db, q, gold, facts):
-        notes = render(facts)
+    def get(self, db, q, gold, facts=(), notes=None):
+        notes = render(facts) if notes is None else notes
         key = (q.db_id, q.qid, notes)
         if key in self.memo:
             return {**self.memo[key], "usage": {}}
