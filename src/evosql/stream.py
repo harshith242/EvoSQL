@@ -1,11 +1,10 @@
-"""The v8 stream on EHRSQL: each question is answered by the none, facts and examples arms (examples: the most similar
-earlier questions with their correct SQL); the facts memory learns from its failures and is consolidated every N
-questions. Every LLM and JEV reply is cached on disk, so a rerun replays finished work for free and identically."""
+"""The v9 stream on EHRSQL: the none, facts and examples arms of v8 (replay-only, free) plus a live examples + notes arm
+whose working-notes file is edited after each failure and checked against earlier questions. Every reply is cached."""
 import hashlib
 import json
 import os
 import random
-from dataclasses import asdict
+from dataclasses import asdict, dataclass
 from pathlib import Path
 
 from tqdm import tqdm
@@ -18,8 +17,9 @@ from evosql.ehrsql import load_stream, open_mimic, score_sql
 from evosql.facts import check, check_snippet, render
 from evosql.files import append_jsonl, write_atomic
 from evosql.jev import Jev, JevUnavailable
-from evosql.llm import ProviderExhausted, make_llm, usd
+from evosql.llm import ProviderExhausted, ReplayMiss, make_llm, usd
 from evosql.memory import FactMemory
+from evosql.notes import Notes, apply, propose_edits, validate
 from evosql.proposer import propose
 from evosql.search import Embedder, examples_notes, similar
 
@@ -30,6 +30,10 @@ def stream_log(out, seed, db_id):
 
 def facts_file(out, seed, db_id):
     return Path(out) / f"facts_s{seed}_{db_id}.json"
+
+
+def notes_file(out, seed, db_id):
+    return Path(out) / f"notes_s{seed}_{db_id}.md"
 
 
 def consolidation_log(out, seed, db_id):
@@ -62,6 +66,20 @@ class Answers:
         self.memo[key] = {"sql": sql, "turns": turns, "ok": exec_match(db.path, self.score(sql), gold),
                           "latency_s": usage.get("latency_s", 0.0)}
         return {**self.memo[key], "usage": usage}
+
+
+@dataclass
+class Live:
+    """What the notes arm needs beyond the replay-only arms: live answers and proposer, a budget rule, notes limits."""
+    answers: Answers
+    proposer: object
+    can_check: object
+    notes_cfg: dict
+
+
+def notes_text(shown, notes):
+    """The agent's knowledge section in the notes arm: the shown examples, then the notes when there are any."""
+    return "\n\n".join(t for t in (examples_notes(shown), notes.render()) if t)
 
 
 def trier(db, answers, usage):
@@ -106,11 +124,61 @@ def consolidation_pass(pos, db, answers, proposer, memory, can_precheck, path):
                         "jev_usd": memory.jev.usage["usd"] - jev_before})
 
 
+def update_notes(db, q, gold, shown, agent_sql, notes, past, proposer, answers, embed, can_check, notes_cfg):
+    """(notes, log): edits proposed after a failure of q, kept only if they pass the regression check."""
+    before = dict(proposer.usage)
+    proposed = propose_edits(proposer, db, notes, q, shown, agent_sql, notes_cfg["max_lines"])
+    usage = {"proposer": usage_since(proposer, before), "check": {}}
+    edits = []
+    for e in proposed:
+        reason = validate(e, notes, q, gold, notes_cfg["max_words"])
+        edits.append({**e, "valid": reason is None, "reason": reason})
+    valid = [e for e in edits if e["valid"]]
+    log = {"edits": edits, "outcome": None, "checked": [], "broke": None, "fixes_source": None, "usage": usage}
+
+    if not valid:
+        log["outcome"] = "no valid edits" if edits else "no edits"
+        return notes, log
+    draft = apply(notes, valid)
+    if draft.line_count() > notes_cfg["max_lines"]:
+        log["outcome"] = "rejected: notes full"
+        return notes, log
+
+    def reanswer(eq, eq_shown, eq_gold):
+        result = answers.get(db, eq, eq_gold, notes=notes_text(eq_shown, draft))
+        usage["check"] = add_usage(usage["check"], result["usage"])
+        return result["ok"]
+
+    log["fixes_source"] = reanswer(q, shown, gold)  # logged only, never required
+
+    candidates = [p for p in past if p[2]]  # earlier questions the notes arm answered correctly
+    if not candidates:
+        log["outcome"] = "applied unchecked"
+        return draft, log
+    if not can_check():
+        log["outcome"] = "applied unchecked (budget)"
+        return draft, log
+
+    by_qid = {c[0].qid: c for c in candidates}
+    nearest = similar(embed, q.question, [c[0] for c in candidates], 1)[0]
+    others = [c for c in candidates if c[0].qid != nearest.qid]
+    picks = [by_qid[nearest.qid]] + ([random.Random(q.qid).choice(others)] if others else [])
+    log["checked"] = [c[0].qid for c in picks]
+    wrong = [eq.qid for eq, eq_shown, _ in picks if not reanswer(eq, eq_shown, gold_rows(db.path, eq))]
+    if wrong:
+        log["outcome"], log["broke"] = "rejected: regression", wrong[0]
+        return notes, log
+    log["outcome"] = "applied"
+    return draft, log
+
+
 def run_stream(db, order, answers, proposer, memory, can_precheck, log_path, consolidation_path, every, templates,
-               components, k_examples, bar=None):
-    """One (database, order) stream: one log record per question, a consolidation pass every N and at the end."""
+               components, k_examples, live=None, bar=None):
+    """One (database, order) stream: one log record per question, a consolidation pass every N and at the end.
+    Returns the final notes (None without a live notes arm)."""
     write_atomic(log_path, "")
     write_atomic(consolidation_path, "")
+    notes, notes_past = Notes(), []  # notes_past: (question, examples shown, notes arm correct) so far
     for pos, q in enumerate(order, 1):
         jev_before = memory.jev.usage["usd"]
         gold = gold_rows(db.path, q)
@@ -121,6 +189,8 @@ def run_stream(db, order, answers, proposer, memory, can_precheck, log_path, con
         facts = answers.get(db, q, gold, picked)
         shown = similar(memory.embed, q.question, [eq for eq, _ in memory.history], k_examples)
         examples = answers.get(db, q, gold, notes=examples_notes(shown))
+        if live:  # with empty notes this prompt equals the examples arm's, so it replays that answer
+            notes_arm = live.answers.get(db, q, gold, notes=notes_text(shown, notes))
 
         # Reveal the correct answer: credit the injected facts, learn from a failure, then remember q.
         memory.credit([f.id for f in picked], facts["ok"], none["ok"])
@@ -128,10 +198,16 @@ def run_stream(db, order, answers, proposer, memory, can_precheck, log_path, con
         if not facts["ok"]:
             learning = learn(db, q, gold, facts["sql"], answers, proposer, memory, can_precheck())
         memory.observe(q, none["ok"])
+        if live:
+            notes_lines, update = notes.line_count(), None
+            if not notes_arm["ok"]:
+                notes, update = update_notes(db, q, gold, shown, notes_arm["sql"], notes, notes_past, live.proposer,
+                                             live.answers, memory.embed, live.can_check, live.notes_cfg)
+            notes_past.append((q, shown, notes_arm["ok"]))
 
         # A combination question's own templates are its two components.
         own = components.get(q.qid) or [templates.get(q.qid)]
-        append_jsonl(log_path, {
+        record = {
             "pos": pos, "qid": q.qid, "template": templates.get(q.qid), "components": components.get(q.qid),
             "none_ok": none["ok"], "facts_ok": facts["ok"], "examples_ok": examples["ok"],
             "none_sql": none["sql"], "facts_sql": facts["sql"], "examples_sql": examples["sql"],
@@ -143,18 +219,40 @@ def run_stream(db, order, answers, proposer, memory, can_precheck, log_path, con
             "latency_s": [none["latency_s"], facts["latency_s"], examples["latency_s"]],
             "usage": {"none": none["usage"], "facts": facts["usage"], "examples": examples["usage"]},
             "learning": learning, "jev_usd": memory.jev.usage["usd"] - jev_before, "jev_scores": scores,
-        })
+        }
+        if live:
+            record["turns"].append(notes_arm["turns"])
+            record["latency_s"].append(notes_arm["latency_s"])
+            record["usage"]["notes"] = notes_arm["usage"]
+            record |= {"notes_ok": notes_arm["ok"], "notes_sql": notes_arm["sql"], "notes_lines": notes_lines,
+                       "notes_update": update}
+        append_jsonl(log_path, record)
         # The final pass covers the last question, so a multiple of `every` there is not repeated.
         if pos % every == 0 and pos < len(order):
             consolidation_pass(pos, db, answers, proposer, memory, can_precheck, consolidation_path)
         if bar:
             bar.update(1)
     consolidation_pass(len(order), db, answers, proposer, memory, can_precheck, consolidation_path)
+    return notes if live else None
 
 
-def run(cfg):
-    """All streams, order by order; pre-checks stop near each order's allocation of this run's logical spend."""
-    sc, out = cfg["stream"], Path(cfg["runs_dir"])
+REPLAY_ARMS = [f"{arm}_{k}" for arm in ("none", "facts", "examples") for k in ("ok", "sql")]
+
+
+def replay_differences(new_path, old_path):
+    """(differences of the old arms' answers between two logs, records identical): a replay must equal the old run."""
+    read = lambda path: [json.loads(line) for line in Path(path).read_text().splitlines()]
+    new, old = read(new_path), read(old_path)
+    diffs = [f"pos {o['pos']} {k}: {o[k]!r} became {n.get(k)!r}" for n, o in zip(new, old) for k in REPLAY_ARMS
+             if n.get(k) != o[k]]
+    diffs += [f"{len(new)} records instead of {len(old)}"] * (len(new) != len(old))
+    return diffs, sum(all(n.get(k) == o[k] for k in REPLAY_ARMS) for n, o in zip(new, old))
+
+
+def run(cfg, replay_check=False):
+    """All streams, order by order; the old arms only replay. replay_check runs them alone into <runs_dir>_replay."""
+    sc = cfg["stream"]
+    out = Path(cfg["runs_dir"] + "_replay" if replay_check else cfg["runs_dir"])
     pinned = json.loads((Path(cfg["data_dir"]) / "manifest.json").read_text())["stream"]["sha256"]
     if pinned != hashlib.sha256(Path(sc["questions"]).read_bytes()).hexdigest():
         raise SystemExit(f"{sc['questions']} does not match its manifest: rerun scripts/get_ehrsql_data.py")
@@ -162,13 +260,19 @@ def run(cfg):
     dbs = {d: open_mimic(cfg["data_dir"], d) for d in sc["databases"]}
 
     budget = Budget(out / "spend.json", sc["budget_usd"])
-    agent = make_llm(cfg["agent"], cfg["cache_dir"], budget.spend)
-    proposer = make_llm(cfg["proposer"], cfg["cache_dir"], budget.spend)
+    agent = make_llm(cfg["agent"], cfg["cache_dir"], replay_only=True)
+    proposer = make_llm(cfg["proposer"], cfg["cache_dir"], replay_only=True)
     answers = Answers(agent, cfg["max_steps"], score_sql)
     embed = Embedder(cfg["embed"]["model"], cfg["embed"]["url"])
-    jev = Jev(cfg["jev"]["model"], cfg["jev"]["url"], os.environ[cfg["jev"]["api_key_env"]], on_spend=budget.spend)
-    logical = lambda: usd(agent.usage, cfg["agent"].get("usd_per_million")) + \
-        usd(proposer.usage, cfg["proposer"].get("usd_per_million")) + jev.usage["usd"]
+    jev = Jev(cfg["jev"]["model"], cfg["jev"]["url"], os.environ[cfg["jev"]["api_key_env"]], replay_only=True)
+    priced = [(agent, cfg["agent"]), (proposer, cfg["proposer"])]
+    if not replay_check:
+        agent_live = make_llm(cfg["agent"], cfg["cache_dir"], budget.spend)
+        notes_proposer = make_llm(cfg["proposer"], cfg["cache_dir"], budget.spend)
+        answers_live = Answers(agent_live, cfg["max_steps"], score_sql)
+        priced += [(agent_live, cfg["agent"]), (notes_proposer, cfg["proposer"])]
+    cost = lambda pairs: sum(usd(llm.usage, role.get("usd_per_million")) for llm, role in pairs)
+    logical = lambda: cost(priced) + jev.usage["usd"]
 
     try:
         for seed, allocation in zip(sc["seeds"], sc["order_budget_usd"]):
@@ -178,13 +282,27 @@ def run(cfg):
                 random.Random(seed).shuffle(order)
                 order += [q for q in questions if q.db_id == db_id and q.qid in components]
                 memory = FactMemory(db, jev, embed, sc["rules"], f"{db_id} ({sc['databases'][db_id]})")
-                can_precheck = lambda: logical() < allocation - sc["precheck_reserve_usd"]
+                # v8 never skipped a pre-check, so the replayed facts arm must not either.
+                can_precheck = lambda: True
+                live = None if replay_check else Live(
+                    answers_live, notes_proposer, lambda: cost(priced[2:]) < allocation - sc["precheck_reserve_usd"],
+                    sc["notes"])
                 with tqdm(total=len(order), desc=f"order {seed} {db_id}", unit="q", dynamic_ncols=True) as bar:
-                    run_stream(db, order, answers, proposer, memory, can_precheck, stream_log(out, seed, db_id),
-                               consolidation_log(out, seed, db_id), sc["consolidate_every"], templates, components,
-                               sc["examples"], bar)
+                    notes = run_stream(db, order, answers, proposer, memory, can_precheck, stream_log(out, seed, db_id),
+                                       consolidation_log(out, seed, db_id), sc["consolidate_every"], templates,
+                                       components, sc["examples"], live, bar)
                 write_atomic(facts_file(out, seed, db_id), json.dumps(
                     [{**asdict(f), **memory.state.get(f.id, {})} for f in memory.facts.values()], indent=1))
+                if notes is not None:
+                    write_atomic(notes_file(out, seed, db_id), notes.to_markdown())
+                if replay_check:
+                    diffs, same = replay_differences(stream_log(out, seed, db_id), stream_log("runs_v8", seed, db_id))
+                    print(f"replay {'identical' if not diffs else 'DIFFERS'}: {same}/{len(order)}")
+                    if diffs:
+                        print("\n".join(diffs[:10]))
+    except ReplayMiss as e:
+        print(f"stopped: {e}")
+        return
     except (BudgetExceeded, ProviderExhausted, JevUnavailable) as e:
         print(f"stopped: {e}. Rerun `stream` to continue; finished calls replay from cache for free.")
         return

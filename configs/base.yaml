@@ -1,4 +1,4 @@
-# EvoSQL settings: a streaming per-database memory (facts vs examples) on EHRSQL (spec docs/specs/2026-09-30-evosql-v8-design.md).
+# EvoSQL settings: a streaming per-database memory (facts, examples, notes) on EHRSQL (spec docs/specs/2026-09-30-evosql-v9-design.md).
 data_dir: data/ehrsql
 cache_dir: cache/llm
 max_steps: 8
@@ -14,8 +14,8 @@ agents:
     api_key_env: DEEPSEEK_API_KEY
     options: {extra_body: {thinking: {type: disabled}}}
     usd_per_million: {cache_hit: 0.006, cache_miss: 0.30, output: 1.20}  # peak list prices: an upper bound (off-peak is half)
-    runs_dir: runs_v8
-    results_dir: results_v8
+    runs_dir: runs_v9
+    results_dir: results_v9
   # Optional free fallback: local Ollama alias with a 32k context (see ollama/qwen3.5-9b-32k.Modelfile).
   local:
     model: qwen3.5-9b-32k
@@ -49,10 +49,11 @@ stream:
   databases:  # id: one-line description for JEV's state
     mimic_iv: "MIMIC-IV hospital records demo (100 patients): admissions, diagnoses, procedures, prescriptions, labs, microbiology, ICU stays and charted vitals"
   seeds: [0]
-  budget_usd: 3.0
-  order_budget_usd: [3.0]       # cumulative spend allowed by the end of each order
+  budget_usd: 1.0
+  order_budget_usd: [1.0]       # cumulative spend allowed by the end of each order
   precheck_reserve_usd: 0.10    # pre-checks are skipped once an order is this close to its allocation
   inert_below: 0.10             # report: a stream injecting facts on fewer second-half questions is "inert"
+  notes: {max_lines: 100, max_words: 40}  # the working-notes file: lines with headings, words per bullet
   examples: 2                   # similar earlier questions shown per question in the examples arm
   consolidate_every: 15         # questions between consolidation passes (plus one at the end of each stream)
   rules:
