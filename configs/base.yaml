@@ -1,5 +1,5 @@
-# EvoSQL settings: a streaming per-database fact memory on Arcwise-Plat (spec docs/specs/2026-09-30-evosql-v7-design.md).
-data_dir: data/bird_dev
+# EvoSQL settings: a streaming per-database memory (facts vs examples) on EHRSQL (spec docs/specs/2026-09-30-evosql-v8-design.md).
+data_dir: data/ehrsql
 cache_dir: cache/llm
 max_steps: 8
 
@@ -14,8 +14,8 @@ agents:
     api_key_env: DEEPSEEK_API_KEY
     options: {extra_body: {thinking: {type: disabled}}}
     usd_per_million: {cache_hit: 0.006, cache_miss: 0.30, output: 1.20}  # peak list prices: an upper bound (off-peak is half)
-    runs_dir: runs_v7
-    results_dir: results_v7
+    runs_dir: runs_v8
+    results_dir: results_v8
   # Optional free fallback: local Ollama alias with a 32k context (see ollama/qwen3.5-9b-32k.Modelfile).
   local:
     model: qwen3.5-9b-32k
@@ -27,11 +27,11 @@ agents:
 
 # Proposer: one call per failure of the facts arm and per consolidation pass; thinking on, JSON output.
 proposer:
-  model: deepseek-flash
+  model: deepseek-v4-pro
   base_url: https://api.deepseek.com
   api_key_env: DEEPSEEK_API_KEY
   options: {extra_body: {thinking: {type: enabled}}, reasoning_effort: medium, response_format: {type: json_object}}
-  usd_per_million: {cache_hit: 0.006, cache_miss: 0.30, output: 1.20}
+  usd_per_million: {cache_hit: 0.044, cache_miss: 1.32, output: 3.96}  # peak list prices: an upper bound
 
 # JEV (TypeSafe's decision model on OpenRouter) scores how directly each fact applies to a question.
 jev:
@@ -39,24 +39,21 @@ jev:
   url: https://openrouter.ai/api/alpha/decisions
   api_key_env: OPENROUTER_API_KEY
 
-# Local Ollama embeddings: the pre-check shortlist of earlier questions and the probe's examples arm.
+# Local Ollama embeddings: the pre-check shortlist and the examples arm's similar earlier questions.
 embed:
   model: qwen3-embedding:0.6b
   url: http://localhost:11434/v1
 
 stream:
-  questions: data/arcwise/arcwise_plat_full_with_diff.json
-  docs_root: data/arcwise/schemas  # corrected column descriptions: <root>/<db>/database_description/<table>.csv
+  questions: data/ehrsql/stream_v8.json
   databases:  # id: one-line description for JEV's state
-    formula_1: Formula 1 racing results
-    superhero: superheroes, their powers and attributes
-    card_games: "Magic: The Gathering cards, sets, rulings and legalities"
-    european_football_2: European football leagues, matches, teams and players
+    mimic_iv: "MIMIC-IV hospital records demo (100 patients): admissions, diagnoses, procedures, prescriptions, labs, microbiology, ICU stays and charted vitals"
   seeds: [0]
-  budget_usd: 2.0
-  order_budget_usd: [2.0]       # cumulative spend allowed by the end of each order
+  budget_usd: 3.0
+  order_budget_usd: [3.0]       # cumulative spend allowed by the end of each order
   precheck_reserve_usd: 0.10    # pre-checks are skipped once an order is this close to its allocation
   inert_below: 0.10             # report: a stream injecting facts on fewer second-half questions is "inert"
+  examples: 2                   # similar earlier questions shown per question in the examples arm
   consolidate_every: 15         # questions between consolidation passes (plus one at the end of each stream)
   rules:
     cutoff: 2.75                # JEV 0-3 score a fact needs to be injected (fixed by the offline check)
@@ -64,8 +61,3 @@ stream:
     idle_uses: 5                # retire a fact still at score 0 after this many uses
     precheck_pool: 8            # earlier questions most similar to a new fact, scored by JEV...
     precheck_max: 2             # ...of which at most this many are re-answered before it goes live
-
-# Probe: questions related to earlier stream questions, answered with frozen memory (spec section 7).
-probe:
-  questions: data/probe/probe_v7.json
-  v6_runs_dir: runs_v6

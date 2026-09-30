@@ -1,6 +1,6 @@
-"""The v7 stream: for one order and each database, the none and facts arms answer each question, the memory learns from
-the correct SQL, and it is consolidated every N questions and at the end. Every LLM and JEV reply is cached on disk,
-so the none arm replays v6 and a rerun replays finished work for free and identically."""
+"""The v8 stream on EHRSQL: each question is answered by the none, facts and examples arms (examples: the most similar
+earlier questions with their correct SQL); the facts memory learns from its failures and is consolidated every N
+questions. Every LLM and JEV reply is cached on disk, so a rerun replays finished work for free and identically."""
 import hashlib
 import json
 import os
@@ -11,16 +11,17 @@ from pathlib import Path
 from tqdm import tqdm
 
 from evosql.agent import answer
-from evosql.bird import exec_match, gold_rows, load_arcwise, open_db
+from evosql.bird import exec_match, gold_rows
 from evosql.budget import Budget, BudgetExceeded
 from evosql.consolidate import consolidate
+from evosql.ehrsql import load_stream, open_mimic, score_sql
 from evosql.facts import check, check_snippet, render
 from evosql.files import append_jsonl, write_atomic
 from evosql.jev import Jev, JevUnavailable
 from evosql.llm import ProviderExhausted, make_llm, usd
 from evosql.memory import FactMemory
 from evosql.proposer import propose
-from evosql.search import Embedder
+from evosql.search import Embedder, examples_notes, similar
 
 
 def stream_log(out, seed, db_id):
@@ -46,8 +47,9 @@ def add_usage(a, b):
 class Answers:
     """Answers memoised by (question, knowledge text); a replay reports no new usage but keeps its API latency."""
 
-    def __init__(self, agent, max_steps):
+    def __init__(self, agent, max_steps, score=None):
         self.agent, self.max_steps, self.memo = agent, max_steps, {}
+        self.score = score or (lambda sql: sql)  # e.g. the official post-processing, applied before scoring
 
     def get(self, db, q, gold, facts=(), notes=None):
         notes = render(facts) if notes is None else notes
@@ -57,7 +59,7 @@ class Answers:
         before = dict(self.agent.usage)
         sql, turns = answer(self.agent, db, q.question, notes, self.max_steps)
         usage = usage_since(self.agent, before)
-        self.memo[key] = {"sql": sql, "turns": turns, "ok": exec_match(db.path, sql, gold),
+        self.memo[key] = {"sql": sql, "turns": turns, "ok": exec_match(db.path, self.score(sql), gold),
                           "latency_s": usage.get("latency_s", 0.0)}
         return {**self.memo[key], "usage": usage}
 
@@ -104,7 +106,8 @@ def consolidation_pass(pos, db, answers, proposer, memory, can_precheck, path):
                         "jev_usd": memory.jev.usage["usd"] - jev_before})
 
 
-def run_stream(db, order, answers, proposer, memory, can_precheck, log_path, consolidation_path, every, bar=None):
+def run_stream(db, order, answers, proposer, memory, can_precheck, log_path, consolidation_path, every, templates,
+               k_examples, bar=None):
     """One (database, order) stream: one log record per question, a consolidation pass every N and at the end."""
     write_atomic(log_path, "")
     write_atomic(consolidation_path, "")
@@ -112,10 +115,12 @@ def run_stream(db, order, answers, proposer, memory, can_precheck, log_path, con
         jev_before = memory.jev.usage["usd"]
         gold = gold_rows(db.path, q)
 
-        # Both arms answer before anything about q is revealed; with no fact injected, facts replays none.
+        # All arms answer before anything about q is revealed; with nothing injected, an arm replays none.
         none = answers.get(db, q, gold, [])
         picked, scores = memory.select(q.question)
         facts = answers.get(db, q, gold, picked)
+        shown = similar(memory.embed, q.question, [eq for eq, _ in memory.history], k_examples)
+        examples = answers.get(db, q, gold, notes=examples_notes(shown))
 
         # Reveal the correct answer: credit the injected facts, learn from a failure, then remember q.
         memory.credit([f.id for f in picked], facts["ok"], none["ok"])
@@ -125,11 +130,15 @@ def run_stream(db, order, answers, proposer, memory, can_precheck, log_path, con
         memory.observe(q, none["ok"])
 
         append_jsonl(log_path, {
-            "pos": pos, "qid": q.qid, "none_ok": none["ok"], "facts_ok": facts["ok"],
-            "none_sql": none["sql"], "facts_sql": facts["sql"], "turns": [none["turns"], facts["turns"]],
+            "pos": pos, "qid": q.qid, "template": templates.get(q.qid),
+            "none_ok": none["ok"], "facts_ok": facts["ok"], "examples_ok": examples["ok"],
+            "none_sql": none["sql"], "facts_sql": facts["sql"], "examples_sql": examples["sql"],
+            "turns": [none["turns"], facts["turns"], examples["turns"]],
             "injected": [f.id for f in picked], "memory_size": len(memory.active()),
-            "latency_s": [none["latency_s"], facts["latency_s"]],
-            "usage": {"none": none["usage"], "facts": facts["usage"]},
+            "examples_used": [eq.qid for eq in shown],
+            "examples_same_template": [templates.get(eq.qid) == templates.get(q.qid) for eq in shown],
+            "latency_s": [none["latency_s"], facts["latency_s"], examples["latency_s"]],
+            "usage": {"none": none["usage"], "facts": facts["usage"], "examples": examples["usage"]},
             "learning": learning, "jev_usd": memory.jev.usage["usd"] - jev_before, "jev_scores": scores,
         })
         # The final pass covers the last question, so a multiple of `every` there is not repeated.
@@ -140,25 +149,19 @@ def run_stream(db, order, answers, proposer, memory, can_precheck, log_path, con
     consolidation_pass(len(order), db, answers, proposer, memory, can_precheck, consolidation_path)
 
 
-def check_pinned(questions_path):
-    """Stop if the question file differs from the one pinned in the data manifest."""
-    manifest = json.loads((Path(questions_path).parent / "manifest.json").read_text())
-    digest = hashlib.sha256(Path(questions_path).read_bytes()).hexdigest()
-    if manifest["sha256"].get(str(questions_path)) != digest:
-        raise SystemExit(f"{questions_path} does not match its manifest: rerun scripts/get_v6_data.py")
-
-
 def run(cfg):
     """All streams, order by order; pre-checks stop near each order's allocation of this run's logical spend."""
     sc, out = cfg["stream"], Path(cfg["runs_dir"])
-    check_pinned(sc["questions"])
-    questions = load_arcwise(sc["questions"], set(sc["databases"]))
-    dbs = {d: open_db(cfg["data_dir"], d, Path(sc["docs_root"]) / d / "database_description") for d in sc["databases"]}
+    pinned = json.loads((Path(cfg["data_dir"]) / "manifest.json").read_text())["stream"]["sha256"]
+    if pinned != hashlib.sha256(Path(sc["questions"]).read_bytes()).hexdigest():
+        raise SystemExit(f"{sc['questions']} does not match its manifest: rerun scripts/get_ehrsql_data.py")
+    questions, templates = load_stream(sc["questions"])
+    dbs = {d: open_mimic(cfg["data_dir"], d) for d in sc["databases"]}
 
     budget = Budget(out / "spend.json", sc["budget_usd"])
     agent = make_llm(cfg["agent"], cfg["cache_dir"], budget.spend)
     proposer = make_llm(cfg["proposer"], cfg["cache_dir"], budget.spend)
-    answers = Answers(agent, cfg["max_steps"])
+    answers = Answers(agent, cfg["max_steps"], score_sql)
     embed = Embedder(cfg["embed"]["model"], cfg["embed"]["url"])
     jev = Jev(cfg["jev"]["model"], cfg["jev"]["url"], os.environ[cfg["jev"]["api_key_env"]], on_spend=budget.spend)
     logical = lambda: usd(agent.usage, cfg["agent"].get("usd_per_million")) + \
@@ -173,7 +176,8 @@ def run(cfg):
                 can_precheck = lambda: logical() < allocation - sc["precheck_reserve_usd"]
                 with tqdm(total=len(order), desc=f"order {seed} {db_id}", unit="q", dynamic_ncols=True) as bar:
                     run_stream(db, order, answers, proposer, memory, can_precheck, stream_log(out, seed, db_id),
-                               consolidation_log(out, seed, db_id), sc["consolidate_every"], bar)
+                               consolidation_log(out, seed, db_id), sc["consolidate_every"], templates, sc["examples"],
+                               bar)
                 write_atomic(facts_file(out, seed, db_id), json.dumps(
                     [{**asdict(f), **memory.state.get(f.id, {})} for f in memory.facts.values()], indent=1))
     except (BudgetExceeded, ProviderExhausted, JevUnavailable) as e:

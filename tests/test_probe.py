@@ -7,7 +7,8 @@ import pytest
 from conftest import RULES, FakeJev, make_db
 from evosql.bird import Question
 from evosql.facts import Fact
-from evosql.probe import check_probe, examples, load_facts, run_items
+from evosql.probe import check_probe, load_facts, run_items
+from evosql.search import examples_notes, similar
 from evosql.stream import Answers
 
 GOLD = "SELECT COUNT(*) FROM results WHERE time IS NOT NULL"
@@ -75,7 +76,7 @@ def test_every_item_is_answered_in_five_arms_and_only_v7_sql_sees_the_snippet(tm
 def test_examples_are_the_most_similar_past_questions_best_first():
     past = [Question(1, "f1", "Who won the Monaco race?", "SELECT 1"),
             Question(2, "f1", "How many drivers finished race 1?", "SELECT 2")]
-    text = examples(embed, "How many drivers finished race 9?", past, k=1)
+    text = examples_notes(similar(embed, "How many drivers finished race 9?", past, 1))
     assert text == "Similar past questions with their correct SQL:\nQ: How many drivers finished race 1?\nSQL: SELECT 2"
 
 

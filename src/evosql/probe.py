@@ -7,8 +7,6 @@ import os
 from dataclasses import replace
 from pathlib import Path
 
-import numpy as np
-
 from evosql.bird import Question, gold_rows, load_arcwise, open_db
 from evosql.budget import Budget, BudgetExceeded
 from evosql.facts import Fact
@@ -16,7 +14,7 @@ from evosql.files import append_jsonl, write_atomic
 from evosql.jev import Jev, JevUnavailable, fact_scores
 from evosql.llm import ProviderExhausted, make_llm
 from evosql.memory import pick
-from evosql.search import Embedder
+from evosql.search import Embedder, examples_notes, similar
 from evosql.stream import Answers, facts_file
 
 ARMS = ("none", "v6_facts", "v7_prose", "v7_sql", "examples")
@@ -36,18 +34,6 @@ def load_facts(path, question_text):
     return facts, proven_ids
 
 
-def examples(embed, question, past, k=2):
-    """Notes text with the k past questions most similar to the question, each with its correct SQL."""
-    vectors = embed([question] + [q.question for q in past])
-    vectors = vectors / np.linalg.norm(vectors, axis=1, keepdims=True)
-    nearest = np.argsort(-(vectors[1:] @ vectors[0]), kind="stable")[:k]
-
-    lines = ["Similar past questions with their correct SQL:"]
-    for i in nearest:
-        lines += [f"Q: {past[i].question}", f"SQL: {past[i].gold_sql}"]
-    return "\n".join(lines)
-
-
 def run_items(items, dbs, answers, jev, embed, memories, past, rules, descriptions, log_path):
     """Answer every probe item in all arms (none, each fact arm, examples) and log one JSONL line per item."""
     write_atomic(log_path, "")
@@ -63,7 +49,8 @@ def run_items(items, dbs, answers, jev, embed, memories, past, rules, descriptio
             scores = fact_scores(jev, f"{db_id} ({descriptions[db_id]})", question, facts)
             picked = pick(facts, scores, rules, lambda f: f.id in proven_ids)
             arms[arm] = {**answers.get(db, q, gold, picked), "injected": [f.id for f in picked]}
-        arms["examples"] = {**answers.get(db, q, gold, notes=examples(embed, question, past[db_id])), "injected": []}
+        shown = similar(embed, question, past[db_id], 2)
+        arms["examples"] = {**answers.get(db, q, gold, notes=examples_notes(shown)), "injected": []}
 
         append_jsonl(log_path, {
             "id": item["id"], "db_id": db_id, "level": item["level"], "source_qid": item["source_qid"],

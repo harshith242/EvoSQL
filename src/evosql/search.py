@@ -36,3 +36,22 @@ class Embedder:
                 write_atomic(p, json.dumps(e.embedding))
         self.memo.update({t: json.loads(p.read_text()) for t, p in zip(texts, paths)})
         return np.array([self.memo[t] for t in texts])
+
+
+def similar(embed, question, past, k):
+    """The k past questions most similar to the question, best first."""
+    if not past:
+        return []
+    vectors = embed([question] + [q.question for q in past])
+    vectors = vectors / np.linalg.norm(vectors, axis=1, keepdims=True)
+    return [past[i] for i in np.argsort(-(vectors[1:] @ vectors[0]), kind="stable")[:k]]
+
+
+def examples_notes(examples):
+    """Notes text listing past questions with their correct SQL ("" when there are none)."""
+    if not examples:
+        return ""
+    lines = ["Similar past questions with their correct SQL:"]
+    for q in examples:
+        lines += [f"Q: {q.question}", f"SQL: {q.gold_sql}"]
+    return "\n".join(lines)
