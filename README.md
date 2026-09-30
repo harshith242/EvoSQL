@@ -48,14 +48,14 @@ All four use the same agent (DeepSeek Flash, thinking off) and the same question
 
 ## Caveats
 
-- One question order per database, and one database per setting for the notes arm.
+- One question order per database, and the notes were tested on one database of each kind.
 - The notes learn the "house style" of the people who wrote the correct SQL (for example, that "top 3" includes ties). For an assistant on one database that is what you want, but it is convention, not general SQL skill.
 - The regression check uses only 2 earlier questions per edit.
-- Any change to the prompt shifts the model's answers a little, so a few fixes or regressions in any arm may be luck.
+- Any change to the prompt shifts the model's answers a little, so a few fixed or broken answers for any memory type may be luck.
 
 ## Cost
 
-Every run is capped and cached; the old arms of a new run replay from cache at no cost.
+Every run is capped and cached; memory types already run before are replayed from cache at no cost.
 
 | Run | Real spend |
 |---|---|
@@ -78,11 +78,11 @@ uv run python -m evosql report                # writes results_v9/summary.md and
 uv run python -m evosql --config configs/arcwise.yaml stream   # BIRD formula_1 run
 ```
 
-`stream --replay-check` re-runs only the old arms from cache and confirms they match the earlier run exactly, without spending anything.
+`stream --replay-check` re-runs only the memory types from the earlier run, from cache, and confirms they match the earlier run exactly, without spending anything.
 
 ## Repository
 
-- `src/evosql/`: the agent (`agent.py`), the stream and arms (`stream.py`), facts (`facts.py`, `proposer.py`, `memory.py`, `consolidate.py`, `jev.py`), notes (`notes.py`), data loading (`bird.py`, `ehrsql.py`) and the report (`report.py`).
+- `src/evosql/`: the agent (`agent.py`), the question stream and the four memory types (`stream.py`), facts (`facts.py`, `proposer.py`, `memory.py`, `consolidate.py`, `jev.py`), notes (`notes.py`), data loading (`bird.py`, `ehrsql.py`) and the report (`report.py`).
 - `configs/`: `base.yaml` (MIMIC) and `arcwise.yaml` (BIRD formula_1).
 - `results/`: the published reports, the final notes file and the log of every notes edit.
 - `tests/`: unit tests, no network (`uv run pytest`).
