@@ -1,6 +1,6 @@
 """OpenAI-compatible chat client (DeepSeek or Ollama) with a disk cache, retry/backoff, usage and spend reporting.
 A reply cached by an earlier run counts toward usage (logical cost) once per process, never toward real spend.
-The cache key has no model digest: clear cache/llm after changing an Ollama Modelfile."""
+The cache key has no model digest: clear cache/llm after changing a local model."""
 import hashlib
 import json
 import os

@@ -11,7 +11,7 @@ def main():
     load_dotenv()
     parser = argparse.ArgumentParser(prog="evosql")
     parser.add_argument("--config", default="configs/base.yaml")
-    parser.add_argument("--agent", help="agent profile from the config, e.g. deepseek or local")
+    parser.add_argument("--agent", help="agent profile from the config (default: deepseek)")
     sub = parser.add_subparsers(dest="cmd", required=True)
     stream = sub.add_parser("stream", help="run the streaming memory experiment (resumable from cache)")
     stream.add_argument("--replay-check", action="store_true", help="replay only the old arms and compare with the replay reference run")

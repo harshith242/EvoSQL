@@ -6,7 +6,7 @@ A Text-to-SQL agent that learns from its own mistakes on one database. After eac
 
 ## How the experiment runs
 
-![Questions arrive one at a time; every answer is written before the correct SQL is opened; then the question is kept for later](docs/codebase-visual-atlas/images/01-answer-then-reveal.png)
+![Questions arrive one at a time; every answer is written before the correct SQL is opened; then the question is kept for later](docs/images/01-answer-then-reveal.png)
 
 The agent answers the questions of one database one by one. Every memory type answers **before** the correct SQL is opened, so memory only ever comes from earlier questions. Then each answer is marked right or wrong, and the question is kept for the ones that follow.
 
@@ -17,20 +17,20 @@ All four memory types use the same agent (DeepSeek Flash, thinking off) and the 
 - **none**: the agent sees the schema and a short profile of every column (common values, ranges, descriptions). Nothing is remembered.
 - **facts**: after a wrong answer, a second model writes one short fact about the database (for example "a driver's full name is forename + surname"). Facts are checked against the data before they are kept. For each new question, a small judge model ([JEV](https://openrouter.ai/docs/guides/community/jev)) picks at most 2 relevant facts. Facts that break answers are retired, and the memory is tidied every 15 questions.
 
-![After a mistake one fact card is written and checked; a judge lifts at most two cards into the next prompt](docs/codebase-visual-atlas/images/02-facts-drawer.png)
+![After a mistake one fact card is written and checked; a judge lifts at most two cards into the next prompt](docs/images/02-facts-drawer.png)
 
 - **examples**: the 2 earlier questions most similar to the new one, each with its correct SQL.
 - **examples + notes**: the same examples, plus a short notes file about the database (like a CLAUDE.md: five sections, at most 100 lines) that is always in the prompt.
 
-![Two solved questions are pinned next to the notes file that is always on the board](docs/codebase-visual-atlas/images/03-examples-and-notes.png)
+![Two solved questions are pinned next to the notes file that is always on the board](docs/images/03-examples-and-notes.png)
 
 After the examples + notes memory gets a question wrong, a model edits the notes, writing only what the examples did not show. An edit is kept only if 2 earlier questions the agent had right are still right with it:
 
-![A draft notes page passes a gate only if two earlier right answers stay right](docs/codebase-visual-atlas/images/04-notes-gate.png)
+![A draft notes page passes a gate only if two earlier right answers stay right](docs/images/04-notes-gate.png)
 
 ## Results
 
-![Four piles of correct answers on MIMIC-IV; examples + notes is the tallest](docs/codebase-visual-atlas/images/05-results.png)
+![Four piles of correct answers on MIMIC-IV; examples + notes is the tallest](docs/images/05-results.png)
 
 Numbers are the share of questions answered correctly:
 
@@ -104,7 +104,7 @@ uv run python -m evosql --config configs/arcwise.yaml stream   # BIRD formula_1 
 - `src/evosql/`: the agent (`agent.py`), the question stream and the four memory types (`stream.py`), facts (`facts.py`, `proposer.py`, `memory.py`, `consolidate.py`, `jev.py`), notes (`notes.py`), data loading (`bird.py`, `ehrsql.py`) and the report (`report.py`).
 - `configs/`: `base.yaml` (MIMIC) and `arcwise.yaml` (BIRD formula_1).
 - `results/`: the published reports, the final notes files and the log of every notes edit.
-- `docs/codebase-visual-atlas/`: the pictures above. `index.html` (open it in a browser after cloning) and [ledger.md](docs/codebase-visual-atlas/ledger.md) link every label to the code it shows.
+- `docs/images/`: the pictures above.
 - `tests/`: unit tests, no network (`uv run pytest`).
 - Earlier versions are kept as git tags (`v3` to `v9`); v3–v5 were offline experiments on one BIRD database.
 

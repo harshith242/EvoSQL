@@ -16,14 +16,6 @@ agents:
     usd_per_million: {cache_hit: 0.006, cache_miss: 0.30, output: 1.20}  # peak list prices: an upper bound (off-peak is half)
     runs_dir: runs_v9
     results_dir: results_v9
-  # Optional free fallback: local Ollama alias with a 32k context (see ollama/qwen3.5-9b-32k.Modelfile).
-  local:
-    model: qwen3.5-9b-32k
-    base_url: http://localhost:11434/v1
-    api_key_env: null
-    options: {reasoning_effort: none}
-    runs_dir: runs_local
-    results_dir: results_local
 
 # Proposer: one call per failure of the facts arm and per consolidation pass; thinking on, JSON output.
 proposer:
